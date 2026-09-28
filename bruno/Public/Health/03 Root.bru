@@ -17,8 +17,21 @@ headers {
 docs {
   # GET /
 
-  **Expected:** `200` `{ "name", "version", "docs" }`
+  Service identity. No request body.
+
+  ## Response `200`
+
+  ```json
+  {
+    "name": "Implesia Mart Backend",
+    "version": "0.1.0",
+    "docs": "/docs"
+  }
+  ```
+
+  `/docs` is hidden when `ENVIRONMENT=production`.
 }
+
 
 tests {
   test("names the API", function () {
@@ -31,6 +44,41 @@ tests {
 
 assert {
   res.status: eq 200
+}
+
+example {
+  name: 200 OK
+  description: Names the API
+
+  request: {
+    url: {{BASE_URL}}/
+    method: GET
+    headers: {
+      Accept: application/json
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "name": "Implesia Mart Backend",
+          "version": "0.1.0",
+          "docs": "/docs"
+        }
+      '''
+    }
+  }
 }
 
 settings {

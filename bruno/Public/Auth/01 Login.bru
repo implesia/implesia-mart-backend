@@ -25,11 +25,41 @@ body:json {
 docs {
   # POST /api/v1/auth/login
 
-  Writes `ACCESS_TOKEN` and `REFRESH_TOKEN` into the active environment.
-  Private requests read `ACCESS_TOKEN`. Access tokens last 30 minutes.
+  Staff login. No Bearer token.
 
-  **Expected:** `200` token pair.
+  ## Request body
+
+  ```json
+  {
+    "email": "admin@implesia.com",
+    "password": "change-me-too"
+  }
+  ```
+
+  `email` and `password` come from `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
+
+  ## Response `200`
+
+  ```json
+  {
+    "access_token": "<jwt>",
+    "refresh_token": "<jwt>",
+    "token_type": "bearer",
+    "expires_in": 1800
+  }
+  ```
+
+  The post-response script stores both tokens. Access tokens last 30 minutes.
+
+  ## Errors
+
+  `401` `unauthenticated` — wrong email or password, or the account is disabled.
+
+  ```json
+  { "error": { "code": "unauthenticated", "message": "Incorrect email or password", "details": null } }
+  ```
 }
+
 
 script:post-response {
   const body = res.getBody();
@@ -52,6 +82,50 @@ tests {
 
 assert {
   res.status: eq 200
+}
+
+example {
+  name: 200 OK
+  description: Returns a token pair
+
+  request: {
+    url: {{BASE_URL}}/api/v1/auth/login
+    method: POST
+    mode: json
+    headers: {
+      Accept: application/json
+      Content-Type: application/json
+    }
+    body:json: {
+      {
+        "email": "{{ADMIN_EMAIL}}",
+        "password": "{{ADMIN_PASSWORD}}"
+      }
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example.access",
+          "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example.refresh",
+          "token_type": "bearer",
+          "expires_in": 1800
+        }
+      '''
+    }
+  }
 }
 
 settings {

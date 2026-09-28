@@ -32,11 +32,31 @@ body:json {
 docs {
   # POST /api/v1/users
 
-  Superadmin only. Each run uses a new email and writes `USER_ID`.
-  Get, Update, and Delete use that id. Do not point Delete at the admin.
+  Superadmin creates a staff account. Each run sets a new `EDITOR_EMAIL` and stores `USER_ID`. Get, Update, and Delete use that id.
 
-  **Expected:** `201` user. Duplicate email is `409`.
+  ## Request body
+
+  ```json
+  {
+    "email": "editor.1790580003877@implesia.com",
+    "full_name": "Bruno Editor",
+    "password": "EditorPass#2026!",
+    "role": "editor",
+    "is_active": true
+  }
+  ```
+
+  `password` is 12–72 characters. `role` is `superadmin`, `editor`, or `viewer`.
+
+  ## Response `201`
+
+  The created user. `password_hash` is omitted. `last_login_at` is `null`.
+
+  ## Errors
+
+  `409` `conflict` — email already exists. `422` `validation_error` — password is too short.
 }
+
 
 script:pre-request {
   bru.setEnvVar("EDITOR_EMAIL", "editor." + Date.now() + "@implesia.com");
@@ -63,6 +83,57 @@ tests {
 
 assert {
   res.status: eq 201
+}
+
+example {
+  name: 201 Created
+  description: Creates an editor
+
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/users
+    method: POST
+    mode: json
+    headers: {
+      Accept: application/json
+      Content-Type: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+    body:json: {
+      {
+        "email": "{{EDITOR_EMAIL}}",
+        "full_name": "Bruno Editor",
+        "password": "EditorPass#2026!",
+        "role": "editor",
+        "is_active": true
+      }
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 201
+      text: Created
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "email": "editor.1790580003877@implesia.com",
+          "full_name": "Bruno Editor",
+          "role": "editor",
+          "is_active": true,
+          "id": "22c94cfc-36a6-454e-81b8-c9193e5ce3ae",
+          "last_login_at": null,
+          "created_at": "2026-09-28T07:20:03.900000Z"
+        }
+      '''
+    }
+  }
 }
 
 settings {

@@ -21,11 +21,19 @@ headers {
 docs {
   # DELETE /api/v1/users/{id}
 
-  Deletes `USER_ID` from Create User only. Do not paste the admin id here.
-  The last active superadmin cannot be deleted (`403`).
+  Deletes `USER_ID` from **Create User**. Do not paste the admin id.
 
-  **Expected:** `204` empty body.
+  No request body.
+
+  ## Response `204`
+
+  Empty body.
+
+  ## Errors
+
+  `403` — you cannot delete yourself, or the last active superadmin. `404` — id is already gone.
 }
+
 
 tests {
   test("deletes the demo user", function () {
@@ -35,6 +43,31 @@ tests {
 
 assert {
   res.status: eq 204
+}
+
+example {
+  name: 204 No Content
+  description: Deletes the demo user
+
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/users/{{USER_ID}}
+    method: DELETE
+    headers: {
+      Accept: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 204
+      text: No Content
+    }
+  }
 }
 
 settings {

@@ -21,10 +21,29 @@ headers {
 docs {
   # GET /api/v1/users/{id}
 
-  Run **Create User** first so `USER_ID` is set.
+  One staff row. Run **Create User** first so `USER_ID` is set.
 
-  **Expected:** `200` that editor. Unknown id is `404`.
+  No request body.
+
+  ## Response `200`
+
+  ```json
+  {
+    "email": "editor.1790580003877@implesia.com",
+    "full_name": "Bruno Editor",
+    "role": "editor",
+    "is_active": true,
+    "id": "22c94cfc-36a6-454e-81b8-c9193e5ce3ae",
+    "last_login_at": null,
+    "created_at": "2026-09-28T07:20:03.900000Z"
+  }
+  ```
+
+  ## Errors
+
+  `404` `not_found` — id is not in the database. `422` — path is not a UUID.
 }
+
 
 tests {
   test("reads the created editor", function () {
@@ -38,6 +57,46 @@ tests {
 
 assert {
   res.status: eq 200
+}
+
+example {
+  name: 200 OK
+  description: Reads the created editor
+
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/users/{{USER_ID}}
+    method: GET
+    headers: {
+      Accept: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "email": "editor.1790580003877@implesia.com",
+          "full_name": "Bruno Editor",
+          "role": "editor",
+          "is_active": true,
+          "id": "22c94cfc-36a6-454e-81b8-c9193e5ce3ae",
+          "last_login_at": null,
+          "created_at": "2026-09-28T07:20:03.900000Z"
+        }
+      '''
+    }
+  }
 }
 
 settings {

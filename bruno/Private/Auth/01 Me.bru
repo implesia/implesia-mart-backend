@@ -21,10 +21,31 @@ headers {
 docs {
   # GET /api/v1/auth/me
 
-  Any active role. Run **Public / Auth / Login** first.
+  Current staff account. Any active role. Run **Public / Auth / Login** first.
 
-  **Expected:** `200` current user. No password hash.
+  No request body. Header: `Authorization: Bearer {{ACCESS_TOKEN}}`.
+
+  ## Response `200`
+
+  ```json
+  {
+    "email": "admin@implesia.com",
+    "full_name": "Implesia Mart Admin",
+    "role": "superadmin",
+    "is_active": true,
+    "id": "09d0379f-b3d6-459c-a86e-05ef573b8704",
+    "last_login_at": "2026-09-28T07:20:02.968481Z",
+    "created_at": "2026-09-28T07:07:07.896517Z"
+  }
+  ```
+
+  `password_hash` is never returned.
+
+  ## Errors
+
+  `401` `unauthenticated` — missing or expired access token.
 }
+
 
 tests {
   test("returns the signed-in admin", function () {
@@ -39,6 +60,46 @@ tests {
 
 assert {
   res.status: eq 200
+}
+
+example {
+  name: 200 OK
+  description: Returns the signed-in admin
+
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/auth/me
+    method: GET
+    headers: {
+      Accept: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "email": "admin@implesia.com",
+          "full_name": "Implesia Mart Admin",
+          "role": "superadmin",
+          "is_active": true,
+          "id": "09d0379f-b3d6-459c-a86e-05ef573b8704",
+          "last_login_at": "2026-09-28T07:20:02.968481Z",
+          "created_at": "2026-09-28T07:07:07.896517Z"
+        }
+      '''
+    }
+  }
 }
 
 settings {

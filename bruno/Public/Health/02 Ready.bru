@@ -19,8 +19,17 @@ docs {
 
   Readiness probe. Runs `SELECT 1` against Postgres.
 
-  **Expected:** `200` `{ "status": "ok", "database": "ok" }`
+  No request body.
+
+  ## Response `200`
+
+  ```json
+  { "status": "ok", "database": "ok" }
+  ```
+
+  If Postgres is down the status stays `200` and `database` is `unreachable`.
 }
+
 
 tests {
   test("database is reachable", function () {
@@ -32,6 +41,37 @@ tests {
 
 assert {
   res.status: eq 200
+}
+
+example {
+  name: 200 OK
+  description: Database is reachable
+
+  request: {
+    url: {{BASE_URL}}/health/ready
+    method: GET
+    headers: {
+      Accept: application/json
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        { "status": "ok", "database": "ok" }
+      '''
+    }
+  }
 }
 
 settings {

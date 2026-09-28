@@ -30,10 +30,29 @@ body:json {
 docs {
   # PATCH /api/v1/users/{id}
 
-  Updates the demo user from Create User. Does not touch the admin account.
+  Partial update of the demo user. Does not change the admin account. Send only the fields that change.
 
-  **Expected:** `200` with the new name and `viewer` role.
+  ## Request body
+
+  ```json
+  {
+    "full_name": "Bruno Editor (updated)",
+    "role": "viewer",
+    "is_active": true
+  }
+  ```
+
+  Optional fields: `email`, `full_name`, `role`, `is_active`, `password`.
+
+  ## Response `200`
+
+  The updated user, with `role` `viewer` and the new name.
+
+  ## Errors
+
+  `403` — disabling your own account, changing your own role, or removing the last active superadmin. `409` — email belongs to someone else.
 }
+
 
 tests {
   test("updates the demo user", function () {
@@ -47,6 +66,55 @@ tests {
 
 assert {
   res.status: eq 200
+}
+
+example {
+  name: 200 OK
+  description: Updates the demo user
+
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/users/{{USER_ID}}
+    method: PATCH
+    mode: json
+    headers: {
+      Accept: application/json
+      Content-Type: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+    body:json: {
+      {
+        "full_name": "Bruno Editor (updated)",
+        "role": "viewer",
+        "is_active": true
+      }
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "email": "editor.1790580003877@implesia.com",
+          "full_name": "Bruno Editor (updated)",
+          "role": "viewer",
+          "is_active": true,
+          "id": "22c94cfc-36a6-454e-81b8-c9193e5ce3ae",
+          "last_login_at": null,
+          "created_at": "2026-09-28T07:20:03.900000Z"
+        }
+      '''
+    }
+  }
 }
 
 settings {

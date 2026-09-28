@@ -6,15 +6,15 @@ FastAPI backend for the Implesia Mart storefront and its admin dashboard.
 
 ## Stack
 
-| Concern | Choice |
-|---|---|
-| API | FastAPI, Pydantic v2, Uvicorn / Gunicorn |
-| Database | PostgreSQL 16, SQLAlchemy 2.0 async, asyncpg, Alembic |
-| Cache & rate limiting | Redis, slowapi |
-| Auth | JWT access + refresh (PyJWT), bcrypt, role hierarchy |
-| Logging | structlog (JSON in production, console in debug) |
-| Quality | pytest, Ruff, mypy |
-| Deploy | Docker Compose locally, Render via `render.yaml` |
+| Concern               | Choice                                                |
+| --------------------- | ----------------------------------------------------- |
+| API                   | FastAPI, Pydantic v2, Uvicorn / Gunicorn              |
+| Database              | PostgreSQL 16, SQLAlchemy 2.0 async, asyncpg, Alembic |
+| Cache & rate limiting | Redis, slowapi                                        |
+| Auth                  | JWT access + refresh (PyJWT), bcrypt, role hierarchy  |
+| Logging               | structlog (JSON in production, console in debug)      |
+| Quality               | pytest, Ruff, mypy                                    |
+| Deploy                | Docker Compose locally, Render via `render.yaml`      |
 
 Host ports are offset from `implesia-backend` so both APIs can run together: API **8001**, Postgres **5434**, Redis **6381**.
 
@@ -74,16 +74,16 @@ New resources follow the same split already used by auth and the dashboard: mode
 
 ## API
 
-| Method | Path | Minimum role |
-|---|---|---|
-| `GET` | `/health/live` | — |
-| `GET` | `/health/ready` | — |
-| `POST` | `/api/v1/auth/login` | — |
-| `POST` | `/api/v1/auth/refresh` | — |
-| `GET` | `/api/v1/auth/me` | viewer |
-| `POST` | `/api/v1/auth/change-password` | viewer |
-| `GET` | `/api/v1/admin/dashboard` | editor |
-| `GET` `POST` `PATCH` `DELETE` | `/api/v1/users[/{id}]` | superadmin |
+| Method                        | Path                           | Minimum role |
+| ----------------------------- | ------------------------------ | ------------ |
+| `GET`                         | `/health/live`                 | —            |
+| `GET`                         | `/health/ready`                | —            |
+| `POST`                        | `/api/v1/auth/login`           | —            |
+| `POST`                        | `/api/v1/auth/refresh`         | —            |
+| `GET`                         | `/api/v1/auth/me`              | viewer       |
+| `POST`                        | `/api/v1/auth/change-password` | viewer       |
+| `GET`                         | `/api/v1/admin/dashboard`      | editor       |
+| `GET` `POST` `PATCH` `DELETE` | `/api/v1/users[/{id}]`         | superadmin   |
 
 Roles are hierarchical: `superadmin` > `editor` > `viewer`.
 

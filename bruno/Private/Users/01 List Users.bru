@@ -26,10 +26,40 @@ headers {
 docs {
   # GET /api/v1/users
 
-  Superadmin only.
+  Superadmin staff list.
 
-  **Expected:** `200` `{ items, total, page, page_size }`
+  ## Query
+
+  `page=1` and `page_size=20`.
+
+  No request body.
+
+  ## Response `200`
+
+  ```json
+  {
+    "items": [
+      {
+        "email": "admin@implesia.com",
+        "full_name": "Implesia Mart Admin",
+        "role": "superadmin",
+        "is_active": true,
+        "id": "09d0379f-b3d6-459c-a86e-05ef573b8704",
+        "last_login_at": "2026-09-28T07:20:02.968481Z",
+        "created_at": "2026-09-28T07:07:07.896517Z"
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "page_size": 20
+  }
+  ```
+
+  ## Errors
+
+  `401` not signed in. `403` the account is not a superadmin.
 }
+
 
 tests {
   test("lists staff", function () {
@@ -46,6 +76,57 @@ tests {
 
 assert {
   res.status: eq 200
+}
+
+example {
+  name: 200 OK
+  description: Lists staff
+
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/users
+    method: GET
+    params:query: {
+      page: 1
+      page_size: 20
+    }
+    headers: {
+      Accept: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "items": [
+            {
+              "email": "admin@implesia.com",
+              "full_name": "Implesia Mart Admin",
+              "role": "superadmin",
+              "is_active": true,
+              "id": "09d0379f-b3d6-459c-a86e-05ef573b8704",
+              "last_login_at": "2026-09-28T07:20:02.968481Z",
+              "created_at": "2026-09-28T07:07:07.896517Z"
+            }
+          ],
+          "total": 1,
+          "page": 1,
+          "page_size": 20
+        }
+      '''
+    }
+  }
 }
 
 settings {

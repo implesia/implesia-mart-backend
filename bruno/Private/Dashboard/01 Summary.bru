@@ -21,10 +21,23 @@ headers {
 docs {
   # GET /api/v1/admin/dashboard
 
-  Editor or superadmin. Viewer is `403`.
+  Admin home counts. Editor or superadmin. Viewer is `403`.
 
-  **Expected:** `200` `{ "users_total", "users_active" }`
+  No request body.
+
+  ## Response `200`
+
+  ```json
+  { "users_total": 1, "users_active": 1 }
+  ```
+
+  Order counts are added with the order module.
+
+  ## Errors
+
+  `401` — not signed in. `403` `forbidden` — role is below editor.
 }
+
 
 tests {
   test("returns staff counts", function () {
@@ -39,6 +52,38 @@ tests {
 
 assert {
   res.status: eq 200
+}
+
+example {
+  name: 200 OK
+  description: Staff counts
+
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/admin/dashboard
+    method: GET
+    headers: {
+      Accept: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        { "users_total": 1, "users_active": 1 }
+      '''
+    }
+  }
 }
 
 settings {
