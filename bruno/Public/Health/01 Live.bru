@@ -1,0 +1,39 @@
+meta {
+  name: Live
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{BASE_URL}}/health/live
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /health/live
+
+  Liveness probe. Does not touch the database.
+
+  **Expected:** `200` `{ "status": "ok" }`
+}
+
+tests {
+  test("process is alive", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("ok");
+  });
+}
+
+assert {
+  res.status: eq 200
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}

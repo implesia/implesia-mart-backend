@@ -1,0 +1,43 @@
+meta {
+  name: Delete User
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{PRIVATE_BASE_URL}}/api/v1/users/{{USER_ID}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # DELETE /api/v1/users/{id}
+
+  Deletes `USER_ID` from Create User only. Do not paste the admin id here.
+  The last active superadmin cannot be deleted (`403`).
+
+  **Expected:** `204` empty body.
+}
+
+tests {
+  test("deletes the demo user", function () {
+    expect(res.getStatus()).to.equal(204);
+  });
+}
+
+assert {
+  res.status: eq 204
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}

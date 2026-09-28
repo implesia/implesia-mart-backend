@@ -1,0 +1,55 @@
+meta {
+  name: Update User
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/users/{{USER_ID}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "full_name": "Bruno Editor (updated)",
+    "role": "viewer",
+    "is_active": true
+  }
+}
+
+docs {
+  # PATCH /api/v1/users/{id}
+
+  Updates the demo user from Create User. Does not touch the admin account.
+
+  **Expected:** `200` with the new name and `viewer` role.
+}
+
+tests {
+  test("updates the demo user", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.full_name).to.equal("Bruno Editor (updated)");
+    expect(body.role).to.equal("viewer");
+    expect(body.is_active).to.equal(true);
+  });
+}
+
+assert {
+  res.status: eq 200
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}

@@ -1,0 +1,54 @@
+meta {
+  name: List Users
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/users
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+params:query {
+  page: 1
+  page_size: 20
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/users
+
+  Superadmin only.
+
+  **Expected:** `200` `{ items, total, page, page_size }`
+}
+
+tests {
+  test("lists staff", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.items).to.be.an("array");
+    expect(body.total).to.be.a("number");
+    expect(body.page).to.equal(1);
+    expect(body.page_size).to.equal(20);
+    expect(body.items[0].email).to.be.a("string");
+    expect(body.items[0].password_hash).to.equal(undefined);
+  });
+}
+
+assert {
+  res.status: eq 200
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}

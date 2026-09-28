@@ -38,6 +38,8 @@ uvicorn app.main:app --reload --port 8001
 
 The API is then on <http://localhost:8001> with interactive docs at `/docs`.
 
+To exercise every endpoint from a desktop client, open the Bruno collection in [`bruno/`](bruno/README.md).
+
 To run everything in containers instead, use `docker compose up --build`. The API container is published on host port **8001**.
 
 ## Commands

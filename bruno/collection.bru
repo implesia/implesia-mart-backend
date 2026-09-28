@@ -1,0 +1,30 @@
+meta {
+  name: Implesia Mart Backend
+  type: http
+}
+
+script:pre-request {
+  // Auth for private routes:
+  //   1. Public health / login / refresh — no header
+  //   2. Private: Authorization Bearer ACCESS_TOKEN (from Public/Auth/Login)
+  let url = '';
+  try { url = req.getUrl() || ''; } catch (e) { url = ''; }
+
+  const needsAuth =
+    url.indexOf('/api/v1/admin/') !== -1 ||
+    url.indexOf('/api/v1/users') !== -1 ||
+    url.indexOf('/api/v1/auth/me') !== -1 ||
+    url.indexOf('/api/v1/auth/change-password') !== -1;
+
+  if (!needsAuth) return;
+
+  let token = (bru.getEnvVar('ACCESS_TOKEN') || '').trim();
+  if (!token) {
+    try { token = (bru.getVar('ACCESS_TOKEN') || '').trim(); } catch (e) { /* older Bruno */ }
+  }
+  if (token) {
+    req.setHeader('Authorization', 'Bearer ' + token);
+  } else {
+    console.warn('Private route: run Public / Auth / Login first so ACCESS_TOKEN is set');
+  }
+}

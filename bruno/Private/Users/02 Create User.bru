@@ -1,0 +1,71 @@
+meta {
+  name: Create User
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/users
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "{{EDITOR_EMAIL}}",
+    "full_name": "Bruno Editor",
+    "password": "EditorPass#2026!",
+    "role": "editor",
+    "is_active": true
+  }
+}
+
+docs {
+  # POST /api/v1/users
+
+  Superadmin only. Each run uses a new email and writes `USER_ID`.
+  Get, Update, and Delete use that id. Do not point Delete at the admin.
+
+  **Expected:** `201` user. Duplicate email is `409`.
+}
+
+script:pre-request {
+  bru.setEnvVar("EDITOR_EMAIL", "editor." + Date.now() + "@implesia.com");
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body.id) {
+    bru.setEnvVar("USER_ID", body.id);
+  }
+}
+
+tests {
+  test("creates an editor", function () {
+    expect(res.getStatus()).to.equal(201);
+    const body = res.getBody();
+    expect(body.id).to.be.a("string");
+    expect(body.full_name).to.equal("Bruno Editor");
+    expect(body.role).to.equal("editor");
+    expect(body.is_active).to.equal(true);
+    expect(body.password_hash).to.equal(undefined);
+  });
+}
+
+assert {
+  res.status: eq 201
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}

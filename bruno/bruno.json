@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "Implesia Mart Backend",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

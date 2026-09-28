@@ -1,0 +1,39 @@
+meta {
+  name: Root
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{BASE_URL}}/
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /
+
+  **Expected:** `200` `{ "name", "version", "docs" }`
+}
+
+tests {
+  test("names the API", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().name).to.equal("Implesia Mart Backend");
+    expect(res.getBody().version).to.be.a("string");
+    expect(res.getBody().docs).to.equal("/docs");
+  });
+}
+
+assert {
+  res.status: eq 200
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}

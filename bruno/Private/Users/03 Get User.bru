@@ -1,0 +1,46 @@
+meta {
+  name: Get User
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/users/{{USER_ID}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/users/{id}
+
+  Run **Create User** first so `USER_ID` is set.
+
+  **Expected:** `200` that editor. Unknown id is `404`.
+}
+
+tests {
+  test("reads the created editor", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.id).to.be.a("string");
+    expect(body.full_name).to.equal("Bruno Editor");
+    expect(body.role).to.equal("editor");
+  });
+}
+
+assert {
+  res.status: eq 200
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}

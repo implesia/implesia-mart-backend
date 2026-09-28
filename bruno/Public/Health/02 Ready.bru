@@ -1,0 +1,40 @@
+meta {
+  name: Ready
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{BASE_URL}}/health/ready
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /health/ready
+
+  Readiness probe. Runs `SELECT 1` against Postgres.
+
+  **Expected:** `200` `{ "status": "ok", "database": "ok" }`
+}
+
+tests {
+  test("database is reachable", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("ok");
+    expect(res.getBody().database).to.equal("ok");
+  });
+}
+
+assert {
+  res.status: eq 200
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}

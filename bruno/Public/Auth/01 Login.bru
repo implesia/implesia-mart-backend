@@ -1,0 +1,60 @@
+meta {
+  name: Login
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{BASE_URL}}/api/v1/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "{{ADMIN_EMAIL}}",
+    "password": "{{ADMIN_PASSWORD}}"
+  }
+}
+
+docs {
+  # POST /api/v1/auth/login
+
+  Writes `ACCESS_TOKEN` and `REFRESH_TOKEN` into the active environment.
+  Private requests read `ACCESS_TOKEN`. Access tokens last 30 minutes.
+
+  **Expected:** `200` token pair.
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && body.access_token) {
+    bru.setEnvVar("ACCESS_TOKEN", body.access_token);
+    bru.setEnvVar("REFRESH_TOKEN", body.refresh_token);
+  }
+}
+
+tests {
+  test("returns a token pair", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.access_token).to.be.a("string");
+    expect(body.refresh_token).to.be.a("string");
+    expect(body.token_type).to.equal("bearer");
+    expect(body.expires_in).to.be.a("number");
+  });
+}
+
+assert {
+  res.status: eq 200
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}

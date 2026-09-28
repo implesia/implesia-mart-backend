@@ -1,0 +1,47 @@
+meta {
+  name: Summary
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/dashboard
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/admin/dashboard
+
+  Editor or superadmin. Viewer is `403`.
+
+  **Expected:** `200` `{ "users_total", "users_active" }`
+}
+
+tests {
+  test("returns staff counts", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.users_total).to.be.a("number");
+    expect(body.users_active).to.be.a("number");
+    expect(body.users_total).to.be.at.least(1);
+    expect(body.users_active).to.be.at.least(1);
+  });
+}
+
+assert {
+  res.status: eq 200
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}

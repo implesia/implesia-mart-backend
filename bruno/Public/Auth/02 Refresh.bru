@@ -1,0 +1,57 @@
+meta {
+  name: Refresh
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{BASE_URL}}/api/v1/auth/refresh
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "refresh_token": "{{REFRESH_TOKEN}}"
+  }
+}
+
+docs {
+  # POST /api/v1/auth/refresh
+
+  Run **Public / Auth / Login** first. Replaces both tokens in the environment.
+
+  **Expected:** `200` token pair. An access token sent here is `401`.
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && body.access_token) {
+    bru.setEnvVar("ACCESS_TOKEN", body.access_token);
+    bru.setEnvVar("REFRESH_TOKEN", body.refresh_token);
+  }
+}
+
+tests {
+  test("rotates the token pair", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.access_token).to.be.a("string");
+    expect(body.refresh_token).to.be.a("string");
+    expect(body.token_type).to.equal("bearer");
+  });
+}
+
+assert {
+  res.status: eq 200
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
