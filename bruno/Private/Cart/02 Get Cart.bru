@@ -1,0 +1,25 @@
+meta {
+  name: Get Cart
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/carts/{{CART_ID}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/admin/carts/{cart_id}
+
+  One cart in full. Copy `id` from List Carts into `CART_ID`. A missing cart is `404`.
+}

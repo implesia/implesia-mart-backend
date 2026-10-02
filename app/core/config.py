@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     rate_limit_default: str = "200/minute"
     rate_limit_orders: str = "5/hour"
     rate_limit_product_writes: str = "30/minute"
+    rate_limit_cart_writes: str = "60/minute"
     max_image_bytes: int = 5 * 1024 * 1024
 
     # Bootstrap superuser

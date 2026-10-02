@@ -1,0 +1,28 @@
+meta {
+  name: Get Cart
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/cart
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  X-Cart-Token: {{CART_TOKEN}}
+}
+
+docs {
+  # GET /api/v1/cart
+
+  The shopper's open cart.
+
+  - No `Authorization` header: anonymous cart. Send `X-Cart-Token` from a previous add. Without a token this returns an empty cart and does not create one.
+  - `Authorization: Bearer`: the logged-in account's cart. If `X-Cart-Token` is also sent, that anonymous cart is merged into the account and the token stops working.
+  - A bad bearer token is rejected. It is not treated as a guest.
+
+  Price, delivery (৳70), and total are computed on the server. The anonymous secret is returned only as `cart_token` to the shopper who holds it.
+}

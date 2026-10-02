@@ -1,0 +1,49 @@
+meta {
+  name: List Carts
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/carts
+  body: none
+  auth: bearer
+}
+
+params:query {
+  q: 
+  owner: all
+  page: 1
+  page_size: 8
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/admin/carts
+
+  Editor or superadmin. Every cart that has at least one product.
+
+  `owner` is `all`, `user` (logged-in account), or `guest` (anonymous). `q` matches the account name, email, or product title. `%` is not a wildcard.
+
+  Each cart includes the shopper and every line: product, quantity, server price, and when it was added. The anonymous token is not included.
+
+  ## Response `200`
+
+  ```json
+  {
+    "items": [],
+    "total": 0,
+    "page": 1,
+    "page_size": 8,
+    "pages": 0,
+    "metrics": { "carts": 0, "user_carts": 0, "guest_carts": 0, "units": 0 }
+  }
+  ```
+}

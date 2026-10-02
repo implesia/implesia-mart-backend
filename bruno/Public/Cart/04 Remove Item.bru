@@ -1,0 +1,21 @@
+meta {
+  name: Remove Item
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{BASE_URL}}/api/v1/cart/items/{{CART_ITEM_ID}}
+  body: none
+  auth: none
+}
+
+headers {
+  X-Cart-Token: {{CART_TOKEN}}
+}
+
+docs {
+  # DELETE /api/v1/cart/items/{item_id}
+
+  Removes one line from the anonymous cart identified by `X-Cart-Token`, or from the logged-in cart when a bearer token is set.
+}

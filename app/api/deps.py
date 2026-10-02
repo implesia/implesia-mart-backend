@@ -13,6 +13,10 @@ from app.db.session import get_db
 from app.models.user import User, UserRole
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.api_v1_prefix}/auth/login")
+oauth2_scheme_optional = OAuth2PasswordBearer(
+    tokenUrl=f"{settings.api_v1_prefix}/auth/login",
+    auto_error=False,
+)
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
@@ -34,6 +38,19 @@ async def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+async def get_optional_user(
+    db: DbSession,
+    token: Annotated[str | None, Depends(oauth2_scheme_optional)],
+) -> User | None:
+    """A missing token is a guest. A present but invalid token is still rejected."""
+    if not token:
+        return None
+    return await get_current_user(db, token)
+
+
+OptionalUser = Annotated[User | None, Depends(get_optional_user)]
 
 # Higher roles inherit everything the roles below them can do.
 ROLE_RANK = {UserRole.VIEWER: 0, UserRole.EDITOR: 1, UserRole.SUPERADMIN: 2}

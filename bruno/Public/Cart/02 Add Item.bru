@@ -1,0 +1,35 @@
+meta {
+  name: Add Item
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{BASE_URL}}/api/v1/cart/items
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "product_id": "{{PRODUCT_ID}}",
+    "quantity": 1
+  }
+}
+
+docs {
+  # POST /api/v1/cart/items
+
+  Add a published, in-stock product. No login required.
+
+  The first anonymous add returns `cart_token`. Copy it into the `CART_TOKEN` environment variable and send it as `X-Cart-Token` on later requests. Do not send a price.
+
+  To add as a logged-in shopper, set auth to Bearer `{{ACCESS_TOKEN}}`.
+
+  `quantity` is 1 to 5. Adding the same product again increases the line, up to 5 and up to the product's stock. Stock is not reduced until an order exists.
+}

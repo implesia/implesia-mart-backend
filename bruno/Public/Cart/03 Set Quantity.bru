@@ -1,0 +1,29 @@
+meta {
+  name: Set Quantity
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{BASE_URL}}/api/v1/cart/items/{{CART_ITEM_ID}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  X-Cart-Token: {{CART_TOKEN}}
+}
+
+body:json {
+  {
+    "quantity": 2
+  }
+}
+
+docs {
+  # PATCH /api/v1/cart/items/{item_id}
+
+  Copy `items[0].id` into `CART_TOKEN`'s sibling `CART_ITEM_ID`. Another shopper's item returns `404`.
+}
