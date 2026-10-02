@@ -1,0 +1,34 @@
+meta {
+  name: Update Order
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/orders/{{ORDER_ID}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "status": "cancelled",
+    "courier_name": "",
+    "tracking_number": ""
+  }
+}
+
+docs {
+  # PATCH /api/v1/admin/orders/{id}
+
+  Moving an order to `cancelled` or `returned` puts the stock back once. A second cancel does not add stock again.
+}

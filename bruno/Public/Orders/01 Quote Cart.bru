@@ -1,0 +1,34 @@
+meta {
+  name: Quote Cart
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{BASE_URL}}/api/v1/orders/quote
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  X-Cart-Token: {{CART_TOKEN}}
+}
+
+body:json {
+  {
+    "source": "cart",
+    "district": "ঢাকা"
+  }
+}
+
+docs {
+  # POST /api/v1/orders/quote
+
+  Prices the open cart. No login required. Send `X-Cart-Token` for an anonymous cart, or Bearer auth for an account.
+
+  The response `unit_price`, `line_total`, `subtotal`, `shipping`, and `total` are the only numbers to show. Do not multiply on the client. `max_quantity` is the cap for the + button.
+
+  A quote does not take stock and does not create an order. District `ঢাকা` or `dhaka` is inside Dhaka. Any other district is outside. The server chooses the fee.
+}

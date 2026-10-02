@@ -1,0 +1,42 @@
+meta {
+  name: Place Direct Order
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{BASE_URL}}/api/v1/orders
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Idempotency-Key: {{IDEMPOTENCY_KEY}}
+}
+
+body:json {
+  {
+    "source": "direct",
+    "items": [
+      {
+        "product_id": "{{PRODUCT_ID}}",
+        "quantity": 1
+      }
+    ],
+    "customer_name": "Rina Akter",
+    "phone": "01700000000",
+    "email": "",
+    "district": "চট্টগ্রাম",
+    "area": "আগ্রাবাদ",
+    "address": "House 12, Road 4, Agrabad",
+    "notes": ""
+  }
+}
+
+docs {
+  # POST /api/v1/orders
+
+  Buy now. Logged-in or anonymous. The cart is left untouched. The charged price is the product's current server price, snapshotted onto the order line.
+}

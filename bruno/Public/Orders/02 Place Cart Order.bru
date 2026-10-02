@@ -1,0 +1,41 @@
+meta {
+  name: Place Cart Order
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{BASE_URL}}/api/v1/orders
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Idempotency-Key: {{IDEMPOTENCY_KEY}}
+  X-Cart-Token: {{CART_TOKEN}}
+}
+
+body:json {
+  {
+    "source": "cart",
+    "customer_name": "Rina Akter",
+    "phone": "01700000000",
+    "email": "",
+    "district": "ঢাকা",
+    "area": "মিরপুর",
+    "address": "House 12, Road 4, Mirpur",
+    "notes": ""
+  }
+}
+
+docs {
+  # POST /api/v1/orders
+
+  Places the open cart and clears it. Cash on delivery only.
+
+  `Idempotency-Key` is required. Send the same key again to get the original order back. Stock is taken once. A price, discount, or delivery fee in the body is rejected.
+
+  Phone is `01` plus 9 digits. Address is at least 8 characters.
+}

@@ -65,6 +65,21 @@ def _hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def shopper_actor(shopper: Shopper) -> str:
+    """Stable identity for an order idempotency key. Never the raw guest token."""
+    if shopper.user is not None:
+        return f"user:{shopper.user.id}"
+    token = _token(shopper.guest_token)
+    if token:
+        return f"guest:{_hash(token)}"
+    return "anonymous"
+
+
+async def open_cart(db: AsyncSession, shopper: Shopper) -> Cart | None:
+    cart, _token = await _open(db, shopper, create=False)
+    return cart
+
+
 def _empty(anonymous: bool) -> CartRead:
     return CartRead(
         id=None,

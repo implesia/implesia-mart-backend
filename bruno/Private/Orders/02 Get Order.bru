@@ -1,0 +1,25 @@
+meta {
+  name: Get Order
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/orders/{{ORDER_ID}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/admin/orders/{id}
+
+  Fetch one order by its id, not by the customer-facing number.
+}

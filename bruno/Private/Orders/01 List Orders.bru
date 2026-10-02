@@ -1,0 +1,36 @@
+meta {
+  name: List Orders
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/orders
+  body: none
+  auth: bearer
+}
+
+params:query {
+  q: 
+  status: 
+  scope: all
+  sort: newest
+  page: 1
+  page_size: 10
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/admin/orders
+
+  Editor or superadmin. `status` is `new`, `confirmed`, `shipped`, `delivered`, `cancelled`, or `returned`. `scope=transit` is confirmed plus shipped. `sort` is `newest`, `oldest`, `high`, or `low`.
+
+  Money on each order is the snapshot from checkout. `%` is not a wildcard.
+}
