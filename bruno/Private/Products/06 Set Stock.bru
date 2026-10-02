@@ -1,0 +1,114 @@
+meta {
+  name: Set Stock
+  type: http
+  seq: 6
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/products/{{PRODUCT_ID}}
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+}
+
+body:multipart-form {
+  payload: {"status":"sold-out"}
+}
+
+docs {
+  # PATCH /api/v1/admin/products/{id}
+
+  The stock dropdown on `/admin/products`. `status` is `available`, `sold-out`, or `coming-soon`.
+
+  Publish toggle is the same route with `{ "published": false }`. This request leaves the product published so the public detail call can still read it.
+
+  ## Request body
+
+  ```json
+  { "status": "sold-out" }
+  ```
+
+  ## Response `200`
+
+  ```json
+  {
+    "id": "8f1c2a10-6b4e-4d2a-9c31-0a7b6e5d4c3b",
+    "slug": "bruno-gown-1791000000000",
+    "status": "sold-out",
+    "published": true,
+    "price": 14000,
+    "subtitle": "Updated in Bruno"
+  }
+  ```
+}
+
+tests {
+  test("marks the product sold out", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.status).to.equal("sold-out");
+    expect(body.published).to.equal(true);
+    expect(body.price).to.equal(14000);
+  });
+}
+
+assert {
+  res.status: eq 200
+}
+
+example {
+  name: 200 OK
+  description: Marks the product sold out
+
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/admin/products/{{PRODUCT_ID}}
+    method: PATCH
+    mode: json
+    headers: {
+      Accept: application/json
+      Content-Type: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+    body:json: {
+      {
+        "status": "sold-out"
+      }
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "id": "8f1c2a10-6b4e-4d2a-9c31-0a7b6e5d4c3b",
+          "status": "sold-out",
+          "published": true,
+          "price": 14000,
+          "subtitle": "Updated in Bruno"
+        }
+      '''
+    }
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}

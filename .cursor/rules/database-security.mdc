@@ -1,0 +1,15 @@
+---
+description: Query safety, least-privilege database access, and transactions
+alwaysApply: true
+---
+
+# Database
+
+Scope: `implesia-mart-backend` only.
+
+- Queries go through SQLAlchemy. Do not build SQL by concatenating request input.
+- Production uses a database role that can change application data and cannot create roles or read other databases.
+- Pool size stays bounded. Do not open a new connection per row.
+- Columns used in filters and sorts keep an index. Foreign keys are real constraints, not comments.
+- A write that updates more than one row, including stock plus an order line, runs in one transaction.
+- Money and stock checks happen inside that transaction with a row lock or an atomic update, so two checkouts cannot both take the last unit. See `commerce-security.mdc`.

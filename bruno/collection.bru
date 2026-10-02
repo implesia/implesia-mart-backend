@@ -5,8 +5,9 @@ meta {
 
 script:pre-request {
   // Auth for private routes:
-  //   1. Public health / login / refresh — no header
+  //   1. Public health / login / refresh / products — no header
   //   2. Private: Authorization Bearer ACCESS_TOKEN (from Public/Auth/Login)
+  // Admin products live under /api/v1/admin/products and are covered below.
   let url = '';
   try { url = req.getUrl() || ''; } catch (e) { url = ''; }
 

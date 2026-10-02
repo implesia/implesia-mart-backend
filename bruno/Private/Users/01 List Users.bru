@@ -51,7 +51,8 @@ docs {
     ],
     "total": 1,
     "page": 1,
-    "page_size": 20
+    "page_size": 20,
+    "pages": 1
   }
   ```
 
@@ -69,6 +70,7 @@ tests {
     expect(body.total).to.be.a("number");
     expect(body.page).to.equal(1);
     expect(body.page_size).to.equal(20);
+    expect(body.pages).to.be.a("number");
     expect(body.items[0].email).to.be.a("string");
     expect(body.items[0].password_hash).to.equal(undefined);
   });
@@ -122,7 +124,8 @@ example {
           ],
           "total": 1,
           "page": 1,
-          "page_size": 20
+          "page_size": 20,
+          "pages": 1
         }
       '''
     }

@@ -1,0 +1,206 @@
+meta {
+  name: Create Product
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/products
+  body: multipartForm
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:multipart-form {
+  payload: {"title":"{{PRODUCT_TITLE}}","subtitle":"Hand embroidered custom gown","category":"fashion","price":15000,"compare_at_price":null,"quantity":null,"status":"available","badge":"New","featured":true,"published":true,"content":{"tagline":"হাতে তৈরি কাস্টম কালেকশন","description":"বিয়ে, এনগেজমেন্ট বা বিশেষ অনুষ্ঠানের জন্য হাতে তৈরি এমব্রয়ডারি গাউন।","stock_label":"কাস্টম অর্ডারে তৈরি","unit_label":"শুরু","image_alt":"গর্জিয়াস উইমেন্স গাউন","highlights":["১০০% হাতে তৈরি — কাস্টম মাপ ও ডিজাইনে","প্রিমিয়াম নেট/জর্জেট ফেব্রিকে ভারী এমব্রয়ডারি"],"suitable_for":["বিয়ে ও এনগেজমেন্ট"],"package_items":["কাস্টম মেড গাউন ১টি"],"how_to_use":["ড্রাই ক্লিন করা সবচেয়ে নিরাপদ।"],"story_heading":"আপনার বিশেষ দিনের জন্য, আপনার মাপেই তৈরি","story_body":"কাস্টম গাউনে প্রতিটি স্টিচ আপনার মাপ অনুযায়ী ফেলা হয়।","story_bullets":["কাস্টম মেজারমেন্ট অনুযায়ী পারফেক্ট ফিটিং"],"quality_title":"কারিগরদের নিপুণ হাতের কাজ","quality_body":"প্রতিটি গাউনের এমব্রয়ডারি ডেলিভারির আগে যাচাই করা হয়।","specs":[{"label":"ফেব্রিক","value":"প্রিমিয়াম নেট / জর্জেট","group":"fabric"}],"faqs":[{"question":"ডেলিভারি পেতে কতদিন লাগবে?","answer":"সাধারণত ৫-৭ কর্মদিবস।"}]}}
+  image_alts: ["সামনের দিক"]
+  quality_image_alt: নিজ হাতে তৈরি ও কোয়ালিটি চেক করা গাউন
+  images: @file(fixtures/gown.jpg)
+  quality_image: @file(fixtures/gown.jpg)
+}
+
+assert {
+  res.status: eq 201
+}
+
+script:pre-request {
+  bru.setEnvVar("PRODUCT_TITLE", "Bruno Gown " + Date.now());
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body.id) {
+    bru.setEnvVar("PRODUCT_ID", body.id);
+    bru.setEnvVar("PRODUCT_SLUG", body.slug);
+  }
+}
+
+tests {
+  test("creates a published gown", function () {
+    expect(res.getStatus()).to.equal(201);
+    const body = res.getBody();
+    expect(body.id).to.be.a("string");
+    expect(body.slug).to.match(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+    expect(body.category).to.equal("fashion");
+    expect(body.price).to.equal(15000);
+    expect(body.quantity).to.equal(null);
+    expect(body.published).to.equal(true);
+    expect(body.content.unit_label).to.equal("শুরু");
+    expect(body.content.highlights[0]).to.equal("১০০% হাতে তৈরি — কাস্টম মাপ ও ডিজাইনে");
+    expect(body.content.gallery).to.be.an("array");
+    expect(body.image_src).to.be.a("string");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # POST /api/v1/admin/products
+  
+  Creates the product behind `/admin/products/new` as `multipart/form-data`. Editor or superadmin. One request carries the page copy and the images.
+  
+  `payload` is the product JSON. `images` can be repeated for the gallery. The first image becomes the card image when `image_src` is omitted. `image_alts` is a JSON list in the same order. `quality_image` is the photo on the quality panel.
+  
+  The payload covers the product page: tagline, description, price, stock label, highlights, suitable-for, package, how-to-use, story, specs, faqs, and quality copy. Reviews, delivery notes, breadcrumbs, and the discount percent are not fields: reviews belong to customers, and the others are derived.
+  
+  `slug` is optional. A Bengali title falls back to `product`. Each run sets a new `PRODUCT_TITLE`. `quantity` null means made to order. Images must be JPEG, PNG, WEBP, or GIF, at most 5 MB, and at most 12.
+  
+  ## Request body
+  
+  ```json
+  {
+    "title": "Bruno Gown 1791000000000",
+    "subtitle": "Hand embroidered custom gown",
+    "category": "fashion",
+    "price": 15000,
+    "compare_at_price": null,
+    "quantity": null,
+    "status": "available",
+    "badge": "New",
+    "image_src": "/images/products/gown.jpg",
+    "featured": true,
+    "published": true,
+    "content": {
+      "tagline": "হাতে তৈরি",
+      "description": "কাস্টম এমব্রয়ডারি গাউন।",
+      "unit_label": "শুরু",
+      "image_alt": "গর্জিয়াস গাউন",
+      "highlights": ["হাতে তৈরি", "কাস্টম মাপ"],
+      "specs": [{ "label": "কাপড়", "value": "কটন", "group": "fabric" }],
+      "faqs": [{ "question": "ডেলিভারি কত দিন?", "answer": "৩-৭ কর্মদিবস।" }]
+    }
+  }
+  ```
+  
+  ## Response `201`
+  
+  The saved product, including `content`. `id` and `slug` are stored in `PRODUCT_ID` and `PRODUCT_SLUG`.
+  
+  ## Errors
+  
+  `409` `conflict` — slug already exists. `422` `validation_error` — price, image address, or copy is invalid. `403` — role is below editor.
+}
+
+example {
+  name: 201 Created
+  description: Creates a gown
+  
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/admin/products
+    method: POST
+    mode: json
+    headers: {
+      Accept: application/json
+      Content-Type: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+  
+    body:json: {
+      {
+        "title": "{{PRODUCT_TITLE}}",
+        "subtitle": "Hand embroidered custom gown",
+        "category": "fashion",
+        "price": 15000,
+        "compare_at_price": null,
+        "quantity": null,
+        "status": "available",
+        "badge": "New",
+        "image_src": "/images/products/gown.jpg",
+        "featured": true,
+        "published": true,
+        "content": {
+          "tagline": "হাতে তৈরি",
+          "description": "কাস্টম এমব্রয়ডারি গাউন।",
+          "unit_label": "শুরু",
+          "image_alt": "গর্জিয়াস গাউন",
+          "highlights": ["হাতে তৈরি", "কাস্টম মাপ"],
+          "specs": [{ "label": "কাপড়", "value": "কটন", "group": "fabric" }],
+          "faqs": [{ "question": "ডেলিভারি কত দিন?", "answer": "৩-৭ কর্মদিবস।" }]
+        }
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      content-type: application/json
+    }
+  
+    status: {
+      code: 201
+      text: Created
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "id": "8f1c2a10-6b4e-4d2a-9c31-0a7b6e5d4c3b",
+          "slug": "bruno-gown-1791000000000",
+          "title": "Bruno Gown 1791000000000",
+          "subtitle": "Hand embroidered custom gown",
+          "category": "fashion",
+          "price": 15000,
+          "compare_at_price": null,
+          "quantity": null,
+          "status": "available",
+          "badge": "New",
+          "image_src": "/images/products/gown.jpg",
+          "featured": true,
+          "published": true,
+          "created_at": "2026-10-02T10:00:00.000000Z",
+          "updated_at": "2026-10-02T10:00:00.000000Z",
+          "content": {
+            "tagline": "হাতে তৈরি",
+            "description": "কাস্টম এমব্রয়ডারি গাউন।",
+            "stock_label": "স্টকে আছে",
+            "unit_label": "শুরু",
+            "image_alt": "গর্জিয়াস গাউন",
+            "gallery": [],
+            "highlights": ["হাতে তৈরি", "কাস্টম মাপ"],
+            "suitable_for": [],
+            "package_items": [],
+            "how_to_use": [],
+            "story_heading": "",
+            "story_body": "",
+            "story_bullets": [],
+            "quality_title": "কোয়ালিটি চেকড প্রোডাক্ট",
+            "quality_body": "প্রতিটি প্রোডাক্ট ডেলিভারির আগে পরীক্ষা করা হয়।",
+            "specs": [{ "id": "spec-a1b2c3d4", "label": "কাপড়", "value": "কটন", "group": "fabric" }],
+            "faqs": [{ "id": "faq-a1b2c3d4", "question": "ডেলিভারি কত দিন?", "answer": "৩-৭ কর্মদিবস।" }]
+          }
+        }
+      '''
+    }
+  }
+}

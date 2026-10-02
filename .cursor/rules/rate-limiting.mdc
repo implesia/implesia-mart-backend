@@ -1,0 +1,23 @@
+---
+description: Separate rate limits for auth, catalog, writes, and checkout
+alwaysApply: true
+---
+
+# Rate limiting
+
+Scope: `implesia-mart-backend` only.
+
+Keep the global default. Add a stricter limit on the route, not a higher one. Return `429` with code `rate_limited`.
+
+Use separate limits for:
+
+- Login and refresh
+- Registration, when that route exists
+- Password reset, OTP, and email verification, when those routes exist
+- Public product search and catalog list
+- Product create and update
+- Checkout and order create
+
+The checkout limit stays at least as strict as `RATE_LIMIT_ORDERS`. Do not share one bucket across login and catalog search.
+
+Count by client address plus the account id when the caller is authenticated, so one account cannot rotate addresses to skip the limit.

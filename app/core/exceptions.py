@@ -42,6 +42,11 @@ class PermissionDeniedError(AppError):
     code = "forbidden"
 
 
+class UnprocessableError(AppError):
+    status_code = 422
+    code = "validation_error"
+
+
 def _envelope(code: str, message: str, details: Any = None) -> dict[str, Any]:
     return {"error": {"code": code, "message": message, "details": details}}
 

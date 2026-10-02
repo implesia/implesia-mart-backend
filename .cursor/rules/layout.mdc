@@ -1,0 +1,19 @@
+---
+description: Backend layout for new Implesia Mart resources
+alwaysApply: true
+---
+
+# Layout
+
+Scope: `implesia-mart-backend` only.
+
+A new resource is four layers, in this order:
+
+1. `app/models/` — SQLAlchemy model, checks, and indexes
+2. `app/schemas/` — Pydantic request and response models
+3. `app/services/` — queries and rules
+4. `app/api/v1/endpoints/` — a public router and an `/admin` router
+
+Route handlers stay thin. Business rules live in the service. Schema changes get an Alembic revision. Behavior gets a test in `tests/` and a Bruno request with a body, docs, and an example response.
+
+Do not put a new resource in a single file, and do not call the database from a route.

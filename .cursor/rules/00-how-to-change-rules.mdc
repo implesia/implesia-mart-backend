@@ -1,0 +1,14 @@
+---
+description: How to change the Implesia Mart Backend standards
+alwaysApply: true
+---
+
+# How to change these rules
+
+Scope: `implesia-mart-backend` only. Do not apply these rules to `implesia-mart` or other repos.
+
+The standards for this backend are the `.mdc` files in `.cursor/rules/`. Follow them on every change. Do not invent a second standard in chat, comments, or a new doc.
+
+To change a standard, edit the matching file in `.cursor/rules/`. The next session follows the edited file. Keep one concern per file and keep each file short.
+
+If a request conflicts with a rule, follow the rule. Override it only when the user edits the rule or explicitly says to override it for that task.

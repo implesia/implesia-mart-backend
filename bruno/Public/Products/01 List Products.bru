@@ -1,0 +1,147 @@
+meta {
+  name: List Products
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/products
+  body: none
+  auth: none
+}
+
+params:query {
+  category: fashion
+  sort: popularity
+  page: 1
+  page_size: 8
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/products
+
+  Published catalog for `/products`. No token. Hidden products are omitted.
+
+  Filters match the storefront: `category` (`gadgets` or `fashion`), `status` (comma separated `available`, `sold-out`, `coming-soon`), `badge` (`New`, `Best Seller`, `Limited`), `view` (`featured`, `latest`, `new`), `min_price`, `max_price`, `sort` (`popularity`, `price-asc`, `price-desc`, `newest`).
+
+  `page` starts at 1 and cannot exceed 10000. `page_size` defaults to 8 and cannot exceed 48. The response includes `pages`, the number of pages for the current filters. Cards do not include `quantity` or the long product copy.
+
+  `category_counts` ignores the category filter. `availability_counts` ignores the status filter. Both still respect price, badge, and view.
+
+  ## Response `200`
+
+  ```json
+  {
+    "items": [
+      {
+        "id": "8f1c2a10-6b4e-4d2a-9c31-0a7b6e5d4c3b",
+        "slug": "custom-gorgeous-womens-gown",
+        "title": "Gorgeous Womens Gown",
+        "subtitle": "Hand embroidered custom gown",
+        "category": "fashion",
+        "price": 15000,
+        "compare_at_price": null,
+        "unit_label": "শুরু",
+        "image_src": "/images/products/gown.jpg",
+        "image_alt": "গর্জিয়াস গাউন",
+        "badge": "New",
+        "status": "available",
+        "featured": true
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "page_size": 8,
+    "pages": 1,
+    "category_counts": { "gadgets": 0, "fashion": 1 },
+    "availability_counts": { "available": 1, "sold_out": 0, "coming_soon": 0 }
+  }
+  ```
+
+  Cards do not include `quantity` or `content`.
+}
+
+tests {
+  test("returns a catalog page", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.items).to.be.an("array");
+    expect(body.page).to.equal(1);
+    expect(body.page_size).to.equal(8);
+    expect(body.pages).to.be.a("number");
+    expect(body.category_counts).to.have.property("fashion");
+    expect(body.availability_counts).to.have.property("available");
+    if (body.items.length) {
+      expect(body.items[0].quantity).to.equal(undefined);
+      expect(body.items[0].content).to.equal(undefined);
+    }
+  });
+}
+
+assert {
+  res.status: eq 200
+}
+
+example {
+  name: 200 OK
+  description: Published fashion catalog
+
+  request: {
+    url: {{BASE_URL}}/api/v1/products?category=fashion&sort=popularity&page=1&page_size=8
+    method: GET
+    headers: {
+      Accept: application/json
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "items": [
+            {
+              "id": "8f1c2a10-6b4e-4d2a-9c31-0a7b6e5d4c3b",
+              "slug": "custom-gorgeous-womens-gown",
+              "title": "Gorgeous Womens Gown",
+              "subtitle": "Hand embroidered custom gown",
+              "category": "fashion",
+              "price": 15000,
+              "compare_at_price": null,
+              "unit_label": "শুরু",
+              "image_src": "/images/products/gown.jpg",
+              "image_alt": "গর্জিয়াস গাউন",
+              "badge": "New",
+              "status": "available",
+              "featured": true
+            }
+          ],
+          "total": 1,
+          "page": 1,
+          "page_size": 8,
+          "pages": 1,
+          "category_counts": { "gadgets": 0, "fashion": 1 },
+          "availability_counts": { "available": 1, "sold_out": 0, "coming_soon": 0 }
+        }
+      '''
+    }
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}

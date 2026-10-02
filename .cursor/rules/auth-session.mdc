@@ -1,0 +1,17 @@
+---
+description: Access tokens, refresh rotation, logout, and login abuse limits
+alwaysApply: true
+---
+
+# Authentication
+
+Scope: `implesia-mart-backend` only.
+
+Auth stays Bearer JWT. Do not put the access token in a cookie. If a cookie session is ever added, CSRF protection is required on every cookie-authenticated unsafe method.
+
+- Access tokens stay short-lived (minutes, not days).
+- Refresh tokens rotate: accepting a refresh issues a new pair and invalidates the presented refresh token. Reuse of an old refresh token revokes that session.
+- Logout revokes the refresh token. A revoked token cannot mint a new access token.
+- Login, refresh, and logout are rate limited tighter than the default API limit. Repeated failures back off. See `rate-limiting.mdc`.
+- Password checks use the existing bcrypt path. Do not compare password hashes with `==`.
+- Responses and logs never include the password, the hash, or the raw token.

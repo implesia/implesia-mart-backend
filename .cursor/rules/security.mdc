@@ -1,0 +1,20 @@
+---
+description: Security bar for the Implesia Mart Backend API
+alwaysApply: true
+---
+
+# Security
+
+Scope: `implesia-mart-backend` only. The files next to this one are part of the same bar. Follow all of them.
+
+- Public routes do not accept a token and do not reveal whether a hidden record exists.
+- Admin routes keep the router role guard. Product writes stay editor or above. User writes stay superadmin. A route guard is not enough; also follow `authorization.mdc`.
+- Write models use `extra=forbid`. Do not accept unknown fields.
+- Media fields stay on the existing allowlist: one site path, or `https`. Reject `javascript`, `data`, `file`, credentials in the URL, and `..`. Uploaded bytes follow `file-upload.mdc`.
+- Escape `LIKE` wildcards. Cap `page` at `10000` and `page_size` at the resource max.
+- Public product responses omit `quantity` and `published`. Never return password hashes, tokens, or card data.
+- Errors use `{ "error": { "code", "message", "details" } }`. No stack traces.
+- Catalog and authenticated responses keep `Cache-Control: no-store`.
+- Do not log passwords, tokens, or card data. Do not commit `.env` or secrets.
+
+Also follow: `auth-session.mdc`, `authorization.mdc`, `rate-limiting.mdc`, `http-hardening.mdc`, `database-security.mdc`, `file-upload.mdc`, `commerce-security.mdc`, `audit-logging.mdc`, `secrets-and-dependencies.mdc`.

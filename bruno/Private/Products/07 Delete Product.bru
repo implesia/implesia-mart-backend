@@ -1,0 +1,74 @@
+meta {
+  name: Delete Product
+  type: http
+  seq: 7
+}
+
+delete {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/products/{{PRODUCT_ID}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # DELETE /api/v1/admin/products/{id}
+
+  Removes the product. Run this after Public / Products / Get Product in the collection run, because that request reads `PRODUCT_ID`.
+
+  ## Response `204`
+
+  Empty body. No JSON.
+}
+
+  ## Errors
+
+  `404` `not_found` — already deleted.
+}
+
+tests {
+  test("deletes the product", function () {
+    expect(res.getStatus()).to.equal(204);
+  });
+}
+
+assert {
+  res.status: eq 204
+}
+
+example {
+  name: 204 No Content
+  description: Deletes the created product
+
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/admin/products/{{PRODUCT_ID}}
+    method: DELETE
+    headers: {
+      Accept: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 204
+      text: No Content
+    }
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}

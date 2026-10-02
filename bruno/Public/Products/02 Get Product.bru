@@ -1,0 +1,154 @@
+meta {
+  name: Get Product
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/products/{{PRODUCT_ID}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/products/{id}
+
+  Storefront product page. The path is the product UUID from Create Product (`PRODUCT_ID`), not the slug. In the documented collection run, Set Stock has already marked this product `sold-out`.
+
+  An unpublished id and a missing id both return `404` `not_found` with the same body. The body has gallery, highlights, specs, faqs, and up to 8 related products in the same category. `quantity` is not included.
+
+  ## Errors
+
+  `404` `not_found` — id is missing or hidden. `422` `validation_error` — the path is not a UUID.
+
+  ## Response `200`
+
+  ```json
+  {
+    "id": "8f1c2a10-6b4e-4d2a-9c31-0a7b6e5d4c3b",
+    "slug": "bruno-gown-1791000000000",
+    "title": "Bruno Gown 1791000000000",
+    "subtitle": "Updated in Bruno",
+    "category": "fashion",
+    "price": 14000,
+    "compare_at_price": 15000,
+    "unit_label": "শুরু",
+    "image_src": "/images/products/gown.jpg",
+    "image_alt": "গর্জিয়াস গাউন",
+    "badge": "New",
+    "status": "sold-out",
+    "featured": true,
+    "tagline": "হাতে তৈরি",
+    "description": "কাস্টম এমব্রয়ডারি গাউন।",
+    "stock_label": "স্টকে আছে",
+    "gallery": [{ "src": "/images/products/gown.jpg", "alt": "গর্জিয়াস গাউন" }],
+    "highlights": ["হাতে তৈরি", "কাস্টম মাপ"],
+    "suitable_for": [],
+    "package_items": [],
+    "how_to_use": [],
+    "story_heading": "",
+    "story_body": "",
+    "story_bullets": [],
+    "quality_title": "কোয়ালিটি চেকড প্রোডাক্ট",
+    "quality_body": "প্রতিটি প্রোডাক্ট ডেলিভারির আগে পরীক্ষা করা হয়, যাতে আপনার হাতে পৌঁছায় সম্পূর্ণ কার্যকর একটি আইটেম।",
+    "specs": [{ "label": "কাপড়", "value": "কটন", "group": "fabric" }],
+    "faqs": [{ "question": "ডেলিভারি কত দিন?", "answer": "৩-৭ কর্মদিবস।" }],
+    "related": []
+  }
+  ```
+}
+
+script:pre-request {
+  const productId = (bru.getEnvVar("PRODUCT_ID") || "").trim();
+  if (!productId) {
+    console.warn("Run Private / Products / Create Product first so PRODUCT_ID is set");
+  }
+}
+
+tests {
+  test("returns the storefront product", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.id).to.equal(bru.getEnvVar("PRODUCT_ID"));
+    expect(body.quantity).to.equal(undefined);
+    expect(body.published).to.equal(undefined);
+    expect(body.highlights).to.be.an("array");
+    expect(body.gallery).to.be.an("array");
+    expect(body.related).to.be.an("array");
+    expect(body.status).to.equal("sold-out");
+  });
+}
+
+assert {
+  res.status: eq 200
+}
+
+example {
+  name: 200 OK
+  description: Storefront product page
+
+  request: {
+    url: {{BASE_URL}}/api/v1/products/{{PRODUCT_ID}}
+    method: GET
+    headers: {
+      Accept: application/json
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "id": "8f1c2a10-6b4e-4d2a-9c31-0a7b6e5d4c3b",
+          "slug": "bruno-gown-1791000000000",
+          "title": "Bruno Gown 1791000000000",
+          "subtitle": "Updated in Bruno",
+          "category": "fashion",
+          "price": 14000,
+          "compare_at_price": 15000,
+          "unit_label": "শুরু",
+          "image_src": "/images/products/gown.jpg",
+          "image_alt": "গর্জিয়াস গাউন",
+          "badge": "New",
+          "status": "sold-out",
+          "featured": true,
+          "tagline": "হাতে তৈরি",
+          "description": "কাস্টম এমব্রয়ডারি গাউন।",
+          "stock_label": "স্টকে আছে",
+          "gallery": [{ "src": "/images/products/gown.jpg", "alt": "গর্জিয়াস গাউন" }],
+          "highlights": ["হাতে তৈরি", "কাস্টম মাপ"],
+          "suitable_for": [],
+          "package_items": [],
+          "how_to_use": [],
+          "story_heading": "",
+          "story_body": "",
+          "story_bullets": [],
+          "quality_title": "কোয়ালিটি চেকড প্রোডাক্ট",
+          "quality_body": "প্রতিটি প্রোডাক্ট ডেলিভারির আগে পরীক্ষা করা হয়।",
+          "specs": [{ "label": "কাপড়", "value": "কটন", "group": "fabric" }],
+          "faqs": [{ "question": "ডেলিভারি কত দিন?", "answer": "৩-৭ কর্মদিবস।" }],
+          "related": []
+        }
+      '''
+    }
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}

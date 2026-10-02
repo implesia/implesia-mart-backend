@@ -1,0 +1,19 @@
+---
+description: Audit trail for admin changes without secrets in the logs
+alwaysApply: true
+---
+
+# Audit logging
+
+Scope: `implesia-mart-backend` only.
+
+Write an audit record for:
+
+- Product created, updated, or deleted
+- Price changed
+- Stock or status changed
+- A user's role, active flag, or password changed
+
+Each record stores the actor id, the action, the target id, and the time. Store the old and new price or stock when those change. Do not store the password, token, hash, or card data.
+
+Request logs stay free of those secrets too. Failed login bursts, unusual admin writes, rate-limit hits, and repeated `422` responses are visible in the logs so they can be alerted on. Do not invent a second logger; use the existing structlog path.

@@ -1,0 +1,18 @@
+---
+description: Product image upload checks when the API accepts file bytes
+alwaysApply: true
+---
+
+# File uploads
+
+Scope: `implesia-mart-backend` only.
+
+The product API stores an image path or `https` URL. It does not accept file bytes today. The allowlist in `security.mdc` still applies to those strings.
+
+When an upload endpoint is added:
+
+- Allow only the image MIME types the storefront displays, checked from the bytes, not the client header alone.
+- Allow only a matching extension. Reject SVG, HTML, and any executable or script type.
+- Cap the file size. Sanitize the stored name to a generated id. Do not use the original filename as a path.
+- Store files outside the application code and do not serve them with an executable content type.
+- A failed check is `422`, and the bytes are not written.

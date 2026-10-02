@@ -1,0 +1,21 @@
+---
+description: Resources are addressed by UUID, never by slug
+alwaysApply: true
+---
+
+# Resource identity
+
+Scope: `implesia-mart-backend` only.
+
+Get, update, and delete use the resource UUID. The path is `/{id}`.
+
+```text
+GET /api/v1/products/{id}
+GET /api/v1/admin/products/{id}
+```
+
+Do not add `/{slug}`, `/by-slug/`, or any other lookup key. A non-UUID path is `422`.
+
+`slug` may be stored as unique display metadata. It is optional on create, generated when omitted, and immutable after create. It is never the key for a route.
+
+A public read of a missing id and a hidden id returns the same `404` body. Do not confirm that a hidden record exists.

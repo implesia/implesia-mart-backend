@@ -1,0 +1,128 @@
+meta {
+  name: Update Product
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/products/{{PRODUCT_ID}}
+  body: multipartForm
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:multipart-form {
+  payload: {"subtitle":"Updated in Bruno","price":14000,"compare_at_price":15000}
+  image_alts: ["আরেকটি অ্যাঙ্গেল"]
+  images: @file(fixtures/gown.jpg)
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("updates price without changing the slug", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.subtitle).to.equal("Updated in Bruno");
+    expect(body.price).to.equal(14000);
+    expect(body.compare_at_price).to.equal(15000);
+    expect(body.slug).to.equal(bru.getEnvVar("PRODUCT_SLUG"));
+    expect(body.content.tagline).to.equal("হাতে তৈরি কাস্টম কালেকশন");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/products/{id}
+  
+  Partial update as `multipart/form-data`. `payload` is the JSON change. Omitted fields stay as they are. The slug does not change.
+  
+  Repeat `images` to add gallery photos. `image_alts` matches those files. Send `quality_image` to replace the quality-panel photo.
+  
+  Sending `compare_at_price: null` or `quantity: null` clears that value. A compare-at price below the selling price is `422`.
+  
+  ## Request body
+  
+  ```json
+  {
+    "subtitle": "Updated in Bruno",
+    "price": 14000,
+    "compare_at_price": 15000
+  }
+  ```
+  
+  ## Response `200`
+  
+  The full product after the change. Slug stays the same. `content` is unchanged when it is omitted.
+}
+
+example {
+  name: 200 OK
+  description: Updates price and subtitle
+  
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/admin/products/{{PRODUCT_ID}}
+    method: PATCH
+    mode: json
+    headers: {
+      Accept: application/json
+      Content-Type: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+  
+    body:json: {
+      {
+        "subtitle": "Updated in Bruno",
+        "price": 14000,
+        "compare_at_price": 15000
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      content-type: application/json
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "id": "8f1c2a10-6b4e-4d2a-9c31-0a7b6e5d4c3b",
+          "slug": "bruno-gown-1791000000000",
+          "title": "Bruno Gown 1791000000000",
+          "subtitle": "Updated in Bruno",
+          "category": "fashion",
+          "price": 14000,
+          "compare_at_price": 15000,
+          "quantity": null,
+          "status": "available",
+          "badge": "New",
+          "published": true,
+          "content": {
+            "tagline": "হাতে তৈরি",
+            "unit_label": "শুরু"
+          }
+        }
+      '''
+    }
+  }
+}

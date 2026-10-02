@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 
 from app.api.deps import DbSession, RequireSuperadmin, require_superadmin
-from app.schemas.common import Page, PaginationParams
+from app.schemas.common import Page, PaginationParams, page_count
 from app.schemas.user import UserCreate, UserRead, UserUpdate
 from app.services import user_service
 
@@ -22,6 +22,7 @@ async def list_users(
         total=total,
         page=pagination.page,
         page_size=pagination.page_size,
+        pages=page_count(total, pagination.page_size),
     )
 
 

@@ -1,0 +1,112 @@
+meta {
+  name: Get Product
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/products/{{PRODUCT_ID}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/admin/products/{id}
+
+  Full product for the edit form, including `content`. Uses `PRODUCT_ID` from Create Product.
+
+  ## Errors
+
+  `404` `not_found` — id is not in the catalog. `422` — id is not a UUID.
+
+  ## Response `200`
+
+  Same shape as Create Product: id, slug, price, stock, publish flags, and the full `content` object.
+}
+
+tests {
+  test("returns the created product", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.id).to.equal(bru.getEnvVar("PRODUCT_ID"));
+    expect(body.slug).to.equal(bru.getEnvVar("PRODUCT_SLUG"));
+    expect(body.content.description).to.be.a("string");
+    expect(body).to.have.property("quantity");
+  });
+}
+
+assert {
+  res.status: eq 200
+}
+
+example {
+  name: 200 OK
+  description: Product for the edit form
+
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/admin/products/{{PRODUCT_ID}}
+    method: GET
+    headers: {
+      Accept: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "id": "8f1c2a10-6b4e-4d2a-9c31-0a7b6e5d4c3b",
+          "slug": "bruno-gown-1791000000000",
+          "title": "Bruno Gown 1791000000000",
+          "subtitle": "Hand embroidered custom gown",
+          "category": "fashion",
+          "price": 15000,
+          "compare_at_price": null,
+          "quantity": null,
+          "status": "available",
+          "badge": "New",
+          "image_src": "/images/products/gown.jpg",
+          "featured": true,
+          "published": true,
+          "created_at": "2026-10-02T10:00:00.000000Z",
+          "updated_at": "2026-10-02T10:00:00.000000Z",
+          "content": {
+            "tagline": "হাতে তৈরি",
+            "description": "কাস্টম এমব্রয়ডারি গাউন।",
+            "stock_label": "স্টকে আছে",
+            "unit_label": "শুরু",
+            "image_alt": "গর্জিয়াস গাউন",
+            "gallery": [],
+            "highlights": ["হাতে তৈরি", "কাস্টম মাপ"],
+            "specs": [{ "id": "spec-a1b2c3d4", "label": "কাপড়", "value": "কটন", "group": "fabric" }],
+            "faqs": [{ "id": "faq-a1b2c3d4", "question": "ডেলিভারি কত দিন?", "answer": "৩-৭ কর্মদিবস।" }]
+          }
+        }
+      '''
+    }
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}

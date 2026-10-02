@@ -2,7 +2,7 @@ import uuid
 from collections.abc import Callable, Coroutine
 from typing import Annotated, Any
 
-from fastapi import Depends, Request
+from fastapi import Depends, Request, Response
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -55,6 +55,11 @@ require_superadmin = require_role(UserRole.SUPERADMIN)
 
 RequireEditor = Annotated[User, Depends(require_editor)]
 RequireSuperadmin = Annotated[User, Depends(require_superadmin)]
+
+
+def no_store(response: Response) -> None:
+    """Stop shared caches from keeping catalog or admin responses."""
+    response.headers["Cache-Control"] = "no-store"
 
 
 def client_ip(request: Request) -> str | None:

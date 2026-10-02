@@ -1,0 +1,15 @@
+---
+description: Server-side price, stock, payment, and inventory rules for orders
+alwaysApply: true
+---
+
+# Orders and payment
+
+Scope: `implesia-mart-backend` only. Apply this when checkout or payment code is added. Do not take the price from the client before that exists.
+
+- The server loads the product price, discount, and stock. The client's price, discount, and line total are ignored.
+- The order total is computed on the server from those rows.
+- Stock is checked and decremented in the same transaction. The update must fail instead of storing a negative quantity. Two concurrent checkouts of the last unit cannot both succeed.
+- Creating an order accepts an idempotency key. The same key returns the original order and does not create a second one.
+- A payment webhook is accepted only after its signature is verified. Replay of the same provider event does not capture twice.
+- Do not log card numbers, CVCs, or full payment payloads.

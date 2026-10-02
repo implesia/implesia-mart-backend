@@ -1,0 +1,20 @@
+---
+description: Every collection list uses the same page envelope
+alwaysApply: true
+---
+
+# Pagination
+
+Scope: `implesia-mart-backend` only.
+
+Every collection `GET` accepts `page` (`1` to `10000`) and `page_size` (`1` to that resource's cap). Use `page_count()` from `app/schemas/common.py`.
+
+The response always includes:
+
+```json
+{ "items": [], "total": 0, "page": 1, "page_size": 20, "pages": 0 }
+```
+
+`pages` is `ceil(total / page_size)`. A page past the end returns `items: []` and the same meta, not `404`.
+
+Do not add a second pagination style. Detail routes are not paginated. A related-items block stays a small capped list, not a page.

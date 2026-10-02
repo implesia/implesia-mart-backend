@@ -1,0 +1,16 @@
+---
+description: Resource-level permissions and IDOR/BOLA checks
+alwaysApply: true
+---
+
+# Authorization
+
+Scope: `implesia-mart-backend` only.
+
+Roles stay `superadmin` > `editor` > `viewer`. The router `Depends` is the first check, not the only check.
+
+- Load the row, then decide if this actor may read or change it. An editor cannot change users, roles, or another staff account. A viewer cannot write.
+- A client-supplied id is an address, not a permission. Orders, carts, addresses, and staff records are readable only by the owner or a role that is allowed to see them.
+- A missing id and an id the caller must not know about return the same `404` body. Do not use `403` to confirm a hidden product or another customer's order.
+- The last active superadmin cannot be demoted, deactivated, or deleted.
+- Do not trust a role, price, user id, or `published` flag sent by the client when the server already owns that field.

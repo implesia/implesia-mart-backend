@@ -21,6 +21,14 @@ Host ports are offset from `implesia-backend` so both APIs can run together: API
 ## Getting started
 
 ```bash
+just dev-setup
+```
+
+That writes `.env` when it is missing, starts Postgres and Redis, builds the API, runs migrations, and creates the admin user. The API is then on <http://localhost:8001>, with docs at `/docs`. Log in as `admin@implesia.com` / `change-me-too`.
+
+To run the API on the host instead:
+
+```bash
 cp .env.example .env
 # Generate a real key: python -c "import secrets; print(secrets.token_urlsafe(48))"
 
@@ -82,10 +90,16 @@ New resources follow the same split already used by auth and the dashboard: mode
 | `POST`                        | `/api/v1/auth/refresh`         | —            |
 | `GET`                         | `/api/v1/auth/me`              | viewer       |
 | `POST`                        | `/api/v1/auth/change-password` | viewer       |
-| `GET`                         | `/api/v1/admin/dashboard`      | editor       |
-| `GET` `POST` `PATCH` `DELETE` | `/api/v1/users[/{id}]`         | superadmin   |
+| `GET`                         | `/api/v1/products`                        | —            |
+| `GET`                         | `/api/v1/products/{id}`                   | —            |
+| `GET`                         | `/api/v1/admin/dashboard`                 | editor       |
+| `GET` `POST`                  | `/api/v1/admin/products`                  | editor       |
+| `GET` `PATCH` `DELETE`        | `/api/v1/admin/products/{id}`             | editor       |
+| `GET` `POST` `PATCH` `DELETE` | `/api/v1/users[/{id}]`                    | superadmin   |
 
 Roles are hierarchical: `superadmin` > `editor` > `viewer`.
+
+The public catalog returns published products only. A hidden product id answers `404`, the same as a missing id. Lookups use the product UUID, never the slug. Create and update send `multipart/form-data`: a `payload` JSON field plus image files. List responses include `page`, `page_size`, `total`, and `pages`, and omit the long product-page copy; that loads on the detail route. Inventory `quantity` stays on the admin API.
 
 ### Error format
 

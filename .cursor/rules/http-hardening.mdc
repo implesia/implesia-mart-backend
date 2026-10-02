@@ -1,0 +1,24 @@
+---
+description: CORS, security headers, and request body limits
+alwaysApply: true
+---
+
+# HTTP hardening
+
+Scope: `implesia-mart-backend` only.
+
+## CORS
+
+- Allow only the origins in `CORS_ORIGINS`. Never `*`.
+- Do not combine `allow_credentials=True` with a wildcard origin.
+- Allow only the methods and headers the API actually uses.
+
+## Headers
+
+Keep `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, and a `Permissions-Policy` that disables unused sensors.
+
+Production HTTPS responses also send `Strict-Transport-Security` and a Content-Security-Policy that does not allow framing (`frame-ancestors 'none'`). Do not weaken `X-Frame-Options` to `SAMEORIGIN` without replacing it with that CSP.
+
+## Body size
+
+Reject oversized JSON and uploads before the handler reads them. A catalog or auth body stays small. An upload limit is the cap in `file-upload.mdc`, not an unbounded stream.

@@ -1,0 +1,155 @@
+meta {
+  name: List Products
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/products
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+params:query {
+  page: 1
+  page_size: 10
+  sort: catalog
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/admin/products
+
+  Admin catalog for `/admin/products`. Editor or superadmin. Viewer is `403`.
+
+  Query: `q`, `category`, `status`, `visibility` (`live` or `hidden`), `min_price`, `max_price`, `sort` (`catalog`, `name-asc`, `name-desc`, `price-asc`, `price-desc`, `stock-asc`, `stock-desc`), `page` (max 10000), `page_size` (default 10, max 100). The response includes `pages`.
+
+  `items` are table rows and do not include `content`. `metrics` is the four summary cards for the selected category. `category_counts` is the tab counts and ignores search and the category tab.
+
+  ## Errors
+
+  `401` — not signed in. `403` `forbidden` — role is below editor.
+
+  ## Response `200`
+
+  ```json
+  {
+    "items": [
+      {
+        "id": "8f1c2a10-6b4e-4d2a-9c31-0a7b6e5d4c3b",
+        "slug": "bruno-gown-1791000000000",
+        "title": "Bruno Gown 1791000000000",
+        "subtitle": "Hand embroidered custom gown",
+        "category": "fashion",
+        "price": 15000,
+        "compare_at_price": null,
+        "quantity": null,
+        "status": "available",
+        "badge": "New",
+        "image_src": "/images/products/gown.jpg",
+        "featured": true,
+        "published": true,
+        "created_at": "2026-10-02T10:00:00.000000Z"
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "page_size": 10,
+    "pages": 1,
+    "metrics": { "total": 1, "live": 1, "hidden": 0, "sold_out": 0 },
+    "category_counts": { "all": 1, "gadgets": 0, "fashion": 1 }
+  }
+  ```
+
+  `quantity` null means made to order. `content` is not on this list.
+}
+
+tests {
+  test("returns the admin catalog", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.items).to.be.an("array");
+    expect(body.metrics).to.have.property("live");
+    expect(body.metrics).to.have.property("sold_out");
+    expect(body.category_counts).to.have.property("all");
+    expect(body.page_size).to.equal(10);
+    expect(body.pages).to.be.a("number");
+    if (body.items.length) {
+      expect(body.items[0].content).to.equal(undefined);
+      expect(body.items[0]).to.have.property("quantity");
+    }
+  });
+}
+
+assert {
+  res.status: eq 200
+}
+
+example {
+  name: 200 OK
+  description: Admin product table
+
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/admin/products?page=1&page_size=10&sort=catalog
+    method: GET
+    headers: {
+      Accept: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "items": [
+            {
+              "id": "8f1c2a10-6b4e-4d2a-9c31-0a7b6e5d4c3b",
+              "slug": "bruno-gown-1791000000000",
+              "title": "Bruno Gown 1791000000000",
+              "subtitle": "Hand embroidered custom gown",
+              "category": "fashion",
+              "price": 15000,
+              "compare_at_price": null,
+              "quantity": null,
+              "status": "available",
+              "badge": "New",
+              "image_src": "/images/products/gown.jpg",
+              "featured": true,
+              "published": true,
+              "created_at": "2026-10-02T10:00:00.000000Z"
+            }
+          ],
+          "total": 1,
+          "page": 1,
+          "page_size": 10,
+          "pages": 1,
+          "metrics": { "total": 1, "live": 1, "hidden": 0, "sold_out": 0 },
+          "category_counts": { "all": 1, "gadgets": 0, "fashion": 1 }
+        }
+      '''
+    }
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
