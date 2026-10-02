@@ -24,7 +24,7 @@ services:
       - key: DEBUG
         value: "false"
       - key: CORS_ORIGINS
-        value: https://impleasia.com,https://www.impleasia.com
+        value: https://mart.implesia.com,https://implesia-mart.implesiaitltd.workers.dev
       - key: SECRET_KEY
         generateValue: true
       - key: FIRST_SUPERUSER_EMAIL
