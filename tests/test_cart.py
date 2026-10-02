@@ -35,8 +35,8 @@ async def test_add_to_cart_uses_the_server_price(
     assert body["items"][0]["unit_price"] == 15000
     assert body["items"][0]["line_total"] == 30000
     assert body["subtotal"] == 30000
-    assert body["shipping"] == 70
-    assert body["total"] == 30070
+    assert body["shipping"] == 0
+    assert body["total"] == 30000
 
     again = await client.post(
         "/api/v1/cart/items",

@@ -11,7 +11,7 @@ from app.schemas.common import page_count
 _PHONE = re.compile(r"^01\d{9}$")
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 OrderSourceName = Literal["cart", "direct"]
-DeliveryZone = Literal["inside", "outside"]
+DeliveryZone = Literal["inside", "suburban", "outside"]
 
 
 class OrderLineInput(BaseModel):
@@ -28,6 +28,8 @@ class OrderQuoteRequest(BaseModel):
 
     source: OrderSourceName
     district: str = Field("", max_length=80)
+    area: str = Field("", max_length=120)
+    delivery_zone: DeliveryZone | None = None
     items: list[OrderLineInput] = Field(default_factory=list, max_length=12)
 
     @model_validator(mode="after")

@@ -1,0 +1,47 @@
+meta {
+  name: Get Delivery Rates
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/delivery
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/delivery
+
+  Public storefront rates. No authentication.
+
+  ## Response `200`
+
+  ```json
+  { "inside_dhaka": 70, "dhaka_suburban": 100, "outside_dhaka": 130 }
+  ```
+
+  Whole taka. `Cache-Control: public, max-age=60`.
+  Checkout still prices from the live row, not from this cache.
+}
+
+tests {
+  test("returns the three rates", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.inside_dhaka).to.be.a("number");
+    expect(body.dhaka_suburban).to.be.a("number");
+    expect(body.outside_dhaka).to.be.a("number");
+    expect(body.inside_dhaka).to.be.at.least(0);
+    expect(body.dhaka_suburban).to.be.at.least(0);
+    expect(body.outside_dhaka).to.be.at.least(0);
+  });
+}
+
+assert {
+  res.status: eq 200
+}

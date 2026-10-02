@@ -24,9 +24,9 @@ from app.schemas.cart import (
     CartRead,
     cart_page_count,
 )
+from app.services import delivery_service
 
 MAX_QTY = 5
-SHIPPING_FLAT = 70
 _TOKEN = re.compile(r"^[A-Za-z0-9_-]{20,128}$")
 _CART_LOAD = (
     selectinload(Cart.items).selectinload(CartItem.product),
@@ -80,7 +80,7 @@ async def open_cart(db: AsyncSession, shopper: Shopper) -> Cart | None:
     return cart
 
 
-def _empty(anonymous: bool) -> CartRead:
+def _empty(anonymous: bool, rates: delivery_service.StoreFees) -> CartRead:
     return CartRead(
         id=None,
         anonymous=anonymous,
@@ -90,6 +90,9 @@ def _empty(anonymous: bool) -> CartRead:
         subtotal=0,
         shipping=0,
         total=0,
+        inside_dhaka=rates.inside,
+        dhaka_suburban=rates.suburban,
+        outside_dhaka=rates.outside,
     )
 
 
@@ -121,9 +124,9 @@ def _lines(cart: Cart) -> tuple[list[CartItemRead], int, int]:
     return items, subtotal, count
 
 
-def _read(cart: Cart, token: str | None) -> CartRead:
+def _read(cart: Cart, token: str | None, rates: delivery_service.StoreFees) -> CartRead:
     items, subtotal, count = _lines(cart)
-    shipping = SHIPPING_FLAT if count else 0
+    shipping = delivery_service.preview_shipping(count, rates)
     anonymous = cart.user_id is None
     return CartRead(
         id=cart.id,
@@ -134,6 +137,9 @@ def _read(cart: Cart, token: str | None) -> CartRead:
         subtotal=subtotal,
         shipping=shipping,
         total=subtotal + shipping,
+        inside_dhaka=rates.inside,
+        dhaka_suburban=rates.suburban,
+        outside_dhaka=rates.outside,
     )
 
 
@@ -149,9 +155,9 @@ def _owner(cart: Cart) -> CartOwnerRead:
     )
 
 
-def _admin(cart: Cart) -> AdminCartRead:
+def _admin(cart: Cart, rates: delivery_service.StoreFees) -> AdminCartRead:
     items, subtotal, count = _lines(cart)
-    shipping = SHIPPING_FLAT if count else 0
+    shipping = delivery_service.preview_shipping(count, rates)
     detailed = [
         AdminCartItemRead(
             **item.model_dump(),
@@ -167,6 +173,9 @@ def _admin(cart: Cart) -> AdminCartRead:
         subtotal=subtotal,
         shipping=shipping,
         total=subtotal + shipping,
+        inside_dhaka=rates.inside,
+        dhaka_suburban=rates.suburban,
+        outside_dhaka=rates.outside,
         created_at=cart.created_at,
         updated_at=cart.updated_at,
     )
@@ -256,11 +265,16 @@ async def _open(
     return await _reload(db, cart.id), raw
 
 
+async def _rates(db: AsyncSession) -> delivery_service.StoreFees:
+    return await delivery_service.fees(db)
+
+
 async def get_cart(db: AsyncSession, shopper: Shopper) -> CartRead:
+    rates = await _rates(db)
     cart, token = await _open(db, shopper, create=False)
     if cart is None:
-        return _empty(shopper.user is None)
-    return _read(cart, token)
+        return _empty(shopper.user is None, rates)
+    return _read(cart, token, rates)
 
 
 async def _product(db: AsyncSession, product_id: uuid.UUID) -> Product:
@@ -296,7 +310,8 @@ async def add_item(
         existing.quantity = next_quantity
     _touch(cart)
     await db.commit()
-    return _read(await _reload(db, cart.id), token)
+    rates = await _rates(db)
+    return _read(await _reload(db, cart.id), token, rates)
 
 
 async def _owned(db: AsyncSession, shopper: Shopper) -> tuple[Cart, str | None]:
@@ -317,7 +332,8 @@ async def set_quantity(
     item.quantity = quantity
     _touch(cart)
     await db.commit()
-    return _read(await _reload(db, cart.id), token)
+    rates = await _rates(db)
+    return _read(await _reload(db, cart.id), token, rates)
 
 
 async def remove_item(db: AsyncSession, shopper: Shopper, item_id: uuid.UUID) -> CartRead:
@@ -328,17 +344,19 @@ async def remove_item(db: AsyncSession, shopper: Shopper, item_id: uuid.UUID) ->
     cart.items.remove(item)
     _touch(cart)
     await db.commit()
-    return _read(await _reload(db, cart.id), token)
+    rates = await _rates(db)
+    return _read(await _reload(db, cart.id), token, rates)
 
 
 async def clear_cart(db: AsyncSession, shopper: Shopper) -> CartRead:
+    rates = await _rates(db)
     cart, token = await _open(db, shopper, create=False)
     if cart is None:
-        return _empty(shopper.user is None)
+        return _empty(shopper.user is None, rates)
     cart.items.clear()
     _touch(cart)
     await db.commit()
-    return _read(await _reload(db, cart.id), token)
+    return _read(await _reload(db, cart.id), token, rates)
 
 
 def _like(term: str) -> str:
@@ -398,8 +416,9 @@ async def list_carts(db: AsyncSession, query: AdminCartQuery) -> AdminCartList:
         .all()
     )
     metrics = await _metrics(db)
+    rates = await _rates(db)
     return AdminCartList(
-        items=[_admin(cart) for cart in rows],
+        items=[_admin(cart, rates) for cart in rows],
         total=total,
         page=query.page,
         page_size=query.page_size,
@@ -434,4 +453,5 @@ async def get_admin_cart(db: AsyncSession, cart_id: uuid.UUID) -> AdminCartRead:
     cart = (await db.execute(_stmt().where(Cart.id == cart_id))).scalar_one_or_none()
     if cart is None:
         raise NotFoundError("Cart not found")
-    return _admin(cart)
+    rates = await _rates(db)
+    return _admin(cart, rates)

@@ -23,10 +23,9 @@ from app.schemas.order import (
     QuoteRead,
     order_page_count,
 )
+from app.services import delivery_service
 from app.services.cart_service import MAX_QTY, Shopper, _cap, _purchasable, open_cart, shopper_actor
 
-INSIDE_FEE = 70
-OUTSIDE_FEE = 70
 _KEY = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
 _ORDER_LOAD = selectinload(Order.items)
 _RESTOCK = {OrderStatus.CANCELLED.value, OrderStatus.RETURNED.value}
@@ -37,13 +36,6 @@ def require_idempotency_key(value: str) -> str:
     if not _KEY.fullmatch(key):
         raise UnprocessableError("Idempotency-Key must be 8 to 80 letters, numbers, _ or -")
     return key
-
-
-def _zone(district: str) -> tuple[str, int]:
-    text = district.strip().casefold()
-    if text in {"dhaka", "ঢাকা"}:
-        return "inside", INSIDE_FEE
-    return "outside", OUTSIDE_FEE
 
 
 def _merge(items: list[tuple[uuid.UUID, int]]) -> list[tuple[uuid.UUID, int]]:
@@ -142,10 +134,16 @@ def _line(product: Product, quantity: int, cart_item_id: uuid.UUID | None) -> Qu
     )
 
 
-def _totals(lines: list[QuoteLineRead], district: str) -> QuoteRead:
+def _totals(
+    lines: list[QuoteLineRead],
+    district: str,
+    area: str,
+    declared: str | None,
+    rates: delivery_service.StoreFees,
+) -> QuoteRead:
     subtotal = sum(line.line_total for line in lines if line.available)
     count = sum(line.quantity for line in lines if line.available)
-    zone, fee = _zone(district)
+    zone, fee = delivery_service.price_for(district, area, declared, rates)
     shipping = fee if count else 0
     return QuoteRead(
         items=lines,
@@ -163,7 +161,8 @@ async def quote(db: AsyncSession, shopper: Shopper, payload: OrderQuoteRequest) 
         _line(await _product(db, product_id), quantity, cart_item_id)
         for product_id, quantity, cart_item_id in requested
     ]
-    return _totals(lines, payload.district)
+    rates = await delivery_service.fees(db)
+    return _totals(lines, payload.district, payload.area, payload.delivery_zone, rates)
 
 
 async def _claim(db: AsyncSession, product: Product, quantity: int) -> tuple[int, str, str, str]:
@@ -244,7 +243,10 @@ async def create_order(
         priced.append((product_id, quantity, price, title, slug, image_src))
 
     subtotal = sum(price * quantity for _id, quantity, price, *_rest in priced)
-    zone, fee = _zone(payload.district)
+    rates = await delivery_service.fees(db)
+    zone, fee = delivery_service.price_for(
+        payload.district, payload.area, payload.delivery_zone, rates
+    )
     shipping = fee if priced else 0
     order = Order(
         number=await _number(db),

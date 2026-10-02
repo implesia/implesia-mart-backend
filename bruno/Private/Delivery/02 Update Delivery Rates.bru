@@ -1,0 +1,40 @@
+meta {
+  name: Update Delivery Rates
+  type: http
+  seq: 2
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/delivery
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "inside_dhaka": 70,
+    "dhaka_suburban": 100,
+    "outside_dhaka": 130
+  }
+}
+
+docs {
+  # PATCH /api/v1/admin/delivery
+
+  Editor or superadmin. Whole taka from 0 to 1,000,000.
+  Extra fields are `422`. Viewer is `403`.
+
+  `inside_dhaka` is Dhaka city. `dhaka_suburban` is farther inside Dhaka district
+  (Savar, Keraniganj, Dhamrai, Dohar, Nawabganj). `outside_dhaka` is every other district.
+  A customer can choose a farther zone. The server will not apply a nearer, cheaper zone than the address supports.
+  Existing orders keep the shipping amount saved when they were placed.
+}

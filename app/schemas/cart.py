@@ -41,6 +41,9 @@ class CartRead(BaseModel):
     subtotal: int
     shipping: int
     total: int
+    inside_dhaka: int
+    dhaka_suburban: int
+    outside_dhaka: int
 
 
 class CartOwnerRead(BaseModel):
@@ -63,6 +66,9 @@ class AdminCartRead(BaseModel):
     subtotal: int
     shipping: int
     total: int
+    inside_dhaka: int
+    dhaka_suburban: int
+    outside_dhaka: int
     created_at: datetime
     updated_at: datetime
 

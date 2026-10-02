@@ -1,0 +1,29 @@
+meta {
+  name: Get Delivery Rates
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/delivery
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/admin/delivery
+
+  Any signed-in staff role can read the rates. `Cache-Control: no-store`.
+}
+
+assert {
+  res.status: eq 200
+}

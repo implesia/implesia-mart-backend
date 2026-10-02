@@ -1,0 +1,22 @@
+{
+  "$schema": "https://unpkg.com/wrangler@4.115.0/config-schema.json",
+  "name": "implesia-mart-api",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-02",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true,
+    "traces": {
+      "enabled": true
+    }
+  },
+  "routes": [
+    {
+      "pattern": "mart-api.implesia.com",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "ORIGIN": "https://implesia-mart-api.onrender.com"
+  }
+}
