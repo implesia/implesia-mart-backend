@@ -83,6 +83,10 @@ That order logs in before the private calls. **Create Product** writes `PRODUCT_
 
 **Pages / Hide Origin Photo** hides the second photo, then **Restore Origin** puts both seeded photos back. Run them together so the public sustainability page keeps both photos.
 
+**Pages / Create Card** adds a hidden commitment card, then deletes it. The public sustainability page stays the four seeded cards. Run List Commitment first so Reorder has every id.
+
+**Pages / Hide Quality Step** hides the pack step, then **Restore Quality** puts the three seeded steps back. Run them together so the public sustainability page keeps the full check process.
+
 Do not include `Private / Auth / Change Password` in this run. It replaces the admin password.
 
 ## Error codes

@@ -1,0 +1,42 @@
+meta {
+  name: Get Sustainability Quality
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/sustainability/quality
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the quality heading, steps, and badges", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.title).to.equal("কোয়ালিটি নিশ্চয়তা প্রক্রিয়া");
+    expect(body.image.src).to.equal("/images/products/lamp/lamp-3.jpg");
+    expect(body.steps).to.be.an("array").that.is.not.empty;
+    expect(body.badges).to.be.an("array").that.is.not.empty;
+    expect(body.steps[0]).to.not.have.property("is_active");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/sustainability/quality
+
+  Public quality block. Hidden steps and badges are omitted.
+}

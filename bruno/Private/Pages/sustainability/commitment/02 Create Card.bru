@@ -1,0 +1,62 @@
+meta {
+  name: Create Card
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/sustainability/commitment/items
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "icon": "verified",
+    "title": "Card check",
+    "description": "Hidden card",
+    "is_active": false
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body.id) {
+    bru.setEnvVar("COMMIT_ID", body.id);
+    const ids = JSON.parse(bru.getEnvVar("COMMIT_IDS") || "[]").filter((id) => id !== body.id);
+    bru.setEnvVar("COMMIT_ORDER", JSON.stringify([body.id, ...ids]));
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  test("adds a hidden card", function () {
+    expect(res.getStatus()).to.equal(201);
+    const body = res.getBody();
+    expect(body.title).to.equal("Card check");
+    expect(body.is_active).to.equal(false);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # POST /api/v1/admin/pages/sustainability/commitment/items
+
+  Adds a hidden card. Delete removes it so the public page stays the four seeded cards.
+}

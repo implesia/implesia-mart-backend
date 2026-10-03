@@ -1,0 +1,48 @@
+meta {
+  name: Restore Quality
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/sustainability/quality
+  body: multipartForm
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:multipart-form {
+  payload: {"title":"কোয়ালিটি নিশ্চয়তা প্রক্রিয়া","body":"প্রোডাক্ট আপনার কাছে পৌঁছানোর আগে আমরা নিজে যাচাই করি — গ্যাজেট চালিয়ে টেস্ট, ড্রেসের সেলাই ও ফেব্রিক আলাদা করে চেক। যা অর্ডার করছেন, তা-ই হাতে পাবেন।","image":{"src":"/images/products/lamp/lamp-3.jpg","alt":"সানসেট ল্যাম্প — কোয়ালিটি টেস্টেড প্রোডাক্ট"},"steps":[{"text":"গ্যাজেট চালিয়ে ও ড্রেসের ফিনিশিং দেখে পরীক্ষা","is_active":true},{"text":"নিরাপদে প্যাক করে পাঠানো","is_active":true},{"text":"হাতে পেয়ে দেখে তারপর পেমেন্ট (COD)","is_active":true}],"badges":[{"icon":"check_circle","label":"চেক করে পাঠাই","is_active":true},{"icon":"payments","label":"ক্যাশ অন ডেলিভারি","is_active":true}]}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("puts the three seeded steps back", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.steps).to.have.lengthOf(3);
+    expect(body.steps[1].is_active).to.equal(true);
+    expect(body.image.src).to.equal("/images/products/lamp/lamp-3.jpg");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PUT /api/v1/admin/pages/sustainability/quality
+
+  Restores the seeded quality section.
+}

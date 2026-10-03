@@ -1,0 +1,41 @@
+meta {
+  name: Get Sustainability Commitment
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/sustainability/commitment
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the commitment heading and active cards", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.kicker).to.equal("আমাদের অঙ্গীকার");
+    expect(body.title).to.equal("আমরা যেভাবে দায়িত্ব পালন করি");
+    expect(body.items).to.be.an("array").that.is.not.empty;
+    expect(body.items[0]).to.not.have.property("is_active");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/sustainability/commitment
+
+  Public commitment cards. Hidden cards are omitted.
+}

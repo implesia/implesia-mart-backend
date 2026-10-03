@@ -29,9 +29,11 @@ from app.api.v1.endpoints.home import newsletter as home_newsletter
 from app.api.v1.endpoints.home import review as home_review
 from app.api.v1.endpoints.home import showcase as home_showcase
 from app.api.v1.endpoints.home import trust as home_trust
+from app.api.v1.endpoints.sustainability import commitment as sustainability_commitment
 from app.api.v1.endpoints.sustainability import hero as sustainability_hero
 from app.api.v1.endpoints.sustainability import impact as sustainability_impact
 from app.api.v1.endpoints.sustainability import origin as sustainability_origin
+from app.api.v1.endpoints.sustainability import quality as sustainability_quality
 
 api_router = APIRouter()
 
@@ -158,5 +160,25 @@ api_router.include_router(
 api_router.include_router(
     sustainability_origin.admin_router,
     prefix="/admin/pages/sustainability/origin",
+    tags=["admin:pages:sustainability"],
+)
+api_router.include_router(
+    sustainability_commitment.public_router,
+    prefix="/pages/sustainability/commitment",
+    tags=["pages:sustainability"],
+)
+api_router.include_router(
+    sustainability_commitment.admin_router,
+    prefix="/admin/pages/sustainability/commitment",
+    tags=["admin:pages:sustainability"],
+)
+api_router.include_router(
+    sustainability_quality.public_router,
+    prefix="/pages/sustainability/quality",
+    tags=["pages:sustainability"],
+)
+api_router.include_router(
+    sustainability_quality.admin_router,
+    prefix="/admin/pages/sustainability/quality",
     tags=["admin:pages:sustainability"],
 )

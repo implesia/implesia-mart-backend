@@ -1,0 +1,50 @@
+meta {
+  name: List Commitment
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/sustainability/commitment
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && Array.isArray(body.items)) {
+    bru.setEnvVar("COMMIT_IDS", JSON.stringify(body.items.map((item) => item.id)));
+  }
+}
+
+tests {
+  test("lists the heading and every card", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.title).to.equal("আমরা যেভাবে দায়িত্ব পালন করি");
+    expect(body.items).to.be.an("array");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/admin/pages/sustainability/commitment
+
+  Editor lists the heading and every card, including hidden ones. Stores `COMMIT_IDS` for Reorder. Run this first.
+}

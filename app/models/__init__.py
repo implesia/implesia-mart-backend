@@ -29,9 +29,18 @@ from app.models.home.showcase import HomeShowcase, HomeShowcaseItem, HomeShowcas
 from app.models.home.trust import HomeTrust, HomeTrustItem
 from app.models.order import Order, OrderIdempotency, OrderItem
 from app.models.product import Product
+from app.models.sustainability.commitment import (
+    SustainabilityCommitment,
+    SustainabilityCommitmentItem,
+)
 from app.models.sustainability.hero import SustainabilityHero, SustainabilityHeroImage
 from app.models.sustainability.impact import SustainabilityImpact, SustainabilityImpactItem
 from app.models.sustainability.origin import SustainabilityOrigin, SustainabilityOriginImage
+from app.models.sustainability.quality import (
+    SustainabilityQuality,
+    SustainabilityQualityBadge,
+    SustainabilityQualityStep,
+)
 from app.models.user import User, UserRole
 
 __all__ = [
@@ -80,12 +89,17 @@ __all__ = [
     "OrderIdempotency",
     "OrderItem",
     "Product",
+    "SustainabilityCommitment",
+    "SustainabilityCommitmentItem",
     "SustainabilityHero",
     "SustainabilityHeroImage",
     "SustainabilityImpact",
     "SustainabilityImpactItem",
     "SustainabilityOrigin",
     "SustainabilityOriginImage",
+    "SustainabilityQuality",
+    "SustainabilityQualityBadge",
+    "SustainabilityQualityStep",
     "User",
     "UserRole",
 ]
