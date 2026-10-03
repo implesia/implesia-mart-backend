@@ -1,0 +1,65 @@
+meta {
+  name: Create Step
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/about/steps/items
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "step": "০৫",
+    "icon": "task_alt",
+    "title": "Step check",
+    "description": "Hidden step",
+    "is_active": false
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body.id) {
+    bru.setEnvVar("STEP_ID", body.id);
+    const ids = JSON.parse(bru.getEnvVar("STEP_IDS") || "[]").filter((id) => id !== body.id);
+    bru.setEnvVar("STEP_ORDER", JSON.stringify([body.id, ...ids]));
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  test("adds a hidden step", function () {
+    expect(res.getStatus()).to.equal(201);
+    const body = res.getBody();
+    expect(body.id).to.be.a("string");
+    expect(body.step).to.equal("০৫");
+    expect(body.title).to.equal("Step check");
+    expect(body.is_active).to.equal(false);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # POST /api/v1/admin/pages/about/steps/items
+
+  Adds a hidden step so the public page does not change. Stores `STEP_ID` and `STEP_ORDER`.
+}

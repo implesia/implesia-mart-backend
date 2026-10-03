@@ -1,0 +1,50 @@
+meta {
+  name: Get About Steps
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/about/steps
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the four order steps", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.kicker).to.equal("সহজ প্রক্রিয়া");
+    expect(body.title).to.equal("কীভাবে অর্ডার করবেন");
+    expect(body.items).to.have.lengthOf(4);
+    expect(body.items.map((item) => item.title)).to.deep.equal([
+      "প্রোডাক্ট বাছাই করুন",
+      "অর্ডার কনফার্ম করুন",
+      "সারাদেশে ডেলিভারি",
+      "হাতে পেয়ে পেমেন্ট"
+    ]);
+    expect(body.items[0].step).to.equal("০১");
+    expect(body.items[0]).to.not.have.property("is_active");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/about/steps
+
+  Public order-process heading and steps. No auth. Hidden steps are omitted.
+
+  The first call seeds the Bangla heading and four steps.
+}

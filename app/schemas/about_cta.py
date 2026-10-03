@@ -1,0 +1,48 @@
+from pydantic import BaseModel, Field, field_validator
+
+
+class CtaLink(BaseModel):
+    label: str
+    href: str
+
+
+class CtaRead(BaseModel):
+    is_active: bool
+    title: str
+    subtitle: str
+    primary_cta: CtaLink
+    secondary_cta: CtaLink
+
+
+class CtaPublic(BaseModel):
+    title: str
+    subtitle: str
+    primary_cta: CtaLink
+    secondary_cta: CtaLink
+
+
+class CtaLinkWrite(BaseModel):
+    label: str = Field(default="", max_length=80)
+    href: str = Field(default="", max_length=800)
+
+    @field_validator("label", "href", mode="before")
+    @classmethod
+    def _strip(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+
+class CtaWrite(BaseModel):
+    is_active: bool = True
+    title: str = Field(default="", max_length=160)
+    subtitle: str = Field(default="", max_length=400)
+    primary_cta: CtaLinkWrite = Field(default_factory=CtaLinkWrite)
+    secondary_cta: CtaLinkWrite = Field(default_factory=CtaLinkWrite)
+
+    @field_validator("title", "subtitle", mode="before")
+    @classmethod
+    def _strip(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value

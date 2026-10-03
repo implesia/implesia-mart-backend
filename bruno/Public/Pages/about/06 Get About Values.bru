@@ -1,0 +1,49 @@
+meta {
+  name: Get About Values
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/about/values
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the four principles", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.kicker).to.equal("আমাদের মূলনীতি");
+    expect(body.title).to.equal("যেভাবে আমরা কাজ করি");
+    expect(body.items).to.have.lengthOf(4);
+    expect(body.items.map((item) => item.title)).to.deep.equal([
+      "কোয়ালিটি চেকড",
+      "ক্যাশ অন ডেলিভারি",
+      "সারাদেশে ডেলিভারি",
+      "সহজ রিটার্ন"
+    ]);
+    expect(body.items[0]).to.not.have.property("is_active");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/about/values
+
+  Public values heading and cards. No auth. Hidden cards are omitted.
+
+  The first call seeds the Bangla heading and four principles.
+}

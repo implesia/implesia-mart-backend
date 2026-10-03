@@ -1,0 +1,55 @@
+meta {
+  name: Update Step
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/about/steps/items/{{STEP_ID}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "step": "০৫",
+    "icon": "task_alt",
+    "title": "Step check",
+    "description": "Hidden step",
+    "is_active": false
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("keeps the fixture hidden", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.id).to.equal(bru.getEnvVar("STEP_ID"));
+    expect(body.title).to.equal("Step check");
+    expect(body.is_active).to.equal(false);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/pages/about/steps/items/{id}
+
+  Replaces one step. This request stays hidden.
+}

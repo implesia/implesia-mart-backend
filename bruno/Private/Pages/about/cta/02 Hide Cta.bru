@@ -1,0 +1,54 @@
+meta {
+  name: Hide Cta
+  type: http
+  seq: 2
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/about/cta
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "is_active": false,
+    "title": "আজই খুঁজে নিন আপনার প্রয়োজনীয় প্রোডাক্ট",
+    "subtitle": "গ্যাজেট হোক বা গর্জিয়াস ড্রেস — হাতে পেয়ে দেখে তারপর ক্যাশ অন ডেলিভারি।",
+    "primary_cta": { "label": "সব প্রোডাক্ট", "href": "/products" },
+    "secondary_cta": { "label": "যোগাযোগ", "href": "/contact-us" }
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("hides the seeded block", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.is_active).to.equal(false);
+    expect(body.title).to.equal("আজই খুঁজে নিন আপনার প্রয়োজনীয় প্রোডাক্ট");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/pages/about/cta
+
+  Turns the closing block off. Restore Cta puts the same words back.
+}

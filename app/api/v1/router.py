@@ -1,11 +1,14 @@
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    about_cta,
     about_dress,
     about_hero,
     about_mission,
     about_stats,
+    about_steps,
     about_story,
+    about_values,
     admin_cart,
     admin_delivery,
     admin_orders,
@@ -107,4 +110,22 @@ api_router.include_router(
 )
 api_router.include_router(
     about_mission.admin_router, prefix="/admin/pages/about/mission", tags=["admin:pages:about"]
+)
+api_router.include_router(
+    about_values.public_router, prefix="/pages/about/values", tags=["pages:about"]
+)
+api_router.include_router(
+    about_values.admin_router, prefix="/admin/pages/about/values", tags=["admin:pages:about"]
+)
+api_router.include_router(
+    about_steps.public_router, prefix="/pages/about/steps", tags=["pages:about"]
+)
+api_router.include_router(
+    about_steps.admin_router, prefix="/admin/pages/about/steps", tags=["admin:pages:about"]
+)
+api_router.include_router(
+    about_cta.public_router, prefix="/pages/about/cta", tags=["pages:about"]
+)
+api_router.include_router(
+    about_cta.admin_router, prefix="/admin/pages/about/cta", tags=["admin:pages:about"]
 )

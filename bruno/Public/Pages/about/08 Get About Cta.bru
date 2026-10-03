@@ -1,0 +1,45 @@
+meta {
+  name: Get About Cta
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/about/cta
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the closing block", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.title).to.equal("আজই খুঁজে নিন আপনার প্রয়োজনীয় প্রোডাক্ট");
+    expect(body.primary_cta.label).to.equal("সব প্রোডাক্ট");
+    expect(body.primary_cta.href).to.equal("/products");
+    expect(body.secondary_cta.label).to.equal("যোগাযোগ");
+    expect(body.secondary_cta.href).to.equal("/contact-us");
+    expect(body).to.not.have.property("is_active");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/about/cta
+
+  Public closing block. No auth. A hidden block comes back with an empty title.
+
+  The first call seeds the Bangla heading and both buttons.
+}

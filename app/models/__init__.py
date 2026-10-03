@@ -1,4 +1,5 @@
 from app.db.base import Base
+from app.models.about_cta import AboutCta
 from app.models.about_dress import (
     AboutDressBlock,
     AboutDressFeature,
@@ -8,12 +9,14 @@ from app.models.about_dress import (
 from app.models.about_hero import AboutHero, AboutHeroImage
 from app.models.about_mission import AboutMissionCard, AboutMissionSection
 from app.models.about_stats import AboutStatItem, AboutStats
+from app.models.about_steps import AboutStepItem, AboutSteps
 from app.models.about_story import (
     AboutStoryBlock,
     AboutStoryImage,
     AboutStoryParagraph,
     AboutStorySection,
 )
+from app.models.about_values import AboutValueItem, AboutValues
 from app.models.cart import Cart, CartItem
 from app.models.delivery import DeliverySettings
 from app.models.home.banner import BannerAccent, HomeBanner, HomeBannerSlide
@@ -29,6 +32,7 @@ from app.models.product import Product
 from app.models.user import User, UserRole
 
 __all__ = [
+    "AboutCta",
     "AboutDressBlock",
     "AboutDressFeature",
     "AboutDressImage",
@@ -39,10 +43,14 @@ __all__ = [
     "AboutMissionSection",
     "AboutStatItem",
     "AboutStats",
+    "AboutStepItem",
+    "AboutSteps",
     "AboutStoryBlock",
     "AboutStoryImage",
     "AboutStoryParagraph",
     "AboutStorySection",
+    "AboutValueItem",
+    "AboutValues",
     "BannerAccent",
     "Base",
     "Cart",

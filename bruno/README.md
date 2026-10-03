@@ -71,6 +71,12 @@ That order logs in before the private calls. **Create Product** writes `PRODUCT_
 
 **Pages / Hide Vision** turns the vision card off, then **Restore Vision** puts the seeded card back. Run them together so the public about page stays both cards.
 
+**Pages / Create Value** adds a hidden principle, then deletes it. The public about page stays the four seeded principles. Run List Values first so Reorder has every id.
+
+**Pages / Create Step** adds a hidden order step, then deletes it. The public about page stays the four seeded steps. Run List Steps first so Reorder has every id.
+
+**Pages / Hide Cta** turns the closing block off, then **Restore Cta** puts the seeded block back. Run them together so the public about page keeps the closing block.
+
 Do not include `Private / Auth / Change Password` in this run. It replaces the admin password.
 
 ## Error codes

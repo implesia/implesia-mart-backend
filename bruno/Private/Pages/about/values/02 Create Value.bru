@@ -1,0 +1,63 @@
+meta {
+  name: Create Value
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/about/values/items
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "icon": "verified",
+    "title": "Value check",
+    "description": "Hidden principle",
+    "is_active": false
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body.id) {
+    bru.setEnvVar("VALUE_ID", body.id);
+    const ids = JSON.parse(bru.getEnvVar("VALUE_IDS") || "[]").filter((id) => id !== body.id);
+    bru.setEnvVar("VALUE_ORDER", JSON.stringify([body.id, ...ids]));
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  test("adds a hidden value", function () {
+    expect(res.getStatus()).to.equal(201);
+    const body = res.getBody();
+    expect(body.id).to.be.a("string");
+    expect(body.title).to.equal("Value check");
+    expect(body.is_active).to.equal(false);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # POST /api/v1/admin/pages/about/values/items
+
+  Adds a hidden card so the public page does not change. Stores `VALUE_ID` and `VALUE_ORDER`.
+}

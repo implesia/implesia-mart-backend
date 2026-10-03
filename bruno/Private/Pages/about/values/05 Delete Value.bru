@@ -1,0 +1,41 @@
+meta {
+  name: Delete Value
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/about/values/items/{{VALUE_ID}}
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("removes the fixture", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().message).to.equal("Value removed");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # DELETE /api/v1/admin/pages/about/values/items/{id}
+
+  Removes the fixture. The four seeded principles stay.
+}
