@@ -1,0 +1,159 @@
+meta {
+  name: Get Banner
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/home/banner
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/home/banner
+
+  Public home hero. No auth. The response is what the storefront banner renders: brand line, carousel timing, trust copy, control labels, and every published slide with display-ready prices.
+
+  The first call seeds the five slides currently on https://mart.implesia.com/ when the table is empty. Later calls return the saved rows, published slides only, ordered by `sort_order`.
+
+  No request body.
+
+  ## Response `200`
+
+  `price_label`, `compare_at_label`, and `discount_label` are computed. `৳` amounts use thousands separators. A `price_prefix` such as `শুরু` is placed in front of the amount. Discount is `N% ছাড়` only when `compare_at_price` is greater than `price`.
+
+  `image_priority` is true on the first published slide. `effect` is `fade`. Images are storefront paths, not file bytes.
+
+  ```json
+  {
+    "brand_name": "Implesia Mart",
+    "aria_label": "ফিচার্ড প্রোডাক্ট",
+    "trust_line": "সারাদেশে ক্যাশ অন ডেলিভারি · ৩ দিনের ইজি রিটার্ন",
+    "previous_label": "আগের স্লাইড",
+    "next_label": "পরের স্লাইড",
+    "slide_label": "স্লাইড",
+    "autoplay_delay_ms": 6500,
+    "transition_speed_ms": 750,
+    "pause_on_hover": true,
+    "loop": true,
+    "keyboard_enabled": true,
+    "disable_on_interaction": false,
+    "cross_fade": true,
+    "effect": "fade",
+    "slides": []
+  }
+  ```
+
+  Unpublished slides are omitted.
+}
+
+
+tests {
+  test("returns the live hero", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.brand_name).to.equal("Implesia Mart");
+    expect(body.aria_label).to.equal("ফিচার্ড প্রোডাক্ট");
+    expect(body.trust_line).to.equal("সারাদেশে ক্যাশ অন ডেলিভারি · ৩ দিনের ইজি রিটার্ন");
+    expect(body.autoplay_delay_ms).to.equal(6500);
+    expect(body.transition_speed_ms).to.equal(750);
+    expect(body.pause_on_hover).to.equal(true);
+    expect(body.loop).to.equal(true);
+    expect(body.keyboard_enabled).to.equal(true);
+    expect(body.disable_on_interaction).to.equal(false);
+    expect(body.cross_fade).to.equal(true);
+    expect(body.effect).to.equal("fade");
+    expect(body.slides.length).to.be.at.least(5);
+    const lamp = body.slides[0];
+    expect(lamp.slug).to.equal("sunset-rainbow-projection-lamp");
+    expect(lamp.price_label).to.equal("৳999");
+    expect(lamp.compare_at_label).to.equal("৳1,499");
+    expect(lamp.discount_label).to.equal("33% ছাড়");
+    expect(lamp.image_priority).to.equal(true);
+    expect(lamp.primary_cta.href).to.equal("/products/sunset-rainbow-projection-lamp");
+    const gown = body.slides.find((slide) => slide.slug === "custom-gorgeous-womens-gown");
+    expect(gown.price_label).to.equal("শুরু ৳15,000");
+    expect(gown.compare_at_label).to.equal(null);
+    expect(gown.discount_label).to.equal(null);
+  });
+}
+
+assert {
+  res.status: eq 200
+}
+
+example {
+  name: 200 OK
+  description: Seeded home hero
+
+  request: {
+    url: {{BASE_URL}}/api/v1/home/banner
+    method: GET
+    headers: {
+      Accept: application/json
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "brand_name": "Implesia Mart",
+          "aria_label": "ফিচার্ড প্রোডাক্ট",
+          "trust_line": "সারাদেশে ক্যাশ অন ডেলিভারি · ৩ দিনের ইজি রিটার্ন",
+          "previous_label": "আগের স্লাইড",
+          "next_label": "পরের স্লাইড",
+          "slide_label": "স্লাইড",
+          "autoplay_delay_ms": 6500,
+          "transition_speed_ms": 750,
+          "pause_on_hover": true,
+          "loop": true,
+          "keyboard_enabled": true,
+          "disable_on_interaction": false,
+          "cross_fade": true,
+          "effect": "fade",
+          "slides": [
+            {
+              "slug": "sunset-rainbow-projection-lamp",
+              "eyebrow": "বেস্ট সেলার গ্যাজেট",
+              "title": "সানসেট ল্যাম্পে বদলে যাক রুমের মুড",
+              "description": "ওয়ার্ম প্রজেকশন লাইটে ঘর, ডেস্ক বা কনটেন্ট শট — এক ল্যাম্পেই প্রিমিয়াম অ্যামবিয়েন্স।",
+              "price": 999,
+              "compare_at_price": 1499,
+              "price_prefix": null,
+              "price_label": "৳999",
+              "compare_at_label": "৳1,499",
+              "discount_label": "33% ছাড়",
+              "primary_cta": { "label": "এখনই অর্ডার", "href": "/products/sunset-rainbow-projection-lamp" },
+              "secondary_cta": { "label": "সব গ্যাজেট", "href": "/products" },
+              "image_src": "/images/products/lamp/lamp-5.jpg",
+              "image_alt": "সানসেট প্রজেকশন ল্যাম্প",
+              "image_priority": true,
+              "accent": "gold"
+            }
+          ]
+        }
+      '''
+    }
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}

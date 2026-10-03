@@ -1,0 +1,165 @@
+meta {
+  name: Create Slide
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/banner/slides
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "slug": "{{BANNER_SLIDE_SLUG}}",
+    "eyebrow": "ব্রুনো টেস্ট",
+    "title": "নতুন ব্যানার স্লাইড",
+    "description": "এই স্লাইডটি কালেকশন রান থেকে তৈরি। পাবলিক হিরোতে দেখায় না।",
+    "price": 500,
+    "compare_at_price": 1000,
+    "price_prefix": null,
+    "primary_cta_label": "অর্ডার",
+    "primary_cta_href": "/products",
+    "secondary_cta_label": "সব প্রোডাক্ট",
+    "secondary_cta_href": "/products",
+    "image_src": "/images/products/lamp/lamp-5.jpg",
+    "image_alt": "ব্রুনো টেস্ট স্লাইড",
+    "accent": "teal",
+    "sort_order": 99,
+    "is_published": false,
+    "internal_notes": "Bruno collection fixture. Safe to delete."
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+script:pre-request {
+  bru.setEnvVar("BANNER_SLIDE_SLUG", "bruno-banner-" + Date.now());
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body.id) {
+    bru.setEnvVar("BANNER_SLIDE_ID", body.id);
+  }
+}
+
+tests {
+  test("creates an unpublished slide", function () {
+    expect(res.getStatus()).to.equal(201);
+    const body = res.getBody();
+    expect(body.id).to.be.a("string");
+    expect(body.slug).to.equal(bru.getEnvVar("BANNER_SLIDE_SLUG"));
+    expect(body.price_label).to.equal("৳500");
+    expect(body.compare_at_label).to.equal("৳1,000");
+    expect(body.discount_label).to.equal("50% ছাড়");
+    expect(body.is_published).to.equal(false);
+    expect(body.accent).to.equal("teal");
+    expect(body.image_priority).to.equal(false);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # POST /api/v1/admin/home/banner/slides
+  
+  Editor adds a slide. `slug` is lowercase letters, numbers, and hyphens, and must be unique.
+  
+  This request keeps `is_published` false and a high `sort_order`, so the public hero stays the live five slides. Each run sets a new `BANNER_SLIDE_SLUG` and stores `BANNER_SLIDE_ID` for Get, Update, and Delete.
+  
+  `price` is integer BDT. `compare_at_price` and `price_prefix` are optional. CTA hrefs start with `/` or `http`. `accent` is `gold`, `teal`, `rose`, or `ink`.
+  
+  ## Response `201`
+  
+  The admin slide, including computed `price_label`, `compare_at_label`, and `discount_label`.
+  
+  ## Errors
+  
+  `409` `conflict` — slug already exists. `422` `validation_error` — href or slug is invalid. `401` / `403` — auth.
+}
+
+example {
+  name: 201 Created
+  description: Unpublished slide
+  
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/banner/slides
+    method: POST
+    mode: json
+    headers: {
+      Accept: application/json
+      Content-Type: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+  
+    body:json: {
+      {
+        "slug": "bruno-banner-1790580000000",
+        "eyebrow": "ব্রুনো টেস্ট",
+        "title": "নতুন ব্যানার স্লাইড",
+        "description": "এই স্লাইডটি কালেকশন রান থেকে তৈরি। পাবলিক হিরোতে দেখায় না।",
+        "price": 500,
+        "compare_at_price": 1000,
+        "primary_cta_label": "অর্ডার",
+        "primary_cta_href": "/products",
+        "secondary_cta_label": "সব প্রোডাক্ট",
+        "secondary_cta_href": "/products",
+        "image_src": "/images/products/lamp/lamp-5.jpg",
+        "image_alt": "ব্রুনো টেস্ট স্লাইড",
+        "accent": "teal",
+        "sort_order": 99,
+        "is_published": false
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      content-type: application/json
+    }
+  
+    status: {
+      code: 201
+      text: Created
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "id": "11111111-2222-4333-8444-555555555555",
+          "slug": "bruno-banner-1790580000000",
+          "eyebrow": "ব্রুনো টেস্ট",
+          "title": "নতুন ব্যানার স্লাইড",
+          "price": 500,
+          "compare_at_price": 1000,
+          "price_prefix": null,
+          "price_label": "৳500",
+          "compare_at_label": "৳1,000",
+          "discount_label": "50% ছাড়",
+          "accent": "teal",
+          "image_priority": false,
+          "sort_order": 99,
+          "is_published": false,
+          "internal_notes": "Bruno collection fixture. Safe to delete."
+        }
+      '''
+    }
+  }
+}

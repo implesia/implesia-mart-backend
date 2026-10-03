@@ -23,7 +23,10 @@ body:json {
   {
     "inside_dhaka": 70,
     "dhaka_suburban": 100,
-    "outside_dhaka": 130
+    "outside_dhaka": 130,
+    "inside_enabled": true,
+    "suburban_enabled": true,
+    "outside_enabled": true
   }
 }
 
@@ -31,10 +34,12 @@ docs {
   # PATCH /api/v1/admin/delivery
 
   Editor or superadmin. Whole taka from 0 to 1,000,000.
+  Each `*_enabled` flag turns that zone on or off. All three may be false.
   Extra fields are `422`. Viewer is `403`.
 
   `inside_dhaka` is Dhaka city. `dhaka_suburban` is farther inside Dhaka district
   (Savar, Keraniganj, Dhamrai, Dohar, Nawabganj). `outside_dhaka` is every other district.
-  A customer can choose a farther zone. The server will not apply a nearer, cheaper zone than the address supports.
+  A customer can choose a farther zone that is still on. The server will not apply a nearer, cheaper zone than the address supports.
+  A closed zone is skipped. If no open zone is far enough, the quote is `delivery_available: false` and placing the order is `422`.
   Existing orders keep the shipping amount saved when they were placed.
 }

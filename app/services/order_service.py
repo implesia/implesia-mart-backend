@@ -143,8 +143,8 @@ def _totals(
 ) -> QuoteRead:
     subtotal = sum(line.line_total for line in lines if line.available)
     count = sum(line.quantity for line in lines if line.available)
-    zone, fee = delivery_service.price_for(district, area, declared, rates)
-    shipping = fee if count else 0
+    zone, fee, available = delivery_service.price_for(district, area, declared, rates)
+    shipping = fee if count and available else 0
     return QuoteRead(
         items=lines,
         item_count=count,
@@ -152,6 +152,7 @@ def _totals(
         shipping=shipping,
         total=subtotal + shipping,
         delivery_zone=zone,  # type: ignore[arg-type]
+        delivery_available=available,
     )
 
 
@@ -236,6 +237,13 @@ async def create_order(
     if not requested:
         raise UnprocessableError("Your cart is empty")
 
+    rates = await delivery_service.fees(db)
+    zone, fee, available = delivery_service.price_for(
+        payload.district, payload.area, payload.delivery_zone, rates
+    )
+    if not available:
+        raise UnprocessableError("Delivery is not available for this area")
+
     priced: list[tuple[uuid.UUID, int, int, str, str, str]] = []
     for product_id, quantity, _cart_item_id in sorted(requested, key=lambda row: row[0].hex):
         product = await _product(db, product_id)
@@ -243,10 +251,6 @@ async def create_order(
         priced.append((product_id, quantity, price, title, slug, image_src))
 
     subtotal = sum(price * quantity for _id, quantity, price, *_rest in priced)
-    rates = await delivery_service.fees(db)
-    zone, fee = delivery_service.price_for(
-        payload.district, payload.area, payload.delivery_zone, rates
-    )
     shipping = fee if priced else 0
     order = Order(
         number=await _number(db),

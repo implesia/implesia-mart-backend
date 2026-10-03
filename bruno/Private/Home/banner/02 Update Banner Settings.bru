@@ -1,0 +1,129 @@
+meta {
+  name: Update Banner Settings
+  type: http
+  seq: 1
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/banner
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "brand_name": "Implesia Mart",
+    "aria_label": "ফিচার্ড প্রোডাক্ট",
+    "trust_line": "সারাদেশে ক্যাশ অন ডেলিভারি · ৩ দিনের ইজি রিটার্ন",
+    "previous_label": "আগের স্লাইড",
+    "next_label": "পরের স্লাইড",
+    "slide_label": "স্লাইড",
+    "autoplay_delay_ms": 6500,
+    "transition_speed_ms": 750,
+    "pause_on_hover": true,
+    "loop": true,
+    "keyboard_enabled": true,
+    "disable_on_interaction": false,
+    "cross_fade": true
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("saves banner chrome", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.trust_line).to.equal("সারাদেশে ক্যাশ অন ডেলিভারি · ৩ দিনের ইজি রিটার্ন");
+    expect(body.autoplay_delay_ms).to.equal(6500);
+    expect(body.pause_on_hover).to.equal(true);
+    expect(body.keyboard_enabled).to.equal(true);
+    expect(body.cross_fade).to.equal(true);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/home/banner
+  
+  Editor updates hero chrome. Send only the fields that change. This request writes the live homepage values so a collection run does not leave the banner on test copy.
+  
+  `autoplay_delay_ms` is 1000–60000. `transition_speed_ms` is 100–5000.
+  
+  ## Response `200`
+  
+  The saved settings.
+  
+  ## Errors
+  
+  `401` `unauthenticated`. `403` `forbidden` — viewer. `422` `validation_error` — a timing value is out of range.
+}
+
+example {
+  name: 200 OK
+  description: Chrome saved
+  
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/banner
+    method: PATCH
+    mode: json
+    headers: {
+      Accept: application/json
+      Content-Type: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+  
+    body:json: {
+      {
+        "autoplay_delay_ms": 6500,
+        "transition_speed_ms": 750,
+        "pause_on_hover": true,
+        "loop": true
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      content-type: application/json
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "id": "8f0b1c2d-3e4f-5a6b-7c8d-9e0f1a2b3c4d",
+          "brand_name": "Implesia Mart",
+          "autoplay_delay_ms": 6500,
+          "transition_speed_ms": 750,
+          "pause_on_hover": true,
+          "loop": true,
+          "keyboard_enabled": true,
+          "disable_on_interaction": false,
+          "cross_fade": true,
+          "effect": "fade"
+        }
+      '''
+    }
+  }
+}

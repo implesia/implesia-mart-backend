@@ -43,12 +43,22 @@ async def test_public_rates_default_and_admin_updates_them(
         "inside_dhaka": 70,
         "dhaka_suburban": 100,
         "outside_dhaka": 130,
+        "inside_enabled": True,
+        "suburban_enabled": True,
+        "outside_enabled": True,
     }
     assert public.headers["cache-control"] == "public, max-age=60"
 
     anonymous = await client.patch(
         "/api/v1/admin/delivery",
-        json={"inside_dhaka": 80, "dhaka_suburban": 100, "outside_dhaka": 120},
+        json={
+            "inside_dhaka": 80,
+            "dhaka_suburban": 100,
+            "outside_dhaka": 120,
+            "inside_enabled": True,
+            "suburban_enabled": True,
+            "outside_enabled": True,
+        },
     )
     assert anonymous.status_code == 401
 
@@ -58,7 +68,14 @@ async def test_public_rates_default_and_admin_updates_them(
     denied = await client.patch(
         "/api/v1/admin/delivery",
         headers=viewer,
-        json={"inside_dhaka": 80, "dhaka_suburban": 100, "outside_dhaka": 120},
+        json={
+            "inside_dhaka": 80,
+            "dhaka_suburban": 100,
+            "outside_dhaka": 120,
+            "inside_enabled": True,
+            "suburban_enabled": True,
+            "outside_enabled": True,
+        },
     )
     assert denied.status_code == 403
 
@@ -79,14 +96,35 @@ async def test_public_rates_default_and_admin_updates_them(
     saved = await client.patch(
         "/api/v1/admin/delivery",
         headers=editor,
-        json={"inside_dhaka": 80, "dhaka_suburban": 100, "outside_dhaka": 120},
+        json={
+            "inside_dhaka": 80,
+            "dhaka_suburban": 100,
+            "outside_dhaka": 120,
+            "inside_enabled": True,
+            "suburban_enabled": True,
+            "outside_enabled": True,
+        },
     )
     assert saved.status_code == 200, saved.text
-    assert saved.json() == {"inside_dhaka": 80, "dhaka_suburban": 100, "outside_dhaka": 120}
+    assert saved.json() == {
+        "inside_dhaka": 80,
+        "dhaka_suburban": 100,
+        "outside_dhaka": 120,
+        "inside_enabled": True,
+        "suburban_enabled": True,
+        "outside_enabled": True,
+    }
     assert saved.headers["cache-control"] == "no-store"
 
     again = await client.get("/api/v1/delivery")
-    assert again.json() == {"inside_dhaka": 80, "dhaka_suburban": 100, "outside_dhaka": 120}
+    assert again.json() == {
+        "inside_dhaka": 80,
+        "dhaka_suburban": 100,
+        "outside_dhaka": 120,
+        "inside_enabled": True,
+        "suburban_enabled": True,
+        "outside_enabled": True,
+    }
 
 
 async def test_checkout_and_cart_use_the_saved_rates(
@@ -95,7 +133,14 @@ async def test_checkout_and_cart_use_the_saved_rates(
     saved = await client.patch(
         "/api/v1/admin/delivery",
         headers=auth_headers,
-        json={"inside_dhaka": 80, "dhaka_suburban": 100, "outside_dhaka": 120},
+        json={
+            "inside_dhaka": 80,
+            "dhaka_suburban": 100,
+            "outside_dhaka": 120,
+            "inside_enabled": True,
+            "suburban_enabled": True,
+            "outside_enabled": True,
+        },
     )
     assert saved.status_code == 200, saved.text
 
@@ -202,9 +247,99 @@ async def test_checkout_and_cart_use_the_saved_rates(
     same = await client.patch(
         "/api/v1/admin/delivery",
         headers=auth_headers,
-        json={"inside_dhaka": 90, "dhaka_suburban": 90, "outside_dhaka": 90},
+        json={
+            "inside_dhaka": 90,
+            "dhaka_suburban": 90,
+            "outside_dhaka": 90,
+            "inside_enabled": True,
+            "suburban_enabled": True,
+            "outside_enabled": True,
+        },
     )
     assert same.status_code == 200
     refreshed = await client.get("/api/v1/cart", headers=auth_headers)
     assert refreshed.json()["shipping"] == 90
     assert refreshed.json()["total"] == refreshed.json()["subtotal"] + 90
+
+
+async def test_a_zone_or_every_zone_can_be_turned_off(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    product = await _create(client, auth_headers, price=1000, quantity=3)
+    flags = {
+        "inside_dhaka": 70,
+        "dhaka_suburban": 100,
+        "outside_dhaka": 130,
+        "inside_enabled": True,
+        "suburban_enabled": False,
+        "outside_enabled": True,
+    }
+    saved = await client.patch("/api/v1/admin/delivery", headers=auth_headers, json=flags)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["suburban_enabled"] is False
+
+    city = await client.post(
+        "/api/v1/orders/quote",
+        json={
+            "source": "direct",
+            "district": "ঢাকা",
+            "area": "ধানমন্ডি",
+            "items": [{"product_id": product["id"], "quantity": 1}],
+        },
+    )
+    assert city.status_code == 200, city.text
+    assert city.json()["delivery_available"] is True
+    assert city.json()["delivery_zone"] == "inside"
+    assert city.json()["shipping"] == 70
+
+    farther = await client.post(
+        "/api/v1/orders/quote",
+        json={
+            "source": "direct",
+            "district": "ঢাকা",
+            "area": "সাভার",
+            "delivery_zone": "suburban",
+            "items": [{"product_id": product["id"], "quantity": 1}],
+        },
+    )
+    assert farther.status_code == 200, farther.text
+    assert farther.json()["delivery_available"] is True
+    assert farther.json()["delivery_zone"] == "outside"
+    assert farther.json()["shipping"] == 130
+
+    closed = await client.patch(
+        "/api/v1/admin/delivery",
+        headers=auth_headers,
+        json={**flags, "inside_enabled": False, "outside_enabled": False},
+    )
+    assert closed.status_code == 200, closed.text
+    blocked = await client.post(
+        "/api/v1/orders/quote",
+        json={
+            "source": "direct",
+            "district": "ঢাকা",
+            "area": "সাভার",
+            "items": [{"product_id": product["id"], "quantity": 1}],
+        },
+    )
+    assert blocked.status_code == 200, blocked.text
+    assert blocked.json()["delivery_available"] is False
+    assert blocked.json()["shipping"] == 0
+    assert blocked.json()["total"] == blocked.json()["subtotal"]
+
+    placed = await client.post(
+        "/api/v1/orders",
+        headers={"Idempotency-Key": "delivery-off"},
+        json={
+            "source": "direct",
+            "district": "ঢাকা",
+            "area": "সাভার",
+            "customer_name": "Rina Akter",
+            "phone": "01700000000",
+            "email": "",
+            "address": "House 12, Savar",
+            "notes": "",
+            "items": [{"product_id": product["id"], "quantity": 1}],
+        },
+    )
+    assert placed.status_code == 422, placed.text

@@ -1,0 +1,109 @@
+meta {
+  name: Get Banner Settings
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/banner
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/admin/home/banner
+
+  Editor reads the hero chrome: brand, labels, and carousel timing. Slides are a separate list.
+
+  Requires `editor` or `superadmin`. Run Public / Auth / Login first.
+
+  No request body.
+
+  ## Response `200`
+
+  Settings only. `effect` is always `fade`.
+
+  ## Errors
+
+  `401` `unauthenticated` — missing or expired access token. `403` `forbidden` — viewer.
+}
+
+
+tests {
+  test("returns banner chrome", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.id).to.be.a("string");
+    expect(body.brand_name).to.equal("Implesia Mart");
+    expect(body.autoplay_delay_ms).to.be.a("number");
+    expect(body.effect).to.equal("fade");
+    expect(body.slides).to.equal(undefined);
+  });
+}
+
+assert {
+  res.status: eq 200
+}
+
+example {
+  name: 200 OK
+  description: Banner chrome
+
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/banner
+    method: GET
+    mode: none
+    headers: {
+      Accept: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "id": "8f0b1c2d-3e4f-5a6b-7c8d-9e0f1a2b3c4d",
+          "brand_name": "Implesia Mart",
+          "aria_label": "ফিচার্ড প্রোডাক্ট",
+          "trust_line": "সারাদেশে ক্যাশ অন ডেলিভারি · ৩ দিনের ইজি রিটার্ন",
+          "previous_label": "আগের স্লাইড",
+          "next_label": "পরের স্লাইড",
+          "slide_label": "স্লাইড",
+          "autoplay_delay_ms": 6500,
+          "transition_speed_ms": 750,
+          "pause_on_hover": true,
+          "loop": true,
+          "keyboard_enabled": true,
+          "disable_on_interaction": false,
+          "cross_fade": true,
+          "effect": "fade",
+          "updated_at": "2026-09-28T08:00:00.000000Z"
+        }
+      '''
+    }
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}

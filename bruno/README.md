@@ -28,6 +28,7 @@ cd bruno
 npx @usebruno/cli run \
   "Public/Health" \
   "Public/Auth" \
+  "Public/Home" \
   "Private/Auth/01 Me.bru" \
   "Private/Dashboard" \
   "Private/Products/01 List Products.bru" \
@@ -37,11 +38,14 @@ npx @usebruno/cli run \
   "Private/Products/06 Set Stock.bru" \
   "Public/Products" \
   "Private/Products/07 Delete Product.bru" \
+  "Private/Home" \
   "Private/Users" \
   --env Local
 ```
 
 That order logs in before the private calls. **Create Product** writes `PRODUCT_ID`. Get, update, delete, and the public product page all use that id. **Create User** writes `USER_ID`. Get, Update, and Delete user use that demo user, never the admin.
+
+**Home / Create Slide** writes `BANNER_SLIDE_ID` and keeps the new slide unpublished. Get, Update, and Delete use that fixture. The public hero stays the five live slides.
 
 Do not include `Private / Auth / Change Password` in this run. It replaces the admin password.
 

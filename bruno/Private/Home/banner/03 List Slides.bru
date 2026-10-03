@@ -1,0 +1,112 @@
+meta {
+  name: List Slides
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/banner/slides?page=1&page_size=20
+  body: none
+  auth: bearer
+}
+
+params:query {
+  page: 1
+  page_size: 20
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("lists seeded slides", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.total).to.be.at.least(5);
+    expect(body.page).to.equal(1);
+    expect(body.items[0].slug).to.equal("sunset-rainbow-projection-lamp");
+    expect(body.items[0].price_label).to.equal("৳999");
+    expect(body.items[0].is_published).to.equal(true);
+    expect(body.items[0].image_priority).to.equal(true);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/admin/home/banner/slides
+  
+  Editor lists every slide, including unpublished ones. Ordered by `sort_order`.
+  
+  Query: `page` (default 1), `page_size` (1–100, default 20).
+  
+  ## Response `200`
+  
+  A page of admin slides. Each item includes the public labels plus `sort_order`, `is_published`, and `internal_notes`.
+  
+  ## Errors
+  
+  `401` `unauthenticated`. `403` `forbidden`.
+}
+
+example {
+  name: 200 OK
+  description: Slide page
+  
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/banner/slides?page=1&page_size=20
+    method: GET
+    mode: none
+    headers: {
+      Accept: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+  }
+  
+  response: {
+    headers: {
+      content-type: application/json
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "items": [
+            {
+              "slug": "sunset-rainbow-projection-lamp",
+              "price_label": "৳999",
+              "compare_at_label": "৳1,499",
+              "discount_label": "33% ছাড়",
+              "image_priority": true,
+              "accent": "gold",
+              "sort_order": 0,
+              "is_published": true,
+              "internal_notes": null
+            }
+          ],
+          "total": 5,
+          "page": 1,
+          "page_size": 20
+        }
+      '''
+    }
+  }
+}

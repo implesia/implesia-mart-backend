@@ -1,0 +1,118 @@
+meta {
+  name: Update Slide
+  type: http
+  seq: 1
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/banner/slides/{{BANNER_SLIDE_ID}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "eyebrow": "ব্রুনো আপডেট",
+    "price": 750,
+    "compare_at_price": 1000,
+    "is_published": false
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("updates the fixture slide", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.id).to.equal(bru.getEnvVar("BANNER_SLIDE_ID"));
+    expect(body.eyebrow).to.equal("ব্রুনো আপডেট");
+    expect(body.price_label).to.equal("৳750");
+    expect(body.discount_label).to.equal("25% ছাড়");
+    expect(body.is_published).to.equal(false);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/home/banner/slides/{slide_id}
+  
+  Editor updates one slide. Send only the fields that change. `compare_at_price: null` clears the strike price. An empty `price_prefix` clears the prefix.
+  
+  This request keeps the Bruno fixture unpublished.
+  
+  ## Response `200`
+  
+  The updated admin slide, with labels recomputed.
+  
+  ## Errors
+  
+  `404` `not_found`. `409` `conflict` — the new slug is taken. `422` `validation_error`. `401` / `403` — auth.
+}
+
+example {
+  name: 200 OK
+  description: Slide updated
+  
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/banner/slides/{{BANNER_SLIDE_ID}}
+    method: PATCH
+    mode: json
+    headers: {
+      Accept: application/json
+      Content-Type: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+  
+    body:json: {
+      {
+        "eyebrow": "ব্রুনো আপডেট",
+        "price": 750,
+        "compare_at_price": 1000,
+        "is_published": false
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      content-type: application/json
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "id": "11111111-2222-4333-8444-555555555555",
+          "eyebrow": "ব্রুনো আপডেট",
+          "price": 750,
+          "compare_at_price": 1000,
+          "price_label": "৳750",
+          "compare_at_label": "৳1,000",
+          "discount_label": "25% ছাড়",
+          "is_published": false
+        }
+      '''
+    }
+  }
+}

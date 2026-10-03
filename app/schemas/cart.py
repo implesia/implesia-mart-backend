@@ -44,6 +44,9 @@ class CartRead(BaseModel):
     inside_dhaka: int
     dhaka_suburban: int
     outside_dhaka: int
+    inside_enabled: bool = True
+    suburban_enabled: bool = True
+    outside_enabled: bool = True
 
 
 class CartOwnerRead(BaseModel):
@@ -69,6 +72,9 @@ class AdminCartRead(BaseModel):
     inside_dhaka: int
     dhaka_suburban: int
     outside_dhaka: int
+    inside_enabled: bool = True
+    suburban_enabled: bool = True
+    outside_enabled: bool = True
     created_at: datetime
     updated_at: datetime
 

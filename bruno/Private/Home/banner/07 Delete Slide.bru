@@ -1,0 +1,84 @@
+meta {
+  name: Delete Slide
+  type: http
+  seq: 1
+}
+
+delete {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/banner/slides/{{BANNER_SLIDE_ID}}
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("deletes the fixture slide", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().message).to.equal("Banner slide deleted");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # DELETE /api/v1/admin/home/banner/slides/{slide_id}
+  
+  Editor deletes one slide. Uses `BANNER_SLIDE_ID` from Create Slide, so a collection run removes the fixture it just added.
+  
+  ## Response `200`
+  
+  ```json
+  { "message": "Banner slide deleted" }
+  ```
+  
+  ## Errors
+  
+  `404` `not_found`. `401` / `403` — auth.
+}
+
+example {
+  name: 200 OK
+  description: Slide deleted
+  
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/banner/slides/{{BANNER_SLIDE_ID}}
+    method: DELETE
+    mode: none
+    headers: {
+      Accept: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+  }
+  
+  response: {
+    headers: {
+      content-type: application/json
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        { "message": "Banner slide deleted" }
+      '''
+    }
+  }
+}

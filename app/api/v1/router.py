@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     products,
     users,
 )
+from app.api.v1.endpoints.home import banner as home_banner
 
 api_router = APIRouter()
 
@@ -27,3 +28,7 @@ api_router.include_router(orders.router, prefix="/orders", tags=["orders"])
 api_router.include_router(admin_delivery.router, prefix="/admin/delivery", tags=["admin:delivery"])
 api_router.include_router(admin_cart.router, prefix="/admin/carts", tags=["admin:carts"])
 api_router.include_router(admin_orders.router, prefix="/admin/orders", tags=["admin:orders"])
+api_router.include_router(home_banner.public_router, prefix="/home/banner", tags=["home:banner"])
+api_router.include_router(
+    home_banner.admin_router, prefix="/admin/home/banner", tags=["admin:home:banner"]
+)

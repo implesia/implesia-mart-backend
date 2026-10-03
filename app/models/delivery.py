@@ -1,4 +1,4 @@
-from sqlalchemy import CheckConstraint, Integer
+from sqlalchemy import Boolean, CheckConstraint, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin
@@ -20,3 +20,6 @@ class DeliverySettings(TimestampMixin, Base):
     inside_dhaka: Mapped[int] = mapped_column(Integer, nullable=False)
     dhaka_suburban: Mapped[int] = mapped_column(Integer, nullable=False)
     outside_dhaka: Mapped[int] = mapped_column(Integer, nullable=False)
+    inside_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    suburban_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    outside_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

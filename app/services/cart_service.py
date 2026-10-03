@@ -93,6 +93,9 @@ def _empty(anonymous: bool, rates: delivery_service.StoreFees) -> CartRead:
         inside_dhaka=rates.inside,
         dhaka_suburban=rates.suburban,
         outside_dhaka=rates.outside,
+        inside_enabled=rates.inside_on,
+        suburban_enabled=rates.suburban_on,
+        outside_enabled=rates.outside_on,
     )
 
 
@@ -140,6 +143,9 @@ def _read(cart: Cart, token: str | None, rates: delivery_service.StoreFees) -> C
         inside_dhaka=rates.inside,
         dhaka_suburban=rates.suburban,
         outside_dhaka=rates.outside,
+        inside_enabled=rates.inside_on,
+        suburban_enabled=rates.suburban_on,
+        outside_enabled=rates.outside_on,
     )
 
 
@@ -176,6 +182,9 @@ def _admin(cart: Cart, rates: delivery_service.StoreFees) -> AdminCartRead:
         inside_dhaka=rates.inside,
         dhaka_suburban=rates.suburban,
         outside_dhaka=rates.outside,
+        inside_enabled=rates.inside_on,
+        suburban_enabled=rates.suburban_on,
+        outside_enabled=rates.outside_on,
         created_at=cart.created_at,
         updated_at=cart.updated_at,
     )

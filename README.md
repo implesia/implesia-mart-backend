@@ -2,7 +2,7 @@
 
 FastAPI backend for the Implesia Mart storefront and its admin dashboard.
 
-**Current scope:** project foundation, staff authentication, admin dashboard summary, and deploy. Order management uses the same layout and will be added in the next step, once the order fields are specified.
+**Current scope:** project foundation, staff authentication, admin dashboard summary, the home-page banner, and deploy. Other storefront pages follow the same page folders. Order management uses the same layout and will be added once the order fields are specified.
 
 ## Stack
 
@@ -68,17 +68,21 @@ python -m scripts.create_superuser
 app/
   api/deps.py            shared dependencies: db session, current user, role guards
   api/v1/endpoints/      route handlers, one module per resource
+    home/                one folder per storefront page (banner today)
   core/                  settings, security primitives, logging, error envelope
   db/                    declarative base, mixins, async session factory
   models/                SQLAlchemy models
+    home/                page models
   schemas/               Pydantic request and response models
+    home/
   services/              business logic, kept out of the route handlers
+    home/
 alembic/versions/        migrations
 scripts/                 operational one-offs and the production start script
 tests/                   pytest suite
 ```
 
-New resources follow the same split already used by auth and the dashboard: model, schema, service, then a public router and an `/admin` router.
+Each storefront page gets its own folder under `models`, `schemas`, `services`, and `endpoints`. The home banner is the first page. New resources still split model, schema, service, then a public router and an `/admin` router.
 
 ## API
 
@@ -95,6 +99,9 @@ New resources follow the same split already used by auth and the dashboard: mode
 | `GET`                         | `/api/v1/admin/dashboard`                 | editor       |
 | `GET` `POST`                  | `/api/v1/admin/products`                  | editor       |
 | `GET` `PATCH` `DELETE`        | `/api/v1/admin/products/{id}`             | editor       |
+| `GET`                         | `/api/v1/home/banner`                     | —            |
+| `GET` `PATCH`                 | `/api/v1/admin/home/banner`               | editor       |
+| `GET` `POST` `PATCH` `DELETE` | `/api/v1/admin/home/banner/slides[/{id}]` | editor       |
 | `GET` `POST` `PATCH` `DELETE` | `/api/v1/users[/{id}]`                    | superadmin   |
 
 Roles are hierarchical: `superadmin` > `editor` > `viewer`.
@@ -111,7 +118,7 @@ Every error uses the same envelope:
 
 ## Deploy
 
-`render.yaml` defines a Postgres database, a Redis instance, and a Docker web service in Singapore. On boot, `scripts/start.sh` runs migrations, creates the bootstrap superuser from `FIRST_SUPERUSER_EMAIL` / `FIRST_SUPERUSER_PASSWORD`, then starts Gunicorn.
+`render.yaml` defines a Postgres database, a Redis instance, and a Docker web service in Singapore. On boot, `scripts/start.sh` runs migrations, creates the bootstrap superuser from `FIRST_SUPERUSER_EMAIL` / `FIRST_SUPERUSER_PASSWORD`, seeds the home banner when it is empty, then starts Gunicorn.
 
 `/docs` is disabled when `ENVIRONMENT=production`.
 

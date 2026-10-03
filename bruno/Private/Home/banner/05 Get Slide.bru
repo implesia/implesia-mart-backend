@@ -1,0 +1,93 @@
+meta {
+  name: Get Slide
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/banner/slides/{{BANNER_SLIDE_ID}}
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("reads the created slide", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.id).to.equal(bru.getEnvVar("BANNER_SLIDE_ID"));
+    expect(body.is_published).to.equal(false);
+    expect(body.price_label).to.equal("৳500");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/admin/home/banner/slides/{slide_id}
+  
+  Editor reads one slide, published or not. Uses `BANNER_SLIDE_ID` from Create Slide.
+  
+  ## Response `200`
+  
+  The admin slide.
+  
+  ## Errors
+  
+  `404` `not_found` — that id is not a slide. `401` / `403` — auth.
+}
+
+example {
+  name: 200 OK
+  description: One slide
+  
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/banner/slides/{{BANNER_SLIDE_ID}}
+    method: GET
+    mode: none
+    headers: {
+      Accept: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+  }
+  
+  response: {
+    headers: {
+      content-type: application/json
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "id": "11111111-2222-4333-8444-555555555555",
+          "slug": "bruno-banner-1790580000000",
+          "price_label": "৳500",
+          "discount_label": "50% ছাড়",
+          "is_published": false,
+          "sort_order": 99,
+          "accent": "teal"
+        }
+      '''
+    }
+  }
+}

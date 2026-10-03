@@ -91,6 +91,7 @@ class QuoteRead(BaseModel):
     shipping: int
     total: int
     delivery_zone: DeliveryZone
+    delivery_available: bool
 
 
 class OrderItemRead(BaseModel):
