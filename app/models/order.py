@@ -1,5 +1,6 @@
 import uuid
 from enum import StrEnum
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -11,7 +12,9 @@ from sqlalchemy import (
     UniqueConstraint,
     true,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import JSON
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.product import Product
@@ -102,6 +105,11 @@ class OrderItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     unit_price: Mapped[int] = mapped_column(Integer, nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     line_total: Mapped[int] = mapped_column(Integer, nullable=False)
+    selection: Mapped[list[Any]] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"),
+        nullable=False,
+        default=list,
+    )
 
     order: Mapped[Order] = relationship(back_populates="items")
     product: Mapped[Product | None] = relationship()

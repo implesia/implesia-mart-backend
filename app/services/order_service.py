@@ -29,6 +29,8 @@ from app.schemas.order import (
 )
 from app.services import delivery_service
 from app.services.cart_service import MAX_QTY, Shopper, _cap, _purchasable, open_cart, shopper_actor
+from app.services.product_options import resolve_selection, selection_of
+from app.services.product_service import content_of
 
 _KEY = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
 _ORDER_LOAD = selectinload(Order.items)
@@ -42,14 +44,26 @@ def require_idempotency_key(value: str) -> str:
     return key
 
 
-def _merge(items: list[tuple[uuid.UUID, int]]) -> list[tuple[uuid.UUID, int]]:
-    merged: dict[uuid.UUID, int] = {}
-    for product_id, quantity in items:
-        merged[product_id] = merged.get(product_id, 0) + quantity
-    for quantity in merged.values():
+Requested = tuple[uuid.UUID, int, uuid.UUID | None, list[dict]]
+
+
+def _selection_key(selection: list[dict]) -> str:
+    return "|".join(f"{row.get('name')}={row.get('label')}" for row in selection)
+
+
+def _merge(items: list[Requested]) -> list[Requested]:
+    merged: dict[tuple[uuid.UUID, str], Requested] = {}
+    for product_id, quantity, cart_item_id, selection in items:
+        key = (product_id, _selection_key(selection))
+        previous = merged.get(key)
+        if previous is None:
+            merged[key] = (product_id, quantity, cart_item_id, selection)
+        else:
+            merged[key] = (product_id, previous[1] + quantity, cart_item_id, selection)
+    for _product_id, quantity, _cart_item_id, _selection in merged.values():
         if quantity > MAX_QTY:
             raise UnprocessableError("A product can have at most 5 in an order")
-    return list(merged.items())
+    return list(merged.values())
 
 
 def _read(order: Order) -> OrderRead:
@@ -83,6 +97,7 @@ def _read(order: Order) -> OrderRead:
                 unit_price=item.unit_price,
                 quantity=item.quantity,
                 line_total=item.line_total,
+                selection=selection_of(item.selection),
             )
             for item in order.items
         ],
@@ -101,15 +116,30 @@ async def _load(db: AsyncSession, order_id: uuid.UUID) -> Order:
 
 async def _requested(
     db: AsyncSession, shopper: Shopper, payload: OrderQuoteRequest
-) -> list[tuple[uuid.UUID, int, uuid.UUID | None]]:
+) -> list[Requested]:
     if payload.source == "direct":
-        merged = _merge([(item.product_id, item.quantity) for item in payload.items])
-        return [(product_id, quantity, None) for product_id, quantity in merged]
+        lines: list[Requested] = []
+        for item in payload.items:
+            product = await _product(db, item.product_id)
+            chosen = [
+                option.model_dump()
+                for option in resolve_selection(content_of(product), item.selection)
+            ]
+            lines.append((item.product_id, item.quantity, None, chosen))
+        return _merge(lines)
 
     cart = await open_cart(db, shopper)
     if cart is None or not cart.items:
         return []
-    return [(item.product_id, item.quantity, item.id) for item in cart.items]
+    return [
+        (
+            item.product_id,
+            item.quantity,
+            item.id,
+            [option.model_dump() for option in selection_of(item.selection)],
+        )
+        for item in cart.items
+    ]
 
 
 async def _product(db: AsyncSession, product_id: uuid.UUID) -> Product:
@@ -119,7 +149,12 @@ async def _product(db: AsyncSession, product_id: uuid.UUID) -> Product:
     return product
 
 
-def _line(product: Product, quantity: int, cart_item_id: uuid.UUID | None) -> QuoteLineRead:
+def _line(
+    product: Product,
+    quantity: int,
+    cart_item_id: uuid.UUID | None,
+    selection: list[dict],
+) -> QuoteLineRead:
     available = _purchasable(product)
     cap = _cap(product) if available else 0
     unit_price = product.price
@@ -135,6 +170,7 @@ def _line(product: Product, quantity: int, cart_item_id: uuid.UUID | None) -> Qu
         line_total=unit_price * quantity if counted else 0,
         available=counted,
         max_quantity=cap,
+        selection=selection_of(selection),
     )
 
 
@@ -163,8 +199,8 @@ def _totals(
 async def quote(db: AsyncSession, shopper: Shopper, payload: OrderQuoteRequest) -> QuoteRead:
     requested = await _requested(db, shopper, payload)
     lines = [
-        _line(await _product(db, product_id), quantity, cart_item_id)
-        for product_id, quantity, cart_item_id in requested
+        _line(await _product(db, product_id), quantity, cart_item_id, selection)
+        for product_id, quantity, cart_item_id, selection in requested
     ]
     rates = await delivery_service.fees(db)
     return _totals(lines, payload.district, payload.area, payload.delivery_zone, rates)
@@ -248,11 +284,12 @@ async def create_order(
     if not available:
         raise UnprocessableError("Delivery is not available for this area")
 
-    priced: list[tuple[uuid.UUID, int, int, str, str, str]] = []
-    for product_id, quantity, _cart_item_id in sorted(requested, key=lambda row: row[0].hex):
+    priced: list[tuple[uuid.UUID, int, int, str, str, str, list[dict]]] = []
+    ordered = sorted(requested, key=lambda row: row[0].hex)
+    for product_id, quantity, _cart_item_id, selection in ordered:
         product = await _product(db, product_id)
         price, title, slug, image_src = await _claim(db, product, quantity)
-        priced.append((product_id, quantity, price, title, slug, image_src))
+        priced.append((product_id, quantity, price, title, slug, image_src, selection))
 
     subtotal = sum(price * quantity for _id, quantity, price, *_rest in priced)
     shipping = fee if priced else 0
@@ -275,7 +312,7 @@ async def create_order(
         total=subtotal + shipping,
         inventory_held=True,
     )
-    for product_id, quantity, price, title, slug, image_src in priced:
+    for product_id, quantity, price, title, slug, image_src, selection in priced:
         order.items.append(
             OrderItem(
                 product_id=product_id,
@@ -285,6 +322,7 @@ async def create_order(
                 unit_price=price,
                 quantity=quantity,
                 line_total=price * quantity,
+                selection=selection,
             )
         )
     db.add(order)
@@ -429,6 +467,7 @@ def _public(order: Order) -> PublicOrderRead:
                 unit_price=item.unit_price,
                 quantity=item.quantity,
                 line_total=item.line_total,
+                selection=selection_of(item.selection),
             )
             for item in order.items
         ],

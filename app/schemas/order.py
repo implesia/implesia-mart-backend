@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.models.order import OrderStatus
 from app.schemas.common import page_count
+from app.schemas.product import OptionChoice, SelectedOption
 
 _PHONE = re.compile(r"^01\d{9}$")
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -19,6 +20,7 @@ class OrderLineInput(BaseModel):
 
     product_id: uuid.UUID
     quantity: int = Field(ge=1, le=5)
+    selection: list[OptionChoice] = Field(default_factory=list, max_length=6)
 
 
 class OrderQuoteRequest(BaseModel):
@@ -82,6 +84,7 @@ class QuoteLineRead(BaseModel):
     line_total: int
     available: bool
     max_quantity: int
+    selection: list[SelectedOption] = Field(default_factory=list)
 
 
 class QuoteRead(BaseModel):
@@ -103,6 +106,7 @@ class OrderItemRead(BaseModel):
     unit_price: int
     quantity: int
     line_total: int
+    selection: list[SelectedOption] = Field(default_factory=list)
 
 
 class OrderLookup(BaseModel):
@@ -139,6 +143,7 @@ class PublicOrderItemRead(BaseModel):
     unit_price: int
     quantity: int
     line_total: int
+    selection: list[SelectedOption] = Field(default_factory=list)
 
 
 class PublicOrderRead(BaseModel):

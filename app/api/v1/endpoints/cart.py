@@ -37,7 +37,9 @@ async def add_item(
     payload: CartItemCreate,
 ) -> CartRead:
     del request
-    return await cart_service.add_item(db, actor, payload.product_id, payload.quantity)
+    return await cart_service.add_item(
+        db, actor, payload.product_id, payload.quantity, payload.selection
+    )
 
 
 @router.patch("/items/{item_id}", response_model=CartRead)

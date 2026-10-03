@@ -32,6 +32,8 @@ from app.schemas.product import (
     PublicCategoryCounts,
     PublicFaq,
     PublicGalleryImage,
+    PublicOptionGroup,
+    PublicOptionValue,
     PublicProductCard,
     PublicProductDetail,
     PublicProductList,
@@ -523,6 +525,18 @@ def public_detail(product: Product, related: list[Product]) -> PublicProductDeta
             for item in content.specs
         ],
         faqs=[PublicFaq(question=item.question, answer=item.answer) for item in content.faqs],
+        options=[
+            PublicOptionGroup(
+                id=group.id,
+                name=group.name,
+                kind=group.kind,
+                values=[
+                    PublicOptionValue(id=value.id, label=value.label, swatch=value.swatch)
+                    for value in group.values
+                ],
+            )
+            for group in content.options
+        ],
         related=[public_card(item) for item in related],
     )
 

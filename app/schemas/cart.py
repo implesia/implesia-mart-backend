@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.common import page_count
+from app.schemas.product import OptionChoice, SelectedOption
 
 
 class CartItemCreate(BaseModel):
@@ -12,6 +13,7 @@ class CartItemCreate(BaseModel):
 
     product_id: uuid.UUID
     quantity: int = Field(1, ge=1, le=5)
+    selection: list[OptionChoice] = Field(default_factory=list, max_length=6)
 
 
 class CartItemUpdate(BaseModel):
@@ -30,6 +32,7 @@ class CartItemRead(BaseModel):
     quantity: int
     line_total: int
     available: bool
+    selection: list[SelectedOption] = Field(default_factory=list)
 
 
 class CartRead(BaseModel):

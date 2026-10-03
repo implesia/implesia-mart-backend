@@ -24,7 +24,10 @@ from app.schemas.cart import (
     CartRead,
     cart_page_count,
 )
+from app.schemas.product import OptionChoice
 from app.services import delivery_service
+from app.services.product_options import resolve_selection, selection_of
+from app.services.product_service import content_of
 
 MAX_QTY = 5
 _TOKEN = re.compile(r"^[A-Za-z0-9_-]{20,128}$")
@@ -122,6 +125,7 @@ def _lines(cart: Cart) -> tuple[list[CartItemRead], int, int]:
                 quantity=item.quantity,
                 line_total=line_total,
                 available=available,
+                selection=selection_of(item.selection),
             )
         )
     return items, subtotal, count
@@ -304,19 +308,26 @@ def _ensure_room(product: Product, next_quantity: int) -> None:
 
 
 async def add_item(
-    db: AsyncSession, shopper: Shopper, product_id: uuid.UUID, quantity: int
+    db: AsyncSession,
+    shopper: Shopper,
+    product_id: uuid.UUID,
+    quantity: int,
+    choices: list[OptionChoice],
 ) -> CartRead:
     cart, token = await _open(db, shopper, create=True)
     if cart is None:
         raise NotFoundError("Cart item not found")
     product = await _product(db, product_id)
+    chosen = [item.model_dump() for item in resolve_selection(content_of(product), choices)]
     existing = next((item for item in cart.items if item.product_id == product.id), None)
     next_quantity = quantity + (existing.quantity if existing else 0)
     _ensure_room(product, next_quantity)
     if existing is None:
-        cart.items.append(CartItem(product_id=product.id, quantity=next_quantity))
+        cart.items.append(CartItem(product_id=product.id, quantity=next_quantity, selection=chosen))
     else:
         existing.quantity = next_quantity
+        if chosen:
+            existing.selection = chosen
     _touch(cart)
     await db.commit()
     rates = await _rates(db)

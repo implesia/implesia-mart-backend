@@ -147,6 +147,72 @@ class SpecRow(BaseModel):
         return clean_line(value, 240)
 
 
+_SWATCH = re.compile(r"^#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$")
+OptionKind = Literal["color", "size", "text"]
+
+
+class OptionChoice(BaseModel):
+    """The value a customer picked. The server looks up the label."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    group_id: str = Field(min_length=1, max_length=40)
+    value_id: str = Field(min_length=1, max_length=40)
+
+
+class SelectedOption(BaseModel):
+    name: str
+    label: str
+    swatch: str = ""
+
+
+class OptionValue(BaseModel):
+    model_config = ConfigDict(extra="forbid", validate_default=True)
+
+    id: str = ""
+    label: str = ""
+    swatch: str = ""
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def _id(cls, value: object) -> str:
+        return _row_id("value", value)
+
+    @field_validator("label")
+    @classmethod
+    def _label(cls, value: str) -> str:
+        return clean_line(value, 40)
+
+    @field_validator("swatch")
+    @classmethod
+    def _swatch(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            return ""
+        if not _SWATCH.fullmatch(text):
+            raise ValueError("Color must be a hex color like #111827")
+        return text.lower()
+
+
+class ProductOption(BaseModel):
+    model_config = ConfigDict(extra="forbid", validate_default=True)
+
+    id: str = ""
+    name: str = ""
+    kind: OptionKind = "text"
+    values: list[OptionValue] = Field(default_factory=list, max_length=20)
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def _id(cls, value: object) -> str:
+        return _row_id("option", value)
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        return clean_line(value, 40)
+
+
 class FaqRow(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_default=True)
 
@@ -194,6 +260,7 @@ class ProductContent(BaseModel):
     quality_body: str = DEFAULT_QUALITY_BODY
     specs: list[SpecRow] = Field(default_factory=list, max_length=40)
     faqs: list[FaqRow] = Field(default_factory=list, max_length=20)
+    options: list[ProductOption] = Field(default_factory=list, max_length=6)
 
     @field_validator("tagline")
     @classmethod
@@ -255,6 +322,22 @@ class ProductContent(BaseModel):
     @classmethod
     def _faqs(cls, items: list[FaqRow]) -> list[FaqRow]:
         return [item for item in items if item.question and item.answer]
+
+    @field_validator("options")
+    @classmethod
+    def _options(cls, items: list[ProductOption]) -> list[ProductOption]:
+        kept: list[ProductOption] = []
+        seen: set[str] = set()
+        for item in items:
+            values = [value for value in item.values if value.label]
+            if not item.name or not values:
+                continue
+            key = item.name.casefold()
+            if key in seen:
+                raise ValueError("Option names must be different")
+            seen.add(key)
+            kept.append(item.model_copy(update={"values": values}))
+        return kept
 
 
 class ProductCreate(BaseModel):
@@ -413,6 +496,19 @@ class PublicFaq(BaseModel):
     answer: str
 
 
+class PublicOptionValue(BaseModel):
+    id: str
+    label: str
+    swatch: str
+
+
+class PublicOptionGroup(BaseModel):
+    id: str
+    name: str
+    kind: OptionKind
+    values: list[PublicOptionValue]
+
+
 class PublicProductCard(BaseModel):
     id: uuid.UUID
     slug: str
@@ -447,6 +543,7 @@ class PublicProductDetail(PublicProductCard):
     quality_image_alt: str
     specs: list[PublicSpec]
     faqs: list[PublicFaq]
+    options: list[PublicOptionGroup]
     related: list[PublicProductCard]
 
 

@@ -1,7 +1,10 @@
 import uuid
+from typing import Any
 
 from sqlalchemy import CheckConstraint, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import JSON
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from app.models.product import Product
@@ -53,6 +56,11 @@ class CartItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("products.id", ondelete="CASCADE"), nullable=False
     )
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    selection: Mapped[list[Any]] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"),
+        nullable=False,
+        default=list,
+    )
 
     cart: Mapped[Cart] = relationship(back_populates="items")
     product: Mapped[Product] = relationship()
