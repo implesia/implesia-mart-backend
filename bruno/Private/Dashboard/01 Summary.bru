@@ -1,92 +1,105 @@
 meta {
-  name: Summary
-  type: http
-  seq: 1
+name: Summary
+type: http
+seq: 1
 }
 
 get {
-  url: {{PRIVATE_BASE_URL}}/api/v1/admin/dashboard
-  body: none
-  auth: bearer
+url: {{PRIVATE_BASE_URL}}/api/v1/admin/dashboard
+body: none
+auth: bearer
 }
 
 auth:bearer {
-  token: {{ACCESS_TOKEN}}
+token: {{ACCESS_TOKEN}}
 }
 
 headers {
-  Accept: application/json
+Accept: application/json
 }
 
 docs {
-  # GET /api/v1/admin/dashboard
+# GET /api/v1/admin/dashboard
 
-  Admin home counts. Editor or superadmin. Viewer is `403`.
+Admin overview. Editor or superadmin. Viewer is `403`.
 
-  No request body.
+Query: `range` is `today`, `yesterday`, `7d` (default), `30d`, `this-month`,
+`last-month`, or `custom`. Custom also needs `from` and `to` as `YYYY-MM-DD`.
+Days are Asia/Dhaka. Revenue excludes cancelled and returned orders.
 
-  ## Response `200`
+## Errors
 
-  ```json
-  { "users_total": 1, "users_active": 1 }
-  ```
-
-  Order counts are added with the order module.
-
-  ## Errors
-
-  `401` — not signed in. `403` `forbidden` — role is below editor.
+`401` — not signed in. `403` `forbidden` — role is below editor.
+`422` — custom range is missing dates or longer than 366 days.
 }
 
-
 tests {
-  test("returns staff counts", function () {
-    expect(res.getStatus()).to.equal(200);
-    const body = res.getBody();
-    expect(body.users_total).to.be.a("number");
-    expect(body.users_active).to.be.a("number");
-    expect(body.users_total).to.be.at.least(1);
-    expect(body.users_active).to.be.at.least(1);
-  });
+test("returns the shop overview", function () {
+expect(res.getStatus()).to.equal(200)           ;
+const body = res.getBody()                      ;
+expect(body.range).to.equal("7d");
+expect(body.revenue.value).to.be.a("number");
+expect(body.orders.value).to.be.a("number");
+expect(body.statuses).to.have.lengthOf(6)       ;
+})                                              ;
 }
 
 assert {
-  res.status: eq 200
+res.status: eq 200
 }
 
 example {
-  name: 200 OK
-  description: Staff counts
+name: 200 OK
+description: Staff counts
 
-  request: {
-    url: {{PRIVATE_BASE_URL}}/api/v1/admin/dashboard
-    method: GET
-    headers: {
-      Accept: application/json
-      Authorization: Bearer {{ACCESS_TOKEN}}
-    }
-  }
+request: {
+url: {{PRIVATE_BASE_URL}}/api/v1/admin/dashboard
+method: GET
+headers: {
+Accept: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+}
+}
 
-  response: {
-    headers: {
-      content-type: application/json
-    }
+response: {
+headers: {
+content-type: application/json
+}
 
-    status: {
-      code: 200
-      text: OK
-    }
+status: {
+code: 200
+text: OK
+}
 
-    body: {
-      type: json
-      content: '''
-        { "users_total": 1, "users_active": 1 }
-      '''
-    }
-  }
+body: {
+type: json
+content: '''
+{
+"range": "7d",
+"period_label": "Sep 27 – Oct 3",
+"comparison_label": "vs Sep 20 – Sep 26",
+"grain": "day",
+"grain_label": "Daily",
+"revenue": { "value": 0, "display": "৳0", "trend": { "direction": "flat", "text": "0%" }, "sparkline": [] },
+"orders": { "value": 0, "display": "0", "trend": { "direction": "flat", "text": "0%" }, "sparkline": [] },
+"customers": { "value": 0, "display": "0", "trend": { "direction": "flat", "text": "0%" }, "sparkline": [] },
+"average_order": { "value": 0, "display": "৳0", "trend": { "direction": "flat", "text": "0%" }, "sparkline": [] },
+"pending": { "value": 0, "display": "0", "trend": { "direction": "flat", "text": "0%" }, "sparkline": [] },
+"delivered": { "value": 0, "display": "0", "trend": { "direction": "flat", "text": "0%" }, "sparkline": [] },
+"series": [],
+"statuses": [],
+"order_count": 0,
+"best_sellers": [],
+"recent": [],
+"areas": [],
+"categories": []
+}
+'''
+}
+}
 }
 
 settings {
-  encodeUrl: true
-  timeout: 25000
+encodeUrl: true
+timeout: 25000
 }
