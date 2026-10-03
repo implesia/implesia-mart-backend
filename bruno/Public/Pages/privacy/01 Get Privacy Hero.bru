@@ -1,0 +1,41 @@
+meta {
+  name: Get Privacy Hero
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/privacy/hero
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the privacy hero", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.not.have.property("is_active");
+    expect(body).to.have.property("eyebrow");
+    expect(body).to.have.property("title");
+    expect(body).to.have.property("last_updated");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/privacy/hero
+
+  Banner at the top of the privacy page. A hidden banner, or one without a title, comes back blank.
+}

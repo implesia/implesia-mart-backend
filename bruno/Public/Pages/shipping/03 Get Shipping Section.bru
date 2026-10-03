@@ -1,0 +1,42 @@
+meta {
+  name: Get Shipping Section
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/shipping/shipping
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the shipping section", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.not.have.property("is_active");
+    expect(body).to.have.property("heading");
+    expect(body.cards).to.be.an("array");
+    expect(body.timelines).to.be.an("array");
+    expect(body.notes).to.be.an("array");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/shipping/shipping
+
+  Shipping coverage, delivery times, and notes. A hidden or untitled section comes back blank.
+}

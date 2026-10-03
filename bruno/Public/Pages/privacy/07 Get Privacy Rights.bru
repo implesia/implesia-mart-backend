@@ -1,0 +1,42 @@
+meta {
+  name: Get Privacy Rights
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/privacy/rights
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the privacy rights section", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.not.have.property("is_active");
+    expect(body).to.have.property("heading");
+    expect(body.items).to.be.an("array");
+    expect(body.retention).to.have.property("title");
+    expect(body.updates).to.have.property("title");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/privacy/rights
+
+  Customer rights, retention, and policy updates. A hidden section, or one without a heading, comes back blank.
+}

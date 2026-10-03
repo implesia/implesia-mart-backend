@@ -1,0 +1,40 @@
+meta {
+  name: Get FAQ Hero
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/faqs/hero
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the FAQ hero", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.not.have.property("is_active");
+    expect(body).to.have.property("title");
+    expect(body).to.have.property("trending");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/faqs/hero
+
+  Banner and search at the top of the FAQ page. A hidden hero, or one without a title, comes back blank.
+}

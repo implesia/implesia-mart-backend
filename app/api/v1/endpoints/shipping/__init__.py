@@ -1,0 +1,1 @@
+"""Shipping page endpoints."""

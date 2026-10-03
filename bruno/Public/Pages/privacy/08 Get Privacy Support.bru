@@ -1,0 +1,40 @@
+meta {
+  name: Get Privacy Support
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/privacy/support
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the privacy contact banner", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.not.have.property("is_active");
+    expect(body).to.have.property("title");
+    expect(body).to.have.property("primary_href");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/privacy/support
+
+  Closing contact banner. A hidden banner, or one without a title, comes back blank.
+}

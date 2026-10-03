@@ -1,0 +1,41 @@
+meta {
+  name: Get Shipping Returns
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/shipping/returns
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the returns section", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.not.have.property("is_active");
+    expect(body).to.have.property("heading");
+    expect(body.rules).to.be.an("array");
+    expect(body.notes).to.be.an("array");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/shipping/returns
+
+  Return eligibility, rules, and special notes. A hidden or untitled section comes back blank.
+}

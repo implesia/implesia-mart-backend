@@ -1,0 +1,41 @@
+meta {
+  name: Get Privacy Contents
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/privacy/contents
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the privacy sidebar heading", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.not.have.property("is_active");
+    expect(body).to.have.property("title");
+    expect(body).to.have.property("subtitle");
+    expect(body).to.have.property("nav_label");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/privacy/contents
+
+  Sidebar heading on the privacy page. A hidden heading comes back blank.
+}

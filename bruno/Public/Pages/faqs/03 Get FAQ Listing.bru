@@ -1,0 +1,40 @@
+meta {
+  name: Get FAQ Listing
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/faqs/listing
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the FAQ results copy", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.not.have.property("is_active");
+    expect(body).to.have.property("count_suffix");
+    expect(body).to.have.property("empty_title");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/faqs/listing
+
+  Count line and empty-search message. A hidden section comes back blank.
+}

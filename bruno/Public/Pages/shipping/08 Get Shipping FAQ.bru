@@ -1,0 +1,41 @@
+meta {
+  name: Get Shipping FAQ
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/shipping/faq
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the short FAQ", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.not.have.property("is_active");
+    expect(body).to.have.property("title");
+    expect(body.items).to.be.an("array");
+    expect(body).to.have.property("more_href");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/shipping/faq
+
+  Short questions under the support banner. A hidden FAQ, or one with no questions and no more-link, comes back blank.
+}

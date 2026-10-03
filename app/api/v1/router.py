@@ -32,6 +32,12 @@ from app.api.v1.endpoints.contact import faq as contact_faq
 from app.api.v1.endpoints.contact import form as contact_form
 from app.api.v1.endpoints.contact import hero as contact_hero
 from app.api.v1.endpoints.contact import support as contact_support
+from app.api.v1.endpoints.faqs import callout as faq_callout
+from app.api.v1.endpoints.faqs import categories as faq_categories
+from app.api.v1.endpoints.faqs import help as faq_help
+from app.api.v1.endpoints.faqs import hero as faq_hero
+from app.api.v1.endpoints.faqs import items as faq_items
+from app.api.v1.endpoints.faqs import listing as faq_listing
 from app.api.v1.endpoints.home import banner as home_banner
 from app.api.v1.endpoints.home import category as home_category
 from app.api.v1.endpoints.home import faq as home_faq
@@ -40,6 +46,22 @@ from app.api.v1.endpoints.home import newsletter as home_newsletter
 from app.api.v1.endpoints.home import review as home_review
 from app.api.v1.endpoints.home import showcase as home_showcase
 from app.api.v1.endpoints.home import trust as home_trust
+from app.api.v1.endpoints.privacy import collection as privacy_collection
+from app.api.v1.endpoints.privacy import contents as privacy_contents
+from app.api.v1.endpoints.privacy import hero as privacy_hero
+from app.api.v1.endpoints.privacy import introduction as privacy_introduction
+from app.api.v1.endpoints.privacy import rights as privacy_rights
+from app.api.v1.endpoints.privacy import sharing as privacy_sharing
+from app.api.v1.endpoints.privacy import support as privacy_support
+from app.api.v1.endpoints.privacy import usage as privacy_usage
+from app.api.v1.endpoints.shipping import block as shipping_block
+from app.api.v1.endpoints.shipping import contents as shipping_contents
+from app.api.v1.endpoints.shipping import faq as shipping_faq
+from app.api.v1.endpoints.shipping import hero as shipping_hero
+from app.api.v1.endpoints.shipping import payment as shipping_payment
+from app.api.v1.endpoints.shipping import refund as shipping_refund
+from app.api.v1.endpoints.shipping import returns as shipping_returns
+from app.api.v1.endpoints.shipping import support as shipping_support
 from app.api.v1.endpoints.sustainability import commitment as sustainability_commitment
 from app.api.v1.endpoints.sustainability import cta as sustainability_cta
 from app.api.v1.endpoints.sustainability import durability as sustainability_durability
@@ -179,6 +201,38 @@ api_router.include_router(
 api_router.include_router(
     contact_faq.admin_router, prefix="/admin/pages/contact/faq", tags=["admin:pages:contact"]
 )
+api_router.include_router(faq_hero.public_router, prefix="/pages/faqs/hero", tags=["pages:faqs"])
+api_router.include_router(
+    faq_hero.admin_router, prefix="/admin/pages/faqs/hero", tags=["admin:pages:faqs"]
+)
+api_router.include_router(
+    faq_categories.public_router, prefix="/pages/faqs/categories", tags=["pages:faqs"]
+)
+api_router.include_router(
+    faq_categories.admin_router,
+    prefix="/admin/pages/faqs/categories",
+    tags=["admin:pages:faqs"],
+)
+api_router.include_router(
+    faq_listing.public_router, prefix="/pages/faqs/listing", tags=["pages:faqs"]
+)
+api_router.include_router(
+    faq_listing.admin_router, prefix="/admin/pages/faqs/listing", tags=["admin:pages:faqs"]
+)
+api_router.include_router(
+    faq_callout.public_router, prefix="/pages/faqs/callout", tags=["pages:faqs"]
+)
+api_router.include_router(
+    faq_callout.admin_router, prefix="/admin/pages/faqs/callout", tags=["admin:pages:faqs"]
+)
+api_router.include_router(faq_items.public_router, prefix="/pages/faqs/items", tags=["pages:faqs"])
+api_router.include_router(
+    faq_items.admin_router, prefix="/admin/pages/faqs/items", tags=["admin:pages:faqs"]
+)
+api_router.include_router(faq_help.public_router, prefix="/pages/faqs/help", tags=["pages:faqs"])
+api_router.include_router(
+    faq_help.admin_router, prefix="/admin/pages/faqs/help", tags=["admin:pages:faqs"]
+)
 api_router.include_router(
     blog_hero.public_router, prefix="/pages/blogs/hero", tags=["pages:blogs"]
 )
@@ -286,4 +340,134 @@ api_router.include_router(
     sustainability_cta.admin_router,
     prefix="/admin/pages/sustainability/cta",
     tags=["admin:pages:sustainability"],
+)
+api_router.include_router(
+    shipping_hero.public_router, prefix="/pages/shipping/hero", tags=["pages:shipping"]
+)
+api_router.include_router(
+    shipping_hero.admin_router, prefix="/admin/pages/shipping/hero", tags=["admin:pages:shipping"]
+)
+api_router.include_router(
+    shipping_contents.public_router, prefix="/pages/shipping/contents", tags=["pages:shipping"]
+)
+api_router.include_router(
+    shipping_contents.admin_router,
+    prefix="/admin/pages/shipping/contents",
+    tags=["admin:pages:shipping"],
+)
+api_router.include_router(
+    shipping_block.public_router, prefix="/pages/shipping/shipping", tags=["pages:shipping"]
+)
+api_router.include_router(
+    shipping_block.admin_router,
+    prefix="/admin/pages/shipping/shipping",
+    tags=["admin:pages:shipping"],
+)
+api_router.include_router(
+    shipping_payment.public_router, prefix="/pages/shipping/payment", tags=["pages:shipping"]
+)
+api_router.include_router(
+    shipping_payment.admin_router,
+    prefix="/admin/pages/shipping/payment",
+    tags=["admin:pages:shipping"],
+)
+api_router.include_router(
+    shipping_returns.public_router, prefix="/pages/shipping/returns", tags=["pages:shipping"]
+)
+api_router.include_router(
+    shipping_returns.admin_router,
+    prefix="/admin/pages/shipping/returns",
+    tags=["admin:pages:shipping"],
+)
+api_router.include_router(
+    shipping_refund.public_router, prefix="/pages/shipping/refund", tags=["pages:shipping"]
+)
+api_router.include_router(
+    shipping_refund.admin_router,
+    prefix="/admin/pages/shipping/refund",
+    tags=["admin:pages:shipping"],
+)
+api_router.include_router(
+    shipping_support.public_router, prefix="/pages/shipping/support", tags=["pages:shipping"]
+)
+api_router.include_router(
+    shipping_support.admin_router,
+    prefix="/admin/pages/shipping/support",
+    tags=["admin:pages:shipping"],
+)
+api_router.include_router(
+    shipping_faq.public_router, prefix="/pages/shipping/faq", tags=["pages:shipping"]
+)
+api_router.include_router(
+    shipping_faq.admin_router,
+    prefix="/admin/pages/shipping/faq",
+    tags=["admin:pages:shipping"],
+)
+api_router.include_router(
+    privacy_hero.public_router, prefix="/pages/privacy/hero", tags=["pages:privacy"]
+)
+api_router.include_router(
+    privacy_hero.admin_router,
+    prefix="/admin/pages/privacy/hero",
+    tags=["admin:pages:privacy"],
+)
+api_router.include_router(
+    privacy_contents.public_router, prefix="/pages/privacy/contents", tags=["pages:privacy"]
+)
+api_router.include_router(
+    privacy_contents.admin_router,
+    prefix="/admin/pages/privacy/contents",
+    tags=["admin:pages:privacy"],
+)
+api_router.include_router(
+    privacy_introduction.public_router,
+    prefix="/pages/privacy/introduction",
+    tags=["pages:privacy"],
+)
+api_router.include_router(
+    privacy_introduction.admin_router,
+    prefix="/admin/pages/privacy/introduction",
+    tags=["admin:pages:privacy"],
+)
+api_router.include_router(
+    privacy_collection.public_router,
+    prefix="/pages/privacy/collection",
+    tags=["pages:privacy"],
+)
+api_router.include_router(
+    privacy_collection.admin_router,
+    prefix="/admin/pages/privacy/collection",
+    tags=["admin:pages:privacy"],
+)
+api_router.include_router(
+    privacy_usage.public_router, prefix="/pages/privacy/usage", tags=["pages:privacy"]
+)
+api_router.include_router(
+    privacy_usage.admin_router,
+    prefix="/admin/pages/privacy/usage",
+    tags=["admin:pages:privacy"],
+)
+api_router.include_router(
+    privacy_sharing.public_router, prefix="/pages/privacy/sharing", tags=["pages:privacy"]
+)
+api_router.include_router(
+    privacy_sharing.admin_router,
+    prefix="/admin/pages/privacy/sharing",
+    tags=["admin:pages:privacy"],
+)
+api_router.include_router(
+    privacy_rights.public_router, prefix="/pages/privacy/rights", tags=["pages:privacy"]
+)
+api_router.include_router(
+    privacy_rights.admin_router,
+    prefix="/admin/pages/privacy/rights",
+    tags=["admin:pages:privacy"],
+)
+api_router.include_router(
+    privacy_support.public_router, prefix="/pages/privacy/support", tags=["pages:privacy"]
+)
+api_router.include_router(
+    privacy_support.admin_router,
+    prefix="/admin/pages/privacy/support",
+    tags=["admin:pages:privacy"],
 )

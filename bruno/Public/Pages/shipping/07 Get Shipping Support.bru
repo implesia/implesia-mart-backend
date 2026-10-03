@@ -1,0 +1,41 @@
+meta {
+  name: Get Shipping Support
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/shipping/support
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the support banner", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.not.have.property("is_active");
+    expect(body).to.have.property("title");
+    expect(body).to.have.property("email");
+    expect(body).to.have.property("primary_href");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/shipping/support
+
+  Closing contact banner. A hidden or untitled banner comes back blank.
+}

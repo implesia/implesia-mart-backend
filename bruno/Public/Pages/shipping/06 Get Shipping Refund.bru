@@ -1,0 +1,41 @@
+meta {
+  name: Get Shipping Refund
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/shipping/refund
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the refund section", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.not.have.property("is_active");
+    expect(body).to.have.property("heading");
+    expect(body).to.have.property("note");
+    expect(body.steps).to.be.an("array");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/shipping/refund
+
+  Refund steps and the closing note. A hidden or untitled section comes back blank.
+}

@@ -1,0 +1,40 @@
+meta {
+  name: Get FAQ Callout
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/faqs/callout
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the FAQ callout", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.not.have.property("is_active");
+    expect(body).to.have.property("eyebrow");
+    expect(body).to.have.property("body");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/faqs/callout
+
+  Note above the questions. A hidden note, or one without a body, comes back blank.
+}
