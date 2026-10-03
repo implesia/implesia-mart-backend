@@ -102,10 +102,10 @@ async def test_editor_can_hide_reorder_upload_and_remove_a_dress(
     client: AsyncClient, auth_headers: dict[str, str], tmp_path, monkeypatch
 ) -> None:
     from app.core.config import settings
-    from app.services import about_dress_service
+    from app.services.about import dress_service
 
     monkeypatch.setattr(settings, "media_root", tmp_path)
-    monkeypatch.setattr(about_dress_service, "MAX_DRESSES", 1)
+    monkeypatch.setattr(dress_service, "MAX_DRESSES", 1)
     blocked = await client.post(
         "/api/v1/admin/pages/about/dresses",
         headers=auth_headers,
@@ -113,7 +113,7 @@ async def test_editor_can_hide_reorder_upload_and_remove_a_dress(
     )
     assert blocked.status_code == 422
     assert blocked.json()["error"]["message"] == "You can show up to 12 custom dresses"
-    monkeypatch.setattr(about_dress_service, "MAX_DRESSES", 12)
+    monkeypatch.setattr(dress_service, "MAX_DRESSES", 12)
 
     empty = await client.post(
         "/api/v1/admin/pages/about/dresses",

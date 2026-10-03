@@ -1,0 +1,63 @@
+meta {
+  name: Create Stat
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/sustainability/impact/items
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "icon": "verified",
+    "value": "০৫",
+    "label": "Stat check",
+    "is_active": false
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body.id) {
+    bru.setEnvVar("IMPACT_ID", body.id);
+    const ids = JSON.parse(bru.getEnvVar("IMPACT_IDS") || "[]").filter((id) => id !== body.id);
+    bru.setEnvVar("IMPACT_ORDER", JSON.stringify([body.id, ...ids]));
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  test("adds a hidden stat", function () {
+    expect(res.getStatus()).to.equal(201);
+    const body = res.getBody();
+    expect(body.value).to.equal("০৫");
+    expect(body.label).to.equal("Stat check");
+    expect(body.is_active).to.equal(false);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # POST /api/v1/admin/pages/sustainability/impact/items
+
+  Adds a hidden stat. Delete removes it so the public page stays the four seeded habits.
+}

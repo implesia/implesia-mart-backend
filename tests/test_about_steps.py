@@ -48,9 +48,9 @@ async def test_about_steps_admin_requires_an_editor(
 async def test_editor_can_create_reorder_hide_and_remove_a_step(
     client: AsyncClient, auth_headers: dict[str, str], monkeypatch
 ) -> None:
-    from app.services import about_steps_service
+    from app.services.about import steps_service
 
-    monkeypatch.setattr(about_steps_service, "MAX_STEPS", 4)
+    monkeypatch.setattr(steps_service, "MAX_STEPS", 4)
     blocked = await client.post(
         "/api/v1/admin/pages/about/steps/items",
         headers=auth_headers,
@@ -58,7 +58,7 @@ async def test_editor_can_create_reorder_hide_and_remove_a_step(
     )
     assert blocked.status_code == 422
     assert blocked.json()["error"]["message"] == "You can show up to 12 steps"
-    monkeypatch.setattr(about_steps_service, "MAX_STEPS", 12)
+    monkeypatch.setattr(steps_service, "MAX_STEPS", 12)
 
     blank = await client.post(
         "/api/v1/admin/pages/about/steps/items",

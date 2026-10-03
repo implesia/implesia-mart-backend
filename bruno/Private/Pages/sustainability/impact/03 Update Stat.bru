@@ -1,0 +1,54 @@
+meta {
+  name: Update Stat
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/sustainability/impact/items/{{IMPACT_ID}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "icon": "verified",
+    "value": "০৫",
+    "label": "Stat check",
+    "is_active": false
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("keeps the fixture hidden", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.id).to.equal(bru.getEnvVar("IMPACT_ID"));
+    expect(body.label).to.equal("Stat check");
+    expect(body.is_active).to.equal(false);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/pages/sustainability/impact/items/{id}
+
+  Replaces one stat. This request stays hidden.
+}

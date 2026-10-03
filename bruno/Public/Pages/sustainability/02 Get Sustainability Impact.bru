@@ -1,0 +1,41 @@
+meta {
+  name: Get Sustainability Impact
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/sustainability/impact
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the habits heading and active stats", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.kicker).to.equal("আমাদের অভ্যাস");
+    expect(body.title).to.equal("যা আমরা প্রতিদিন মেনে চলি");
+    expect(body.items).to.be.an("array").that.is.not.empty;
+    expect(body.items[0]).to.not.have.property("is_active");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/sustainability/impact
+
+  Public habits strip. Hidden stats are omitted.
+}

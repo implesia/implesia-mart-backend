@@ -1,0 +1,48 @@
+meta {
+  name: Restore Origin
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/sustainability/origin
+  body: multipartForm
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:multipart-form {
+  payload: {"eyebrow":"আমাদের দৃষ্টিভঙ্গি","title":"কোয়ালিটি এখন বিলাসিতা নয়, দায়িত্ব","body":"ইমপ্লেসিয়া মার্ট শুরু হয়েছিল একটা সহজ প্রশ্ন থেকে — কেন ভালো প্রোডাক্ট মানেই বেশি ঝুঁকি হবে? প্রতিটি গ্যাজেট অর্ডারের আগে নিজেরা টেস্ট করি, আর প্রতিটি ড্রেস হাতে বানিয়ে চেক করে পাঠাই — যাতে প্রথমবারেই সঠিক জিনিস হাতে পান। কম রিটার্ন, কম বর্জ্য।","quote":"কোয়ালিটি একটি অভ্যাস, একবারের কাজ নয়।","images":[{"alt":"সানসেট ল্যাম্প — কোয়ালিটি চেক করা প্রোডাক্ট","src":"/images/products/lamp/lamp-2.jpg","is_active":true},{"alt":"হাতে তৈরি বেবি পার্টি ফ্রক","src":"/images/products/baby-products/baby-frock-with-baby.jpeg","is_active":true}]}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("puts both seeded photos back", function () {
+    expect(res.getStatus()).to.equal(200);
+    const images = res.getBody().images;
+    expect(images[0].src).to.equal("/images/products/lamp/lamp-2.jpg");
+    expect(images[1].src).to.equal("/images/products/baby-products/baby-frock-with-baby.jpeg");
+    expect(images[1].is_active).to.equal(true);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PUT /api/v1/admin/pages/sustainability/origin
+
+  Restores the seeded point of view and both photos.
+}

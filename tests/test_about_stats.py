@@ -47,9 +47,9 @@ async def test_about_stats_admin_requires_an_editor(
 async def test_editor_can_create_reorder_hide_and_remove_a_stat(
     client: AsyncClient, auth_headers: dict[str, str], monkeypatch
 ) -> None:
-    from app.services import about_stats_service
+    from app.services.about import stats_service
 
-    monkeypatch.setattr(about_stats_service, "MAX_STATS", 4)
+    monkeypatch.setattr(stats_service, "MAX_STATS", 4)
     blocked = await client.post(
         "/api/v1/admin/pages/about/stats",
         headers=auth_headers,
@@ -57,7 +57,7 @@ async def test_editor_can_create_reorder_hide_and_remove_a_stat(
     )
     assert blocked.status_code == 422
     assert blocked.json()["error"]["message"] == "You can show up to 12 stats"
-    monkeypatch.setattr(about_stats_service, "MAX_STATS", 12)
+    monkeypatch.setattr(stats_service, "MAX_STATS", 12)
 
     created = await client.post(
         "/api/v1/admin/pages/about/stats",

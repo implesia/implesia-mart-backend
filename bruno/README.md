@@ -77,6 +77,12 @@ That order logs in before the private calls. **Create Product** writes `PRODUCT_
 
 **Pages / Hide Cta** turns the closing block off, then **Restore Cta** puts the seeded block back. Run them together so the public about page keeps the closing block.
 
+**Pages / Update Sustainability Hero** uploads a left photo and changes the title, then **Restore Sustainability Hero** puts the seeded banner back. The public sustainability hero stays the seeded heading and two photos.
+
+**Pages / Create Stat** adds a hidden habit, then deletes it. The public sustainability page stays the four seeded habits. Run List Impact first so Reorder has every id.
+
+**Pages / Hide Origin Photo** hides the second photo, then **Restore Origin** puts both seeded photos back. Run them together so the public sustainability page keeps both photos.
+
 Do not include `Private / Auth / Change Password` in this run. It replaces the admin password.
 
 ## Error codes

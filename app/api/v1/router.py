@@ -1,14 +1,6 @@
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
-    about_cta,
-    about_dress,
-    about_hero,
-    about_mission,
-    about_stats,
-    about_steps,
-    about_story,
-    about_values,
     admin_cart,
     admin_delivery,
     admin_orders,
@@ -21,6 +13,14 @@ from app.api.v1.endpoints import (
     products,
     users,
 )
+from app.api.v1.endpoints.about import cta as about_cta
+from app.api.v1.endpoints.about import dress as about_dress
+from app.api.v1.endpoints.about import hero as about_hero
+from app.api.v1.endpoints.about import mission as about_mission
+from app.api.v1.endpoints.about import stats as about_stats
+from app.api.v1.endpoints.about import steps as about_steps
+from app.api.v1.endpoints.about import story as about_story
+from app.api.v1.endpoints.about import values as about_values
 from app.api.v1.endpoints.home import banner as home_banner
 from app.api.v1.endpoints.home import category as home_category
 from app.api.v1.endpoints.home import faq as home_faq
@@ -29,6 +29,9 @@ from app.api.v1.endpoints.home import newsletter as home_newsletter
 from app.api.v1.endpoints.home import review as home_review
 from app.api.v1.endpoints.home import showcase as home_showcase
 from app.api.v1.endpoints.home import trust as home_trust
+from app.api.v1.endpoints.sustainability import hero as sustainability_hero
+from app.api.v1.endpoints.sustainability import impact as sustainability_impact
+from app.api.v1.endpoints.sustainability import origin as sustainability_origin
 
 api_router = APIRouter()
 
@@ -123,9 +126,37 @@ api_router.include_router(
 api_router.include_router(
     about_steps.admin_router, prefix="/admin/pages/about/steps", tags=["admin:pages:about"]
 )
-api_router.include_router(
-    about_cta.public_router, prefix="/pages/about/cta", tags=["pages:about"]
-)
+api_router.include_router(about_cta.public_router, prefix="/pages/about/cta", tags=["pages:about"])
 api_router.include_router(
     about_cta.admin_router, prefix="/admin/pages/about/cta", tags=["admin:pages:about"]
+)
+api_router.include_router(
+    sustainability_hero.public_router,
+    prefix="/pages/sustainability/hero",
+    tags=["pages:sustainability"],
+)
+api_router.include_router(
+    sustainability_hero.admin_router,
+    prefix="/admin/pages/sustainability/hero",
+    tags=["admin:pages:sustainability"],
+)
+api_router.include_router(
+    sustainability_impact.public_router,
+    prefix="/pages/sustainability/impact",
+    tags=["pages:sustainability"],
+)
+api_router.include_router(
+    sustainability_impact.admin_router,
+    prefix="/admin/pages/sustainability/impact",
+    tags=["admin:pages:sustainability"],
+)
+api_router.include_router(
+    sustainability_origin.public_router,
+    prefix="/pages/sustainability/origin",
+    tags=["pages:sustainability"],
+)
+api_router.include_router(
+    sustainability_origin.admin_router,
+    prefix="/admin/pages/sustainability/origin",
+    tags=["admin:pages:sustainability"],
 )

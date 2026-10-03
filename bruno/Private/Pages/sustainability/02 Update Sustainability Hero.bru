@@ -1,0 +1,49 @@
+meta {
+  name: Update Sustainability Hero
+  type: http
+  seq: 2
+}
+
+put {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/sustainability/hero
+  body: multipartForm
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:multipart-form {
+  payload: {"eyebrow":"সাসটেইনেবিলিটি","title":"Bruno sustainability hero check","subtitle":"ভালো প্রোডাক্ট মানেই কম রিপ্লেসমেন্ট, কম বর্জ্য। গ্যাজেট যাচাই করে আর গর্জিয়াস ড্রেস হাতে তৈরি করে — দায়িত্বশীল প্যাকেজিংয়ে পাঠাই।","primary_label":"সব প্রোডাক্ট","primary_href":"/products","secondary_label":"আমাদের সম্পর্কে","secondary_href":"/about-us","images":[{"alt":"সানসেট ল্যাম্প — কোয়ালিটি চেক করা গ্যাজেট","src":""},{"alt":"হাতে তৈরি গর্জিয়াস উইমেন্স গাউন","src":"/images/products/baby-products/female-gorgious-ground-dress.jpeg"}]}
+  image_0: @file(fixtures/about-hero.jpg)
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("saves the heading and left photo together", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.title).to.equal("Bruno sustainability hero check");
+    expect(body.images[0].src).to.match(/^\/media\/sustainability\//);
+    expect(body.images[1].src).to.equal("/images/products/baby-products/female-gorgious-ground-dress.jpeg");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PUT /api/v1/admin/pages/sustainability/hero
+
+  Multipart save. `payload` is JSON. `image_0` replaces the left photo.
+}

@@ -47,9 +47,9 @@ async def test_about_values_admin_requires_an_editor(
 async def test_editor_can_create_reorder_hide_and_remove_a_value(
     client: AsyncClient, auth_headers: dict[str, str], monkeypatch
 ) -> None:
-    from app.services import about_values_service
+    from app.services.about import values_service
 
-    monkeypatch.setattr(about_values_service, "MAX_VALUES", 4)
+    monkeypatch.setattr(values_service, "MAX_VALUES", 4)
     blocked = await client.post(
         "/api/v1/admin/pages/about/values/items",
         headers=auth_headers,
@@ -57,7 +57,7 @@ async def test_editor_can_create_reorder_hide_and_remove_a_value(
     )
     assert blocked.status_code == 422
     assert blocked.json()["error"]["message"] == "You can show up to 12 values"
-    monkeypatch.setattr(about_values_service, "MAX_VALUES", 12)
+    monkeypatch.setattr(values_service, "MAX_VALUES", 12)
 
     blank = await client.post(
         "/api/v1/admin/pages/about/values/items",

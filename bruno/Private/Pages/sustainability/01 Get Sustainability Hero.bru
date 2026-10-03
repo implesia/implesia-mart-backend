@@ -1,0 +1,46 @@
+meta {
+  name: Get Sustainability Hero
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/sustainability/hero
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the banner for editing", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.title).to.be.a("string");
+    expect(body.images).to.be.an("array");
+    body.images.forEach((image) => {
+      expect(image.sort_order).to.be.a("number");
+    });
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/admin/pages/sustainability/hero
+
+  Editor reads the sustainability banner, including both photo slots.
+}

@@ -1,0 +1,44 @@
+meta {
+  name: Get Origin
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/sustainability/origin
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the heading and every photo", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.title).to.equal("কোয়ালিটি এখন বিলাসিতা নয়, দায়িত্ব");
+    expect(body.images).to.be.an("array");
+    expect(body.images[0]).to.have.property("is_active");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/admin/pages/sustainability/origin
+
+  Editor view includes hidden photos.
+}

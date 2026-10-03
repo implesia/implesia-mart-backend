@@ -1,0 +1,49 @@
+meta {
+  name: Get Sustainability Hero
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/sustainability/hero
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the sustainability banner", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.eyebrow).to.be.a("string");
+    expect(body.title).to.be.a("string");
+    expect(body.subtitle).to.be.a("string");
+    expect(body.primary_label).to.be.a("string");
+    expect(body.primary_href).to.be.a("string");
+    expect(body.images).to.be.an("array");
+    body.images.forEach((image) => {
+      expect(image.src).to.be.a("string");
+      expect(image.alt).to.be.a("string");
+    });
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/sustainability/hero
+
+  Public banner at the top of the sustainability page. No auth.
+
+  The first call seeds the Bangla heading and two photos. Later calls return the saved banner.
+}
