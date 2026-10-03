@@ -180,3 +180,53 @@ async def test_cancel_restores_stock_once(
 
     hidden = await client.get("/api/v1/admin/orders")
     assert hidden.status_code == 401
+
+
+async def test_public_lookup_needs_the_order_phone(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    product = await _create(client, auth_headers, title="Lookup gown", price=900, quantity=3)
+    placed = await client.post(
+        "/api/v1/orders",
+        headers={"Idempotency-Key": _key()},
+        json={
+            "source": "direct",
+            "items": [{"product_id": product["id"], "quantity": 1}],
+            **SHIPPING,
+        },
+    )
+    assert placed.status_code == 201, placed.text
+    number = placed.json()["number"]
+
+    found = await client.post(
+        "/api/v1/orders/lookup",
+        json={"number": number.lower(), "phone": "01700-000000"},
+    )
+    assert found.status_code == 200, found.text
+    body = found.json()
+    assert body["number"] == number
+    assert body["status"] == "new"
+    assert body["phone"] == "01700000000"
+    assert body["total"] == body["subtotal"] + body["shipping"]
+    assert body["items"][0]["title"] == "Lookup gown"
+    assert "id" not in body
+    assert "anonymous" not in body
+    assert "id" not in body["items"][0]
+
+    wrong = await client.post(
+        "/api/v1/orders/lookup",
+        json={"number": number, "phone": "01800000000"},
+    )
+    missing = await client.post(
+        "/api/v1/orders/lookup",
+        json={"number": "IM-00000000", "phone": "01700000000"},
+    )
+    assert wrong.status_code == 404
+    assert missing.status_code == 404
+    assert wrong.json()["error"]["message"] == missing.json()["error"]["message"]
+
+    bad = await client.post(
+        "/api/v1/orders/lookup",
+        json={"number": "IM-1001", "phone": "01700000000"},
+    )
+    assert bad.status_code == 422

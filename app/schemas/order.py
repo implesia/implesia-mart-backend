@@ -105,6 +105,62 @@ class OrderItemRead(BaseModel):
     line_total: int
 
 
+class OrderLookup(BaseModel):
+    """Public status check. The number alone is not enough."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    number: str = Field(min_length=4, max_length=32)
+    phone: str = Field(min_length=11, max_length=20)
+
+    @field_validator("number")
+    @classmethod
+    def _number(cls, value: str) -> str:
+        number = re.sub(r"\s+", "", value).upper()
+        if not re.fullmatch(r"IM-[0-9A-F]{8}", number):
+            raise ValueError("Order number looks wrong")
+        return number
+
+    @field_validator("phone")
+    @classmethod
+    def _phone(cls, value: str) -> str:
+        digits = re.sub(r"\D", "", value)
+        if digits.startswith("880") and len(digits) == 13:
+            digits = f"0{digits[3:]}"
+        if not _PHONE.fullmatch(digits):
+            raise ValueError("Phone must be an 11-digit Bangladesh mobile number")
+        return digits
+
+
+class PublicOrderItemRead(BaseModel):
+    title: str
+    slug: str
+    image_src: str
+    unit_price: int
+    quantity: int
+    line_total: int
+
+
+class PublicOrderRead(BaseModel):
+    number: str
+    status: str
+    customer_name: str
+    phone: str
+    district: str
+    area: str
+    address: str
+    notes: str
+    delivery_zone: DeliveryZone
+    subtotal: int
+    shipping: int
+    total: int
+    courier_name: str
+    tracking_number: str
+    payment_method: Literal["cod"]
+    items: list[PublicOrderItemRead]
+    created_at: datetime
+
+
 class OrderRead(BaseModel):
     id: uuid.UUID
     number: str

@@ -6,7 +6,14 @@ from app.api.deps import DbSession, no_store
 from app.api.v1.endpoints.cart import ShopperDep
 from app.core.config import settings
 from app.rate_limit import limiter
-from app.schemas.order import OrderCreate, OrderQuoteRequest, OrderRead, QuoteRead
+from app.schemas.order import (
+    OrderCreate,
+    OrderLookup,
+    OrderQuoteRequest,
+    OrderRead,
+    PublicOrderRead,
+    QuoteRead,
+)
 from app.services import order_service
 
 router = APIRouter(dependencies=[Depends(no_store)])
@@ -22,6 +29,17 @@ async def quote_order(
 ) -> QuoteRead:
     del request
     return await order_service.quote(db, actor, payload)
+
+
+@router.post("/lookup", response_model=PublicOrderRead)
+@limiter.limit(settings.rate_limit_order_lookup)
+async def lookup_order(
+    request: Request,
+    db: DbSession,
+    payload: OrderLookup,
+) -> PublicOrderRead:
+    del request
+    return await order_service.lookup_order(db, payload)
 
 
 @router.post("", response_model=OrderRead, status_code=201)

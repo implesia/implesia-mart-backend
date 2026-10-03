@@ -1,0 +1,29 @@
+meta {
+  name: Lookup Order
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{BASE_URL}}/api/v1/orders/lookup
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "number": "{{ORDER_NUMBER}}",
+    "phone": "01700000000"
+  }
+}
+
+docs {
+  # POST /api/v1/orders/lookup
+
+  Public status for an anonymous customer. The order number and the checkout mobile must both match. A wrong phone and an unknown number return the same 404. The response has no internal id.
+}

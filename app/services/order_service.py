@@ -1,3 +1,4 @@
+import hmac
 import re
 import secrets
 import uuid
@@ -16,9 +17,12 @@ from app.schemas.order import (
     AdminOrderQuery,
     OrderCreate,
     OrderItemRead,
+    OrderLookup,
     OrderQuoteRequest,
     OrderRead,
     OrderUpdate,
+    PublicOrderItemRead,
+    PublicOrderRead,
     QuoteLineRead,
     QuoteRead,
     order_page_count,
@@ -398,6 +402,56 @@ async def list_orders(db: AsyncSession, query: AdminOrderQuery) -> AdminOrderLis
         pages=order_page_count(total, query.page_size),
         metrics=await _metrics(db),
     )
+
+
+def _public(order: Order) -> PublicOrderRead:
+    return PublicOrderRead(
+        number=order.number,
+        status=order.status,
+        customer_name=order.customer_name,
+        phone=order.phone,
+        district=order.district,
+        area=order.area,
+        address=order.address,
+        notes=order.notes,
+        delivery_zone=order.delivery_zone,  # type: ignore[arg-type]
+        subtotal=order.subtotal,
+        shipping=order.shipping,
+        total=order.total,
+        courier_name=order.courier_name,
+        tracking_number=order.tracking_number,
+        payment_method="cod",
+        items=[
+            PublicOrderItemRead(
+                title=item.title,
+                slug=item.slug,
+                image_src=item.image_src,
+                unit_price=item.unit_price,
+                quantity=item.quantity,
+                line_total=item.line_total,
+            )
+            for item in order.items
+        ],
+        created_at=order.created_at,
+    )
+
+
+def _same_secret(stored: str, given: str) -> bool:
+    if len(stored) != len(given):
+        return False
+    return hmac.compare_digest(stored, given)
+
+
+async def lookup_order(db: AsyncSession, payload: OrderLookup) -> PublicOrderRead:
+    order = (
+        await db.execute(
+            select(Order).options(_ORDER_LOAD).where(Order.number == payload.number)
+        )
+    ).scalar_one_or_none()
+    stored = order.phone if order is not None else "00000000000"
+    if order is None or not _same_secret(stored, payload.phone):
+        raise NotFoundError("Order not found")
+    return _public(order)
 
 
 async def get_order(db: AsyncSession, order_id: uuid.UUID) -> OrderRead:
