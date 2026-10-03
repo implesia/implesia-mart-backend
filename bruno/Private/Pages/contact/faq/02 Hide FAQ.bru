@@ -1,0 +1,57 @@
+meta {
+  name: Hide FAQ
+  type: http
+  seq: 2
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/contact/faq
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "is_active": false,
+    "title": "Questions",
+    "subtitle": "",
+    "items": [
+      {
+        "question": "When do you reply?",
+        "answer": "During working hours.",
+        "is_active": true
+      }
+    ]
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("hides the FAQ", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().is_active).to.equal(false);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/pages/contact/faq
+
+  Hides the FAQ. Restore FAQ puts a visible block back.
+}

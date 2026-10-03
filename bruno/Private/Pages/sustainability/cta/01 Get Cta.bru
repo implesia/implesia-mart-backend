@@ -1,0 +1,44 @@
+meta {
+  name: Get Cta
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/sustainability/cta
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the closing block including empty buttons", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.title).to.be.a("string");
+    expect(body.primary_cta).to.have.property("href");
+    expect(body.secondary_cta).to.have.property("label");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/admin/pages/sustainability/cta
+
+  Admin closing block. Requires an editor.
+}

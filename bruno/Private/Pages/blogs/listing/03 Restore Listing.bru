@@ -1,0 +1,57 @@
+meta {
+  name: Restore Listing
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/blogs/listing
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "is_active": true,
+    "heading": "Latest",
+    "all_label": "All",
+    "count_suffix": " articles",
+    "empty_message": "Nothing in this category yet.",
+    "featured_label": "Featured",
+    "read_label": "Read",
+    "read_suffix": "read",
+    "tabs_label": "Categories"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("shows the listing labels again", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().is_active).to.equal(true);
+    expect(res.getBody().heading).to.equal("Latest");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/pages/blogs/listing
+
+  Saves the labels and shows them around the article cards.
+}

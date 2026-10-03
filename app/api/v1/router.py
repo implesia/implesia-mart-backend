@@ -21,6 +21,17 @@ from app.api.v1.endpoints.about import stats as about_stats
 from app.api.v1.endpoints.about import steps as about_steps
 from app.api.v1.endpoints.about import story as about_story
 from app.api.v1.endpoints.about import values as about_values
+from app.api.v1.endpoints.blogs import categories as blog_categories
+from app.api.v1.endpoints.blogs import cta as blog_cta
+from app.api.v1.endpoints.blogs import hero as blog_hero
+from app.api.v1.endpoints.blogs import listing as blog_listing
+from app.api.v1.endpoints.blogs import posts as blog_posts
+from app.api.v1.endpoints.blogs import related as blog_related
+from app.api.v1.endpoints.contact import details as contact_details
+from app.api.v1.endpoints.contact import faq as contact_faq
+from app.api.v1.endpoints.contact import form as contact_form
+from app.api.v1.endpoints.contact import hero as contact_hero
+from app.api.v1.endpoints.contact import support as contact_support
 from app.api.v1.endpoints.home import banner as home_banner
 from app.api.v1.endpoints.home import category as home_category
 from app.api.v1.endpoints.home import faq as home_faq
@@ -30,6 +41,8 @@ from app.api.v1.endpoints.home import review as home_review
 from app.api.v1.endpoints.home import showcase as home_showcase
 from app.api.v1.endpoints.home import trust as home_trust
 from app.api.v1.endpoints.sustainability import commitment as sustainability_commitment
+from app.api.v1.endpoints.sustainability import cta as sustainability_cta
+from app.api.v1.endpoints.sustainability import durability as sustainability_durability
 from app.api.v1.endpoints.sustainability import hero as sustainability_hero
 from app.api.v1.endpoints.sustainability import impact as sustainability_impact
 from app.api.v1.endpoints.sustainability import origin as sustainability_origin
@@ -133,6 +146,78 @@ api_router.include_router(
     about_cta.admin_router, prefix="/admin/pages/about/cta", tags=["admin:pages:about"]
 )
 api_router.include_router(
+    contact_hero.public_router, prefix="/pages/contact/hero", tags=["pages:contact"]
+)
+api_router.include_router(
+    contact_hero.admin_router, prefix="/admin/pages/contact/hero", tags=["admin:pages:contact"]
+)
+api_router.include_router(
+    contact_form.public_router, prefix="/pages/contact/form", tags=["pages:contact"]
+)
+api_router.include_router(
+    contact_form.admin_router, prefix="/admin/pages/contact/form", tags=["admin:pages:contact"]
+)
+api_router.include_router(
+    contact_details.public_router, prefix="/pages/contact/details", tags=["pages:contact"]
+)
+api_router.include_router(
+    contact_details.admin_router,
+    prefix="/admin/pages/contact/details",
+    tags=["admin:pages:contact"],
+)
+api_router.include_router(
+    contact_support.public_router, prefix="/pages/contact/support", tags=["pages:contact"]
+)
+api_router.include_router(
+    contact_support.admin_router,
+    prefix="/admin/pages/contact/support",
+    tags=["admin:pages:contact"],
+)
+api_router.include_router(
+    contact_faq.public_router, prefix="/pages/contact/faq", tags=["pages:contact"]
+)
+api_router.include_router(
+    contact_faq.admin_router, prefix="/admin/pages/contact/faq", tags=["admin:pages:contact"]
+)
+api_router.include_router(
+    blog_hero.public_router, prefix="/pages/blogs/hero", tags=["pages:blogs"]
+)
+api_router.include_router(
+    blog_hero.admin_router, prefix="/admin/pages/blogs/hero", tags=["admin:pages:blogs"]
+)
+api_router.include_router(
+    blog_categories.public_router, prefix="/pages/blogs/categories", tags=["pages:blogs"]
+)
+api_router.include_router(
+    blog_categories.admin_router,
+    prefix="/admin/pages/blogs/categories",
+    tags=["admin:pages:blogs"],
+)
+api_router.include_router(
+    blog_listing.public_router, prefix="/pages/blogs/listing", tags=["pages:blogs"]
+)
+api_router.include_router(
+    blog_listing.admin_router, prefix="/admin/pages/blogs/listing", tags=["admin:pages:blogs"]
+)
+api_router.include_router(
+    blog_posts.public_router, prefix="/pages/blogs/posts", tags=["pages:blogs"]
+)
+api_router.include_router(
+    blog_posts.admin_router, prefix="/admin/pages/blogs/posts", tags=["admin:pages:blogs"]
+)
+api_router.include_router(
+    blog_related.public_router, prefix="/pages/blogs/related", tags=["pages:blogs"]
+)
+api_router.include_router(
+    blog_related.admin_router, prefix="/admin/pages/blogs/related", tags=["admin:pages:blogs"]
+)
+api_router.include_router(
+    blog_cta.public_router, prefix="/pages/blogs/cta", tags=["pages:blogs"]
+)
+api_router.include_router(
+    blog_cta.admin_router, prefix="/admin/pages/blogs/cta", tags=["admin:pages:blogs"]
+)
+api_router.include_router(
     sustainability_hero.public_router,
     prefix="/pages/sustainability/hero",
     tags=["pages:sustainability"],
@@ -180,5 +265,25 @@ api_router.include_router(
 api_router.include_router(
     sustainability_quality.admin_router,
     prefix="/admin/pages/sustainability/quality",
+    tags=["admin:pages:sustainability"],
+)
+api_router.include_router(
+    sustainability_durability.public_router,
+    prefix="/pages/sustainability/durability",
+    tags=["pages:sustainability"],
+)
+api_router.include_router(
+    sustainability_durability.admin_router,
+    prefix="/admin/pages/sustainability/durability",
+    tags=["admin:pages:sustainability"],
+)
+api_router.include_router(
+    sustainability_cta.public_router,
+    prefix="/pages/sustainability/cta",
+    tags=["pages:sustainability"],
+)
+api_router.include_router(
+    sustainability_cta.admin_router,
+    prefix="/admin/pages/sustainability/cta",
     tags=["admin:pages:sustainability"],
 )

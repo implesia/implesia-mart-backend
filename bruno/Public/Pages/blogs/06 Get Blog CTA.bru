@@ -1,0 +1,40 @@
+meta {
+  name: Get Blog CTA
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/blogs/cta
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the article call to action", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.not.have.property("is_active");
+    expect(body).to.have.property("title");
+    expect(body).to.have.property("primary_href");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/blogs/cta
+
+  Closing banner on each article. A hidden banner, or one without a title, comes back blank.
+}

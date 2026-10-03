@@ -1,0 +1,45 @@
+meta {
+  name: Get Posts
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/blogs/posts
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns every article for an editor", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.posts).to.be.an("array");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/admin/pages/blogs/posts
+
+  Editor view, including hidden articles and hidden blocks.
+  Create with POST, update with PATCH /{id}, remove with DELETE /{id},
+  and reorder with PUT /order `{ "ids": ["..."] }`.
+  A category has to exist first. Removing that category keeps the article.
+}

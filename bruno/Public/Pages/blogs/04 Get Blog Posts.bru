@@ -1,0 +1,40 @@
+meta {
+  name: Get Blog Posts
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/blogs/posts
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the public article list", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.not.have.property("is_active");
+    expect(body.posts).to.be.an("array");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/blogs/posts
+
+  Active articles only. The first read is an empty list. Inactive blocks are omitted.
+  One article: GET /api/v1/pages/blogs/posts/{slug}
+}

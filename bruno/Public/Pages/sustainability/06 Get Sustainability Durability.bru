@@ -1,0 +1,41 @@
+meta {
+  name: Get Sustainability Durability
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/sustainability/durability
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the durability heading and points", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.title).to.equal("দীর্ঘস্থায়ী প্রোডাক্ট, কম বর্জ্য");
+    expect(body.image.src).to.equal("/images/products/baby-products/3-quater-ground-frog.jpeg");
+    expect(body.bullets).to.be.an("array").that.is.not.empty;
+    expect(body.bullets[0]).to.not.have.property("is_active");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/sustainability/durability
+
+  Public durability block. Hidden points are omitted.
+}

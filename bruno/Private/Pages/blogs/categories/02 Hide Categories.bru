@@ -1,0 +1,54 @@
+meta {
+  name: Hide Categories
+  type: http
+  seq: 2
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/blogs/categories
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "is_active": false,
+    "items": [
+      {
+        "label": "Guides",
+        "is_active": true
+      }
+    ]
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("hides the categories", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().is_active).to.equal(false);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/pages/blogs/categories
+
+  Hides the filter chips. Restore Categories puts a visible chip back.
+}

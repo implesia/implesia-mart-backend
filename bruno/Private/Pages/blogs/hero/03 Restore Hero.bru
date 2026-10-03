@@ -1,0 +1,53 @@
+meta {
+  name: Restore Hero
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/blogs/hero
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "is_active": true,
+    "eyebrow": "Blog",
+    "title": "Guides",
+    "subtitle": "Short guides.",
+    "count_label": "articles"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("shows the hero again", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().is_active).to.equal(true);
+    expect(res.getBody().title).to.equal("Guides");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/pages/blogs/hero
+
+  Saves the banner and shows it on the blog list.
+}

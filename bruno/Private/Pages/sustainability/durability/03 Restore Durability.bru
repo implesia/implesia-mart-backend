@@ -1,0 +1,48 @@
+meta {
+  name: Restore Durability
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/sustainability/durability
+  body: multipartForm
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:multipart-form {
+  payload: {"title":"দীর্ঘস্থায়ী প্রোডাক্ট, কম বর্জ্য","body":"শুধু ট্রেন্ডিং নয় — যেগুলো দীর্ঘদিন কাজে লাগে। ভালো গ্যাজেট মানে কম রিপ্লেসমেন্ট; হাতে তৈরি গর্জিয়াস ড্রেস মানে ফাস্ট ফ্যাশনের চেয়ে কম কাপড়-বর্জ্য।","image":{"src":"/images/products/baby-products/3-quater-ground-frog.jpeg","alt":"হাতে তৈরি গর্জিয়াস ড্রেস — টেকসই ফেব্রিক ও সেলাই"},"bullets":[{"text":"মানসম্পন্ন ম্যাটেরিয়াল ও বিল্ড","is_active":true},{"text":"হাতে তৈরি ড্রেসে টেকসই ফেব্রিক ও সেলাই","is_active":true},{"text":"কম রিপ্লেসমেন্ট, কম ই-বর্জ্য","is_active":true},{"text":"হাতে পেয়ে দেখে তারপর পেমেন্ট","is_active":true}]}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("puts the four seeded points back", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.bullets).to.have.lengthOf(4);
+    expect(body.bullets[1].is_active).to.equal(true);
+    expect(body.image.src).to.equal("/images/products/baby-products/3-quater-ground-frog.jpeg");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PUT /api/v1/admin/pages/sustainability/durability
+
+  Restores the seeded durability section.
+}

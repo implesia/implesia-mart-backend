@@ -1,0 +1,40 @@
+meta {
+  name: Get Blog Listing
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/blogs/listing
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the blog listing labels", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.not.have.property("is_active");
+    expect(body).to.have.property("heading");
+    expect(body).to.have.property("count_suffix");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/blogs/listing
+
+  Public labels around the article cards. A hidden or unsaved listing comes back blank.
+}

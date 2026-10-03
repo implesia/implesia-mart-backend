@@ -1,0 +1,39 @@
+meta {
+  name: Get Blog Categories
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/blogs/categories
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the blog categories", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.not.have.property("is_active");
+    expect(body.items).to.be.an("array");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/blogs/categories
+
+  Public filter chips. A hidden or unsaved list comes back with no items.
+}

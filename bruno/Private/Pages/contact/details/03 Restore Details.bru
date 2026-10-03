@@ -1,0 +1,65 @@
+meta {
+  name: Restore Details
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/contact/details
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "is_active": true,
+    "title": "Contacts",
+    "subtitle": "",
+    "badge": "",
+    "channels": [
+      {
+        "icon": "call",
+        "title": "Call",
+        "value": "+880 1000-000000",
+        "href": "tel:+8801000000000",
+        "is_active": true
+      }
+    ],
+    "social": [
+      { "platform": "facebook", "label": "Facebook", "href": "", "is_active": true },
+      { "platform": "linkedin", "label": "LinkedIn", "href": "", "is_active": true }
+    ]
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("shows the contacts again", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().is_active).to.equal(true);
+    expect(res.getBody().title).to.equal("Contacts");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/pages/contact/details
+
+  Saves the contacts and shows them on the site.
+}

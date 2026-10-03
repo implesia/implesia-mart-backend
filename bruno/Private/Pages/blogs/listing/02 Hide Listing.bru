@@ -1,0 +1,56 @@
+meta {
+  name: Hide Listing
+  type: http
+  seq: 2
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/blogs/listing
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "is_active": false,
+    "heading": "Latest",
+    "all_label": "All",
+    "count_suffix": " articles",
+    "empty_message": "Nothing in this category yet.",
+    "featured_label": "Featured",
+    "read_label": "Read",
+    "read_suffix": "read",
+    "tabs_label": "Categories"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("hides the listing labels", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().is_active).to.equal(false);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/pages/blogs/listing
+
+  Hides the heading and the count. Restore Listing puts the labels back.
+}

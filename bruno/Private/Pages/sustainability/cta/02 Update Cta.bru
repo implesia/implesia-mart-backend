@@ -1,0 +1,51 @@
+meta {
+  name: Update Cta
+  type: http
+  seq: 2
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/sustainability/cta
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "title": "কোয়ালিটি চেক করা গ্যাজেট ও গর্জিয়াস ড্রেস",
+    "subtitle": "হাতে পেয়ে দেখে তারপর ক্যাশ অন ডেলিভারি — সারাদেশে।",
+    "primary_cta": { "label": "", "href": "" },
+    "secondary_cta": { "label": "যোগাযোগ", "href": "/contact-us" }
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("clears the primary button", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().primary_cta.label).to.equal("");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/pages/sustainability/cta
+
+  Hides the primary button by clearing its label. Restore Cta puts it back.
+}

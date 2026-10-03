@@ -1,0 +1,55 @@
+meta {
+  name: Restore Hero
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/contact/hero
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "is_active": true,
+    "eyebrow": "যোগাযোগ",
+    "title": "অর্ডার বা প্রোডাক্ট নিয়ে সাহায্য লাগলে বলুন",
+    "subtitle": "কল বা হোয়াটসঅ্যাপে সরাসরি যোগাযোগ করুন। কর্মঘণ্টায় রিপ্লাই দেওয়ার চেষ্টা করি।",
+    "primary_cta": { "label": "হোয়াটসঅ্যাপ", "href": "https://wa.me/8801516527932" },
+    "secondary_cta": { "label": "কল করুন", "href": "tel:+8801516527932" }
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("shows the hero again", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.is_active).to.equal(true);
+    expect(body.secondary_cta.href).to.equal("tel:+8801516527932");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/pages/contact/hero
+
+  Restores the contact banner.
+}

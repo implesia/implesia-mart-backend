@@ -1,0 +1,59 @@
+meta {
+  name: Restore Form
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/contact/form
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "is_active": true,
+    "title": "মেসেজ পাঠান",
+    "subtitle": "ফর্ম পূরণ করলে হোয়াটসঅ্যাপে খুলবে — সরাসরি চ্যাট শুরু হবে।",
+    "cta": "হোয়াটসঅ্যাপে পাঠান",
+    "hint": "বাইরে হোয়াটসঅ্যাপ খুলবে।",
+    "fields": {
+      "name": { "label": "নাম", "placeholder": "আপনার নাম লিখুন" },
+      "phone": { "label": "ফোন নাম্বার", "placeholder": "০১XXX-XXXXXX" },
+      "subject": { "label": "বিষয়", "placeholder": "যেমন: অর্ডার সম্পর্কে জানতে চাই" },
+      "message": { "label": "মেসেজ", "placeholder": "আমরা কীভাবে সাহায্য করতে পারি লিখুন..." }
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("shows the form again", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().is_active).to.equal(true);
+    expect(res.getBody().title).to.equal("মেসেজ পাঠান");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/pages/contact/form
+
+  Saves the form and shows it on the contact page.
+}

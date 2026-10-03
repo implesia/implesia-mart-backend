@@ -1,0 +1,53 @@
+meta {
+  name: Hide Hero
+  type: http
+  seq: 2
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/contact/hero
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "is_active": false,
+    "eyebrow": "যোগাযোগ",
+    "title": "অর্ডার বা প্রোডাক্ট নিয়ে সাহায্য লাগলে বলুন",
+    "subtitle": "কল বা হোয়াটসঅ্যাপে সরাসরি যোগাযোগ করুন। কর্মঘণ্টায় রিপ্লাই দেওয়ার চেষ্টা করি।",
+    "primary_cta": { "label": "হোয়াটসঅ্যাপ", "href": "https://wa.me/8801516527932" },
+    "secondary_cta": { "label": "কল করুন", "href": "tel:+8801516527932" }
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("hides the hero", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().is_active).to.equal(false);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/pages/contact/hero
+
+  Hides the banner. Restore Hero puts it back.
+}

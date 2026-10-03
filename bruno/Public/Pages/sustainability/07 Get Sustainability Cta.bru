@@ -1,0 +1,42 @@
+meta {
+  name: Get Sustainability Cta
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/sustainability/cta
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the closing block", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.title).to.equal("কোয়ালিটি চেক করা গ্যাজেট ও গর্জিয়াস ড্রেস");
+    expect(body.primary_cta.label).to.equal("সব প্রোডাক্ট");
+    expect(body.primary_cta.href).to.equal("/products");
+    expect(body.secondary_cta.label).to.equal("যোগাযোগ");
+    expect(body.secondary_cta.href).to.equal("/contact-us");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/sustainability/cta
+
+  Public closing block. An empty button label hides that button on the site.
+}

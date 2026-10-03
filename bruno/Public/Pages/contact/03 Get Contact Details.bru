@@ -1,0 +1,40 @@
+meta {
+  name: Get Contact Details
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/contact/details
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the contact channels", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.not.have.property("is_active");
+    expect(body.channels).to.be.an("array");
+    expect(body.social).to.be.an("array");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/contact/details
+
+  Public contact channels. A hidden or unsaved block comes back with an empty title.
+}

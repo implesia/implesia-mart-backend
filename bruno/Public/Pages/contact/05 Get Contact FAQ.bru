@@ -1,0 +1,39 @@
+meta {
+  name: Get Contact FAQ
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/contact/faq
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the contact FAQ", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.not.have.property("is_active");
+    expect(body.items).to.be.an("array");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/contact/faq
+
+  Public contact questions. A hidden or unsaved FAQ comes back with an empty title.
+}

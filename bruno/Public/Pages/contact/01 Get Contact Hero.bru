@@ -1,0 +1,43 @@
+meta {
+  name: Get Contact Hero
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/contact/hero
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the contact banner", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.eyebrow).to.equal("যোগাযোগ");
+    expect(body.title).to.equal("অর্ডার বা প্রোডাক্ট নিয়ে সাহায্য লাগলে বলুন");
+    expect(body.primary_cta.label).to.equal("হোয়াটসঅ্যাপ");
+    expect(body.primary_cta.href).to.match(/^https:\/\/wa\.me\/8801516527932/);
+    expect(body.secondary_cta.href).to.equal("tel:+8801516527932");
+    expect(body).to.not.have.property("is_active");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/contact/hero
+
+  Public contact banner. A hidden hero comes back with an empty title.
+}

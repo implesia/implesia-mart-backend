@@ -1,0 +1,41 @@
+meta {
+  name: Get Blog Related
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/blogs/related
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the related labels", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.not.have.property("is_active");
+    expect(body).to.have.property("toc_title");
+    expect(body).to.have.property("posts_title");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/blogs/related
+
+  Labels for the contents list, mentioned products, and more articles.
+  A hidden or unsaved section comes back blank.
+}

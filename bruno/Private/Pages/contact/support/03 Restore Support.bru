@@ -1,0 +1,57 @@
+meta {
+  name: Restore Support
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/contact/support
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "is_active": true,
+    "title": "Support",
+    "subtitle": "",
+    "hours": [
+      { "label": "Saturday", "value": "9:00 – 22:00", "is_active": true }
+    ],
+    "quick_links": [
+      { "icon": "help", "label": "Questions", "href": "/faqs", "is_active": true }
+    ]
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("shows support again", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().is_active).to.equal(true);
+    expect(res.getBody().title).to.equal("Support");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/pages/contact/support
+
+  Saves support hours and links and shows them on the contact page.
+}

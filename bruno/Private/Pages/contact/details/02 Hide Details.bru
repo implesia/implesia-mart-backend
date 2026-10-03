@@ -1,0 +1,64 @@
+meta {
+  name: Hide Details
+  type: http
+  seq: 2
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/contact/details
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "is_active": false,
+    "title": "Contacts",
+    "subtitle": "",
+    "badge": "",
+    "channels": [
+      {
+        "icon": "call",
+        "title": "Call",
+        "value": "+880 1000-000000",
+        "href": "tel:+8801000000000",
+        "is_active": true
+      }
+    ],
+    "social": [
+      { "platform": "facebook", "label": "Facebook", "href": "", "is_active": true },
+      { "platform": "linkedin", "label": "LinkedIn", "href": "", "is_active": true }
+    ]
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("hides the contacts", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().is_active).to.equal(false);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/pages/contact/details
+
+  Hides the contact channels. Restore Details puts a visible block back.
+}

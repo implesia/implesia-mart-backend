@@ -1,0 +1,54 @@
+meta {
+  name: Restore Cta
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/sustainability/cta
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "title": "কোয়ালিটি চেক করা গ্যাজেট ও গর্জিয়াস ড্রেস",
+    "subtitle": "হাতে পেয়ে দেখে তারপর ক্যাশ অন ডেলিভারি — সারাদেশে।",
+    "primary_cta": { "label": "সব প্রোডাক্ট", "href": "/products" },
+    "secondary_cta": { "label": "যোগাযোগ", "href": "/contact-us" }
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("puts both seeded buttons back", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.primary_cta.label).to.equal("সব প্রোডাক্ট");
+    expect(body.primary_cta.href).to.equal("/products");
+    expect(body.secondary_cta.href).to.equal("/contact-us");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/pages/sustainability/cta
+
+  Restores the seeded closing block.
+}
