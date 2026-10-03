@@ -1,0 +1,60 @@
+meta {
+  name: Add Showcase Item
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/showcase/rows/gadgets/items
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "product_id": "{{SHOWCASE_PRODUCT_ID}}"
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body.id) {
+    bru.setEnvVar("SHOWCASE_ITEM_ID", body.id);
+    const ids = JSON.parse(bru.getEnvVar("SHOWCASE_GADGET_IDS") || "[]").filter((id) => id !== body.id);
+    bru.setEnvVar("SHOWCASE_ORDER", JSON.stringify([body.id, ...ids]));
+  }
+}
+
+tests {
+  test("adds the hidden gadget to the row", function () {
+    expect(res.getStatus()).to.equal(201);
+    const body = res.getBody();
+    expect(body.product_id).to.equal(bru.getEnvVar("SHOWCASE_PRODUCT_ID"));
+    expect(body.product.published).to.equal(false);
+    expect(body.product.title).to.equal("Bruno showcase check");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # POST /api/v1/admin/home/showcase/rows/gadgets/items
+
+  Adds the hidden fixture at the end of the gadgets row. The public row skips it. Stores `SHOWCASE_ITEM_ID` and `SHOWCASE_ORDER`.
+}

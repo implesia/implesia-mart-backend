@@ -1,0 +1,50 @@
+meta {
+  name: Get About Stories
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/about/stories
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the about story", function () {
+    expect(res.getStatus()).to.equal(200);
+    const items = res.getBody().items;
+    expect(items).to.have.lengthOf(1);
+    expect(items[0].kicker).to.equal("আমাদের যাত্রা");
+    expect(items[0].title).to.equal("কেন ইমপ্লেসিয়া মার্ট শুরু হলো");
+    expect(items[0].cta_label).to.equal("সব প্রোডাক্ট");
+    expect(items[0].cta_href).to.equal("/products");
+    expect(items[0].paragraphs).to.have.lengthOf(3);
+    expect(items[0].images.map((image) => image.src)).to.deep.equal([
+      "/images/products/lamp/lamp-2.jpg",
+      "/images/products/baby-products/baby-frock-with-baby.jpeg",
+    ]);
+    expect(items[0]).to.not.have.property("is_active");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/about/stories
+
+  Public story blocks on the about page. No auth. Hidden stories are omitted.
+
+  The first call seeds the Bangla story, its button, and two photos.
+}

@@ -1,0 +1,51 @@
+meta {
+  name: Reorder Perks
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/newsletter/perks/order
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "ids": {{NEWSLETTER_ORDER}}
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("moves the fixture first", function () {
+    expect(res.getStatus()).to.equal(200);
+    const perks = res.getBody().perks;
+    expect(perks[0].id).to.equal(bru.getEnvVar("NEWSLETTER_PERK_ID"));
+    expect(perks[0].is_active).to.equal(false);
+    expect(perks.map((perk) => perk.id)).to.deep.equal(JSON.parse(bru.getEnvVar("NEWSLETTER_ORDER")));
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PUT /api/v1/admin/home/newsletter/perks/order
+
+  The fixture stays hidden, so the public perks keep their previous order.
+}

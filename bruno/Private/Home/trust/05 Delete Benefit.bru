@@ -1,0 +1,84 @@
+meta {
+  name: Delete Benefit
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/trust/{{TRUST_ITEM_ID}}
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("deletes the fixture benefit", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().message).to.equal("Trust benefit deleted");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # DELETE /api/v1/admin/home/trust/{item_id}
+
+  Editor deletes one benefit. Uses `TRUST_ITEM_ID` from Create Benefit, so a collection run removes the fixture it just added. The public strip is unchanged because that fixture stayed hidden.
+
+  ## Response `200`
+
+  ```json
+  { "message": "Trust benefit deleted" }
+  ```
+
+  ## Errors
+
+  `404` `not_found`. `401` / `403` — auth.
+}
+
+example {
+  name: 200 OK
+  description: Benefit deleted
+
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/trust/{{TRUST_ITEM_ID}}
+    method: DELETE
+    mode: none
+    headers: {
+      Accept: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        { "message": "Trust benefit deleted" }
+      '''
+    }
+  }
+}

@@ -1,0 +1,50 @@
+meta {
+  name: Update Showcase Item
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/showcase/rows/gadgets/items/{{SHOWCASE_ITEM_ID}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "product_id": "{{SHOWCASE_PRODUCT_ID}}"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("keeps the fixture product", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.id).to.equal(bru.getEnvVar("SHOWCASE_ITEM_ID"));
+    expect(body.product_id).to.equal(bru.getEnvVar("SHOWCASE_PRODUCT_ID"));
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/home/showcase/rows/{key}/items/{id}
+
+  Replaces the product on one slot. This request sends the same hidden product.
+}

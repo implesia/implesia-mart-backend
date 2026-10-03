@@ -1,0 +1,48 @@
+meta {
+  name: Restore About Hero
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/about/hero
+  body: multipartForm
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:multipart-form {
+  payload: {"eyebrow":"আমাদের সম্পর্কে","title":"আপনার নিশ্চিন্ত অনলাইন শপিং পার্টনার।","subtitle":"ঘরে বসে কোয়ালিটি চেক করা প্রোডাক্ট — ক্যাশ অন ডেলিভারিতে, কোনো আগাম ঝুঁকি ছাড়াই। ট্রেন্ডিং গ্যাজেট আর হাতে তৈরি গর্জিয়াস ড্রেস, একই বিশ্বাসে।","primary_label":"সব প্রোডাক্ট","primary_href":"/products","secondary_label":"যোগাযোগ","secondary_href":"/contact-us","images":[{"alt":"সানসেট ল্যাম্প — ইমপ্লেসিয়া মার্টের ট্রেন্ডিং গ্যাজেট","src":"/images/products/lamp/lamp-1.jpg"},{"alt":"হাতে তৈরি গর্জিয়াস উইমেন্স গাউন","src":"/images/products/baby-products/female-gorgious-ground-dress.jpeg"}]}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("puts the seeded banner back", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.title).to.equal("আপনার নিশ্চিন্ত অনলাইন শপিং পার্টনার।");
+    expect(body.images[0].src).to.equal("/images/products/lamp/lamp-1.jpg");
+    expect(body.images[1].src).to.equal("/images/products/baby-products/female-gorgious-ground-dress.jpeg");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PUT /api/v1/admin/pages/about/hero
+
+  Restores the seeded heading and the two static photos. The uploaded left photo is removed.
+}

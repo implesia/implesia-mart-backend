@@ -1,0 +1,55 @@
+meta {
+  name: Restore Vision
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/about/mission/vision
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "icon": "visibility",
+    "title": "আমাদের ভিশন",
+    "description": "বাংলাদেশের সবচেয়ে বিশ্বাসযোগ্য অনলাইন শপিং ডেস্টিনেশন হয়ে ওঠা — যেখানে প্রতিটি ক্যাটাগরির প্রতিটি অর্ডার মানেই নিশ্চিন্ত, ঝুঁকিমুক্ত অভিজ্ঞতা।",
+    "is_active": true
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("puts the seeded vision card back", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.key).to.equal("vision");
+    expect(body.icon).to.equal("visibility");
+    expect(body.title).to.equal("আমাদের ভিশন");
+    expect(body.is_active).to.equal(true);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/pages/about/mission/vision
+
+  Restores the seeded vision card so the about page shows both cards again.
+}

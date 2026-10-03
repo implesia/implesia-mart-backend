@@ -1,0 +1,51 @@
+meta {
+  name: Get About Stats
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/about/stats
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the about stats bar", function () {
+    expect(res.getStatus()).to.equal(200);
+    const items = res.getBody().items;
+    expect(items.map((item) => item.label)).to.deep.equal([
+      "ক্যাটাগরি",
+      "জেলায় ডেলিভারি",
+      "ক্যাশ অন ডেলিভারি",
+      "ইজি রিটার্ন",
+    ]);
+    expect(items[0].value).to.equal("২");
+    expect(items[2].value).to.equal("COD");
+    items.forEach((item) => {
+      expect(item.icon).to.be.a("string");
+      expect(item).to.not.have.property("is_active");
+    });
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/about/stats
+
+  Public stats under the about banner. No auth. Hidden stats are omitted.
+
+  The first call seeds the four Bangla stats.
+}

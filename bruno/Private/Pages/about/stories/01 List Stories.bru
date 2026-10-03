@@ -1,0 +1,48 @@
+meta {
+  name: List Stories
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/about/stories
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && Array.isArray(body)) {
+    bru.setEnvVar("STORY_IDS", JSON.stringify(body.map((story) => story.id)));
+  }
+}
+
+tests {
+  test("lists every story", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody()).to.be.an("array");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/admin/pages/about/stories
+
+  Editor lists every story, including hidden ones. Stores `STORY_IDS` for Reorder. Run this first.
+}

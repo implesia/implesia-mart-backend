@@ -1,0 +1,48 @@
+meta {
+  name: Update Review
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/reviews/items/{{REVIEW_ITEM_ID}}
+  body: multipartForm
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:multipart-form {
+  payload: {"product":"Bruno review check","channel":"Messenger","image_src":"/images/reviews/sunset-lamp-1.jpg","image_alt":"টেস্ট স্ক্রিনশট","is_active":false}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("keeps the fixture hidden", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.id).to.equal(bru.getEnvVar("REVIEW_ITEM_ID"));
+    expect(body.channel).to.equal("Messenger");
+    expect(body.is_active).to.equal(false);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/home/reviews/items/{id}
+
+  Replaces the review. A new `image` file replaces the screenshot. This request only changes the channel and stays hidden.
+}

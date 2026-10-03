@@ -1,0 +1,41 @@
+meta {
+  name: Delete Featured Product
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/featured/items/{{FEATURED_ITEM_ID}}
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("removes the fixture product", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().message).to.equal("Featured product removed");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # DELETE /api/v1/admin/home/featured/items/{id}
+
+  Removes the fixture from the rail. The catalog product stays. The seeded featured products stay.
+}

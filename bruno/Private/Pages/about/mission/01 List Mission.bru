@@ -1,0 +1,45 @@
+meta {
+  name: List Mission
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/about/mission
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("lists both cards", function () {
+    expect(res.getStatus()).to.equal(200);
+    const items = res.getBody();
+    expect(items).to.have.lengthOf(2);
+    expect(items.map((card) => card.key)).to.deep.equal(["vision", "mission"]);
+    expect(items[0].is_active).to.equal(true);
+    expect(items[1].is_active).to.equal(true);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/admin/pages/about/mission
+
+  Editor lists both cards, including a hidden one. Run this before Hide Vision.
+}

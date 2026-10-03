@@ -1,0 +1,61 @@
+meta {
+  name: Create Featured Product
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/featured/items
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "product_id": "{{FEATURED_PICK_ID}}"
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body.id) {
+    bru.setEnvVar("FEATURED_ITEM_ID", body.id);
+    const ids = JSON.parse(bru.getEnvVar("FEATURED_IDS") || "[]").filter((id) => id !== body.id);
+    bru.setEnvVar("FEATURED_ORDER", JSON.stringify([body.id, ...ids]));
+  }
+}
+
+tests {
+  test("features the picked product", function () {
+    expect(res.getStatus()).to.equal(201);
+    const body = res.getBody();
+    expect(body.id).to.be.a("string");
+    expect(body.product_id).to.equal(bru.getEnvVar("FEATURED_PICK_ID"));
+    expect(body.product.title).to.be.a("string");
+    expect(body.sort_order).to.be.a("number");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # POST /api/v1/admin/home/featured/items
+
+  Adds the product from Pick Catalog Product at the end of the rail. Stores `FEATURED_ITEM_ID` and `FEATURED_ORDER`. Delete Featured Product removes this fixture.
+}

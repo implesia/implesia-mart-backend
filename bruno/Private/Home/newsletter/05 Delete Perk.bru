@@ -1,0 +1,41 @@
+meta {
+  name: Delete Perk
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/newsletter/perks/{{NEWSLETTER_PERK_ID}}
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("removes the fixture", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().message).to.equal("Perk removed");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # DELETE /api/v1/admin/home/newsletter/perks/{id}
+
+  Removes the fixture. The seeded perks stay.
+}

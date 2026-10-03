@@ -1,0 +1,48 @@
+meta {
+  name: List Stats
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/about/stats
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && Array.isArray(body)) {
+    bru.setEnvVar("STAT_IDS", JSON.stringify(body.map((stat) => stat.id)));
+  }
+}
+
+tests {
+  test("lists every stat", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody()).to.be.an("array");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/admin/pages/about/stats
+
+  Editor lists every stat, including hidden ones. Stores `STAT_IDS` for Reorder. Run this first.
+}

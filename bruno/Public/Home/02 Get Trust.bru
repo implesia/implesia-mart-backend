@@ -1,0 +1,123 @@
+meta {
+name: Get Trust
+type: http
+seq: 2
+}
+
+get {
+url: {{BASE_URL}}/api/v1/home/trust
+body: none
+auth: none
+}
+
+headers {
+Accept: application/json
+}
+
+assert {
+res.status: eq 200
+}
+
+tests {
+test("returns the storefront benefits", function () {
+expect(res.getStatus()).to.equal(200)                                           ;
+const items = res.getBody().items                                               ;
+expect(items).to.be.an("array");
+const labels = items.map((item) => item.label)                                  ;
+expect(labels).to.include("ক্যাশ অন ডেলিভারি");
+expect(labels).to.include("সারাদেশে ডেলিভারি");
+expect(labels).to.include("৩ দিন ইজি রিটার্ন");
+items.forEach((item) => {
+expect(item.id).to.be.a("string");
+expect(item.icon).to.be.a("string");
+expect(item.href).to.be.a("string");
+expect(item).to.not.have.property("is_active");
+expect(item).to.not.have.property("sort_order");
+})                                                                              ;
+})                                                                              ;
+}
+
+settings {
+encodeUrl: true
+timeout: 25000
+}
+
+docs {
+# GET /api/v1/home/trust
+
+Public trust strip under the home hero. No auth. Only active benefits, in display order.
+
+The first call seeds three benefits when the table is empty: ক্যাশ অন ডেলিভারি, সারাদেশে ডেলিভারি, and ৩ দিন ইজি রিটার্ন. Later calls return the saved rows. Hidden benefits are omitted. Deleting every benefit does not seed them again.
+
+No request body.
+
+## Response `200`
+
+```json
+{
+"items": [
+{
+"id": "463ed76d-863d-45e6-9bff-687fdf7a49a4",
+"icon": "payments",
+"label": "ক্যাশ অন ডেলিভারি",
+"href": "/shipping-returns"
+}
+]
+}
+```
+
+`icon` is one of `payments`, `local_shipping`, `assignment_return`, `verified`, `local_offer`, `campaign`, `shield`, `support_agent`, `schedule`.
+}
+
+example {
+name: 200 OK
+description: Active benefits
+
+request: {
+url: {{BASE_URL}}/api/v1/home/trust
+method: GET
+mode: none
+headers: {
+Accept: application/json
+}
+}
+
+response: {
+headers: {
+content-type: application/json
+}
+
+status: {
+code: 200
+text: OK
+}
+
+body: {
+type: json
+content: '''
+{
+"items": [
+{
+"id": "463ed76d-863d-45e6-9bff-687fdf7a49a4",
+"icon": "payments",
+"label": "ক্যাশ অন ডেলিভারি",
+"href": "/shipping-returns"
+},
+{
+"id": "ad9f350b-2f31-4752-b5b5-19b17a865f4c",
+"icon": "local_shipping",
+"label": "সারাদেশে ডেলিভারি",
+"href": "/shipping-returns"
+},
+{
+"id": "7c81e75a-06e8-47c8-af30-8ea55fed9693",
+"icon": "assignment_return",
+"label": "৩ দিন ইজি রিটার্ন",
+"href": "/shipping-returns"
+}
+]
+}
+'''
+}
+}
+}

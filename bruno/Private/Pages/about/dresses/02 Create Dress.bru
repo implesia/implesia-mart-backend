@@ -1,0 +1,57 @@
+meta {
+  name: Create Dress
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/about/dresses
+  body: multipartForm
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:multipart-form {
+  payload: {"kicker":"","title":"Bruno dress check","subtitle":"","features":[],"primary_label":"","primary_href":"","secondary_label":"","secondary_href":"","is_active":false,"images":[]}
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body.id) {
+    bru.setEnvVar("DRESS_ID", body.id);
+    const ids = JSON.parse(bru.getEnvVar("DRESS_IDS") || "[]").filter((id) => id !== body.id);
+    bru.setEnvVar("DRESS_ORDER", JSON.stringify([body.id, ...ids]));
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  test("adds a hidden custom dress", function () {
+    expect(res.getStatus()).to.equal(201);
+    const body = res.getBody();
+    expect(body.id).to.be.a("string");
+    expect(body.title).to.equal("Bruno dress check");
+    expect(body.is_active).to.equal(false);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # POST /api/v1/admin/pages/about/dresses
+
+  Adds a hidden block so the public page does not change. `payload` is multipart JSON. Optional `image_0` and later files replace those photo slots. Stores `DRESS_ID` and `DRESS_ORDER`.
+}

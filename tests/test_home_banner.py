@@ -1,4 +1,23 @@
+import json
+
 from httpx import AsyncClient
+
+JPEG = (
+    b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+    b"\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f"
+    b"\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xd9"
+)
+
+
+def _parts(
+    body: dict, image: tuple[str, bytes, str] | None = None
+) -> list[tuple[str, tuple[None, str] | tuple[str, bytes, str]]]:
+    parts: list[tuple[str, tuple[None, str] | tuple[str, bytes, str]]] = [
+        ("payload", (None, json.dumps(body)))
+    ]
+    if image is not None:
+        parts.append(("image", image))
+    return parts
 
 
 async def test_public_banner_matches_the_live_hero(client: AsyncClient) -> None:
@@ -60,7 +79,7 @@ async def test_unpublished_slides_stay_off_the_public_banner(
     hidden = await client.patch(
         f"/api/v1/admin/home/banner/slides/{lamp_id}",
         headers=auth_headers,
-        json={"is_published": False},
+        files=_parts({"is_published": False}),
     )
     assert hidden.status_code == 200, hidden.text
 
@@ -119,22 +138,24 @@ async def test_editor_can_replace_banner_chrome_and_manage_a_slide(
     created = await client.post(
         "/api/v1/admin/home/banner/slides",
         headers=auth_headers,
-        json={
-            "slug": "bruno-style-slide",
-            "eyebrow": "টেস্ট",
-            "title": "নতুন স্লাইড",
-            "description": "অ্যাডমিন থেকে যোগ করা স্লাইড।",
-            "price": 500,
-            "compare_at_price": 1000,
-            "primary_cta_label": "অর্ডার",
-            "primary_cta_href": "/products/bruno-style-slide",
-            "secondary_cta_label": "সব",
-            "secondary_cta_href": "/products",
-            "image_src": "/images/products/lamp/lamp-5.jpg",
-            "image_alt": "টেস্ট",
-            "accent": "teal",
-            "sort_order": 9,
-        },
+        files=_parts(
+            {
+                "slug": "bruno-style-slide",
+                "eyebrow": "টেস্ট",
+                "title": "নতুন স্লাইড",
+                "description": "অ্যাডমিন থেকে যোগ করা স্লাইড।",
+                "price": 500,
+                "compare_at_price": 1000,
+                "primary_cta_label": "অর্ডার",
+                "primary_cta_href": "/products/bruno-style-slide",
+                "secondary_cta_label": "সব",
+                "secondary_cta_href": "/products",
+                "image_src": "/images/products/lamp/lamp-5.jpg",
+                "image_alt": "টেস্ট",
+                "accent": "teal",
+                "sort_order": 9,
+            }
+        ),
     )
     assert created.status_code == 201, created.text
     slide_id = created.json()["id"]
@@ -144,14 +165,13 @@ async def test_editor_can_replace_banner_chrome_and_manage_a_slide(
     duplicate = await client.post(
         "/api/v1/admin/home/banner/slides",
         headers=auth_headers,
-        json=created.json()
-        | {
-            "slug": "bruno-style-slide",
-            "primary_cta_label": "অর্ডার",
-            "primary_cta_href": "/products/bruno-style-slide",
-            "secondary_cta_label": "সব",
-            "secondary_cta_href": "/products",
-        },
+        files=_parts(
+            {
+                "slug": "bruno-style-slide",
+                "title": "নতুন স্লাইড",
+                "image_src": "/images/products/lamp/lamp-5.jpg",
+            }
+        ),
     )
     assert duplicate.status_code == 409
 
@@ -165,3 +185,91 @@ async def test_editor_can_replace_banner_chrome_and_manage_a_slide(
         headers=auth_headers,
     )
     assert missing.status_code == 404
+
+
+async def test_hero_form_can_create_reorder_and_hide_a_draft(
+    client: AsyncClient, auth_headers: dict[str, str], tmp_path, monkeypatch
+) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "media_root", tmp_path)
+    created = await client.post(
+        "/api/v1/admin/home/banner/slides",
+        headers=auth_headers,
+        files=_parts(
+            {
+                "title": "Desk lamp",
+                "eyebrow": "New",
+                "description": "A short line.",
+                "price_label": "শুরু ৳1,500",
+                "primary_cta_label": "Order now",
+                "primary_cta_href": "/products",
+                "image_alt": "Desk lamp",
+                "accent": "teal",
+                "is_published": True,
+            },
+            ("desk-lamp.jpg", JPEG, "image/jpeg"),
+        ),
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["slug"] == "desk-lamp"
+    assert body["price_label"] == "শুরু ৳1,500"
+    assert body["price"] == 1500
+    assert body["image_src"].startswith("/media/banners/")
+    stored = tmp_path / "banners" / body["image_src"].removeprefix("/media/banners/")
+    assert stored.is_file()
+    slide_id = body["id"]
+
+    listed = await client.get(
+        "/api/v1/admin/home/banner/slides?page_size=100", headers=auth_headers
+    )
+    assert listed.status_code == 200
+    ids = [item["id"] for item in listed.json()["items"]]
+    assert ids[-1] == slide_id
+
+    moved = await client.post(
+        f"/api/v1/admin/home/banner/slides/{slide_id}/move",
+        headers=auth_headers,
+        json={"direction": "earlier"},
+    )
+    assert moved.status_code == 200, moved.text
+    again = await client.get(
+        "/api/v1/admin/home/banner/slides?page_size=100", headers=auth_headers
+    )
+    assert [item["id"] for item in again.json()["items"]][-2] == slide_id
+
+    draft = await client.post(
+        "/api/v1/admin/home/banner/slides",
+        headers=auth_headers,
+        files=_parts({"title": "", "price_label": "", "image_src": "", "is_published": True}),
+    )
+    assert draft.status_code == 201, draft.text
+    public = await client.get("/api/v1/home/banner")
+    public_ids = {slide["id"] for slide in public.json()["slides"]}
+    assert slide_id in public_ids
+    assert draft.json()["id"] not in public_ids
+    assert draft.json()["price_label"] == ""
+
+    await client.delete(f"/api/v1/admin/home/banner/slides/{slide_id}", headers=auth_headers)
+    await client.delete(
+        f"/api/v1/admin/home/banner/slides/{draft.json()['id']}", headers=auth_headers
+    )
+    assert not stored.is_file()
+
+    staged = await client.post(
+        "/api/v1/admin/home/banner/slides",
+        headers=auth_headers,
+        files=_parts({"title": "Local only", "image_src": "/uploads/desk-lamp.jpg"}),
+    )
+    assert staged.status_code == 422
+
+    rejected = await client.post(
+        "/api/v1/admin/home/banner/slides",
+        headers=auth_headers,
+        files=_parts(
+            {"title": "Svg"},
+            ("icon.svg", b"<svg xmlns='http://www.w3.org/2000/svg'/>", "image/svg+xml"),
+        ),
+    )
+    assert rejected.status_code == 422

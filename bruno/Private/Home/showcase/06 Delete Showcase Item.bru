@@ -1,0 +1,41 @@
+meta {
+  name: Delete Showcase Item
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/showcase/rows/gadgets/items/{{SHOWCASE_ITEM_ID}}
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("removes the fixture from the row", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().message).to.equal("Showcase product removed");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # DELETE /api/v1/admin/home/showcase/rows/gadgets/items/{id}
+
+  Removes the fixture from the gadgets row. The catalog product is removed by the next request.
+}

@@ -1,0 +1,41 @@
+meta {
+  name: Delete Stat
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/about/stats/{{STAT_ID}}
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("removes the fixture", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().message).to.equal("Stat removed");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # DELETE /api/v1/admin/pages/about/stats/{id}
+
+  Removes the fixture. The seeded stats stay.
+}

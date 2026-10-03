@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -7,9 +8,14 @@ from app.models.home.banner import BannerAccent
 
 
 def _href(value: str) -> str:
-    if not (value.startswith("/") or value.startswith("http://") or value.startswith("https://")):
+    cleaned = value.strip()
+    if not cleaned:
+        return "/products"
+    if not (
+        cleaned.startswith("/") or cleaned.startswith("http://") or cleaned.startswith("https://")
+    ):
         raise ValueError("href must start with / or http")
-    return value
+    return cleaned
 
 
 class BannerCta(BaseModel):
@@ -101,19 +107,22 @@ class BannerSlideAdmin(BannerSlidePublic):
 
 
 class BannerSlideWrite(BaseModel):
-    slug: str = Field(min_length=1, max_length=180, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-    eyebrow: str = Field(min_length=1, max_length=120)
-    title: str = Field(min_length=1, max_length=200)
-    description: str = Field(min_length=1, max_length=2000)
-    price: int = Field(ge=0)
+    slug: str | None = Field(
+        None, min_length=1, max_length=180, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    )
+    eyebrow: str = Field("", max_length=120)
+    title: str = Field("", max_length=200)
+    description: str = Field("", max_length=2000)
+    price: int = Field(0, ge=0)
     compare_at_price: int | None = Field(None, ge=0)
     price_prefix: str | None = Field(None, max_length=40)
-    primary_cta_label: str = Field(min_length=1, max_length=80)
-    primary_cta_href: str = Field(min_length=1, max_length=255)
-    secondary_cta_label: str = Field(min_length=1, max_length=80)
-    secondary_cta_href: str = Field(min_length=1, max_length=255)
-    image_src: str = Field(min_length=1, max_length=255)
-    image_alt: str = Field(min_length=1, max_length=200)
+    price_label: str | None = Field(None, max_length=80)
+    primary_cta_label: str = Field("Order now", max_length=80)
+    primary_cta_href: str = Field("/products", max_length=255)
+    secondary_cta_label: str = Field("", max_length=80)
+    secondary_cta_href: str = Field("/products", max_length=255)
+    image_src: str = Field("", max_length=255)
+    image_alt: str = Field("", max_length=200)
     accent: BannerAccent = BannerAccent.GOLD
     sort_order: int = Field(0, ge=0, le=1000)
     is_published: bool = True
@@ -137,18 +146,19 @@ class BannerSlideUpdate(BaseModel):
     slug: str | None = Field(
         None, min_length=1, max_length=180, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
     )
-    eyebrow: str | None = Field(None, min_length=1, max_length=120)
-    title: str | None = Field(None, min_length=1, max_length=200)
-    description: str | None = Field(None, min_length=1, max_length=2000)
+    eyebrow: str | None = Field(None, max_length=120)
+    title: str | None = Field(None, max_length=200)
+    description: str | None = Field(None, max_length=2000)
     price: int | None = Field(None, ge=0)
     compare_at_price: int | None = Field(None, ge=0)
     price_prefix: str | None = Field(None, max_length=40)
-    primary_cta_label: str | None = Field(None, min_length=1, max_length=80)
-    primary_cta_href: str | None = Field(None, min_length=1, max_length=255)
-    secondary_cta_label: str | None = Field(None, min_length=1, max_length=80)
-    secondary_cta_href: str | None = Field(None, min_length=1, max_length=255)
-    image_src: str | None = Field(None, min_length=1, max_length=255)
-    image_alt: str | None = Field(None, min_length=1, max_length=200)
+    price_label: str | None = Field(None, max_length=80)
+    primary_cta_label: str | None = Field(None, max_length=80)
+    primary_cta_href: str | None = Field(None, max_length=255)
+    secondary_cta_label: str | None = Field(None, max_length=80)
+    secondary_cta_href: str | None = Field(None, max_length=255)
+    image_src: str | None = Field(None, max_length=255)
+    image_alt: str | None = Field(None, max_length=200)
     accent: BannerAccent | None = None
     sort_order: int | None = Field(None, ge=0, le=1000)
     is_published: bool | None = None
@@ -168,3 +178,7 @@ class BannerSlideUpdate(BaseModel):
             return None
         stripped = value.strip()
         return stripped or None
+
+
+class BannerSlideMove(BaseModel):
+    direction: Literal["earlier", "later"]

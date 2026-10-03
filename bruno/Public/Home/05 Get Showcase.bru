@@ -1,0 +1,48 @@
+meta {
+  name: Get Showcase
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/home/showcase
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the category rows", function () {
+    expect(res.getStatus()).to.equal(200);
+    const rows = res.getBody().rows;
+    expect(rows).to.be.an("array");
+    const keys = rows.map((row) => row.key);
+    expect(keys).to.include("gadgets");
+    expect(keys).to.include("fashion");
+    rows.forEach((row) => {
+      expect(row.heading).to.be.a("string");
+      expect(row.href).to.be.a("string");
+      expect(row.product_ids).to.be.an("array");
+    });
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/home/showcase
+
+  Public category rows on the home page. No auth. Each row lists published product ids in display order.
+
+  The first call seeds gadgets (ট্রেন্ডিং গ্যাজেট) and fashion (গর্জিয়াস ড্রেস), each with up to four published products from that category. Later calls return the saved rows. Hidden products are omitted. Clearing a row does not seed it again.
+}

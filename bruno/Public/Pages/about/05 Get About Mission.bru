@@ -1,0 +1,47 @@
+meta {
+  name: Get About Mission
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/about/mission
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns vision and mission", function () {
+    expect(res.getStatus()).to.equal(200);
+    const items = res.getBody().items;
+    expect(items).to.have.lengthOf(2);
+    expect(items[0].key).to.equal("vision");
+    expect(items[0].title).to.equal("আমাদের ভিশন");
+    expect(items[0].icon).to.equal("visibility");
+    expect(items[1].key).to.equal("mission");
+    expect(items[1].title).to.equal("আমাদের মিশন");
+    expect(items[1].icon).to.equal("rocket_launch");
+    expect(items[0]).to.not.have.property("is_active");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/about/mission
+
+  Public vision and mission cards. No auth. Hidden cards are omitted.
+
+  The first call seeds both Bangla cards. Vision stays on the left.
+}

@@ -1,12 +1,48 @@
 from app.db.base import Base
+from app.models.about_dress import (
+    AboutDressBlock,
+    AboutDressFeature,
+    AboutDressImage,
+    AboutDressSection,
+)
+from app.models.about_hero import AboutHero, AboutHeroImage
+from app.models.about_mission import AboutMissionCard, AboutMissionSection
+from app.models.about_stats import AboutStatItem, AboutStats
+from app.models.about_story import (
+    AboutStoryBlock,
+    AboutStoryImage,
+    AboutStoryParagraph,
+    AboutStorySection,
+)
 from app.models.cart import Cart, CartItem
 from app.models.delivery import DeliverySettings
 from app.models.home.banner import BannerAccent, HomeBanner, HomeBannerSlide
+from app.models.home.category import HomeCategory, HomeCategoryTile
+from app.models.home.faq import HomeFaq, HomeFaqItem
+from app.models.home.featured import HomeFeatured, HomeFeaturedItem
+from app.models.home.newsletter import HomeNewsletter, HomeNewsletterPerk
+from app.models.home.review import HomeReview, HomeReviewItem
+from app.models.home.showcase import HomeShowcase, HomeShowcaseItem, HomeShowcaseRow
+from app.models.home.trust import HomeTrust, HomeTrustItem
 from app.models.order import Order, OrderIdempotency, OrderItem
 from app.models.product import Product
 from app.models.user import User, UserRole
 
 __all__ = [
+    "AboutDressBlock",
+    "AboutDressFeature",
+    "AboutDressImage",
+    "AboutDressSection",
+    "AboutHero",
+    "AboutHeroImage",
+    "AboutMissionCard",
+    "AboutMissionSection",
+    "AboutStatItem",
+    "AboutStats",
+    "AboutStoryBlock",
+    "AboutStoryImage",
+    "AboutStoryParagraph",
+    "AboutStorySection",
     "BannerAccent",
     "Base",
     "Cart",
@@ -14,6 +50,21 @@ __all__ = [
     "DeliverySettings",
     "HomeBanner",
     "HomeBannerSlide",
+    "HomeCategory",
+    "HomeCategoryTile",
+    "HomeFaq",
+    "HomeFaqItem",
+    "HomeFeatured",
+    "HomeFeaturedItem",
+    "HomeNewsletter",
+    "HomeNewsletterPerk",
+    "HomeReview",
+    "HomeReviewItem",
+    "HomeShowcase",
+    "HomeShowcaseItem",
+    "HomeShowcaseRow",
+    "HomeTrust",
+    "HomeTrustItem",
     "Order",
     "OrderIdempotency",
     "OrderItem",

@@ -55,6 +55,7 @@ class HomeBannerSlide(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     compare_at_price: Mapped[int | None] = mapped_column(Integer)
     price_prefix: Mapped[str | None] = mapped_column(String(40))
+    price_text: Mapped[str | None] = mapped_column(String(80))
     primary_cta_label: Mapped[str] = mapped_column(String(80), nullable=False)
     primary_cta_href: Mapped[str] = mapped_column(String(255), nullable=False)
     secondary_cta_label: Mapped[str] = mapped_column(String(80), nullable=False)

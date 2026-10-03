@@ -1,0 +1,50 @@
+meta {
+  name: Update Featured Product
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/featured/items/{{FEATURED_ITEM_ID}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "product_id": "{{FEATURED_PICK_ID}}"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("keeps the fixture product", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.id).to.equal(bru.getEnvVar("FEATURED_ITEM_ID"));
+    expect(body.product_id).to.equal(bru.getEnvVar("FEATURED_PICK_ID"));
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/home/featured/items/{id}
+
+  Replaces the product on one rail slot. This request sends the same product, so the public rail does not change.
+}

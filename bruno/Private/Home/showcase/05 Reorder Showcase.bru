@@ -1,0 +1,51 @@
+meta {
+  name: Reorder Showcase
+  type: http
+  seq: 5
+}
+
+put {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/showcase/rows/gadgets/items/order
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "ids": {{SHOWCASE_ORDER}}
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("moves the fixture first", function () {
+    expect(res.getStatus()).to.equal(200);
+    const gadgets = res.getBody().rows.find((row) => row.key === "gadgets");
+    expect(gadgets.items[0].id).to.equal(bru.getEnvVar("SHOWCASE_ITEM_ID"));
+    expect(gadgets.items[0].product.published).to.equal(false);
+    expect(gadgets.items.map((item) => item.id)).to.deep.equal(JSON.parse(bru.getEnvVar("SHOWCASE_ORDER")));
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PUT /api/v1/admin/home/showcase/rows/gadgets/items/order
+
+  The fixture stays hidden, so the public gadgets row keeps its published products in their previous order.
+}

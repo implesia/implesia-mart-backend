@@ -1,0 +1,50 @@
+meta {
+  name: Reorder Featured
+  type: http
+  seq: 5
+}
+
+put {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/featured/items/order
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "ids": {{FEATURED_ORDER}}
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("moves the fixture product first", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.items[0].id).to.equal(bru.getEnvVar("FEATURED_ITEM_ID"));
+    expect(body.items.map((item) => item.id)).to.deep.equal(JSON.parse(bru.getEnvVar("FEATURED_ORDER")));
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PUT /api/v1/admin/home/featured/items/order
+
+  Replaces the display order. `ids` must be every featured item id, once each. Delete Featured Product removes the fixture afterwards.
+}

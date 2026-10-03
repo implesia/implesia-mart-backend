@@ -1,0 +1,48 @@
+meta {
+  name: Pick Catalog Product
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/products?page=1&page_size=100
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  const body = res.getBody();
+  const taken = new Set(JSON.parse(bru.getEnvVar("FEATURED_PRODUCT_IDS") || "[]"));
+  const pick = (body.items || []).find((item) => item && item.id && !taken.has(item.id));
+  if (pick) bru.setEnvVar("FEATURED_PICK_ID", pick.id);
+}
+
+tests {
+  test("finds a product that is not already featured", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(bru.getEnvVar("FEATURED_PICK_ID")).to.be.a("string").and.not.equal("");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/admin/products
+
+  Finds one catalog product that is not on the featured rail and stores `FEATURED_PICK_ID`. Run List Featured first.
+}

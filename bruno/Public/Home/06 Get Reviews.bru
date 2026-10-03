@@ -1,0 +1,48 @@
+meta {
+  name: Get Reviews
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/home/reviews
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the review row", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.kicker).to.be.a("string");
+    expect(body.title).to.be.a("string");
+    expect(body.subtitle).to.be.a("string");
+    expect(body.items).to.be.an("array");
+    body.items.forEach((item) => {
+      expect(item.product).to.be.a("string");
+      expect(["WhatsApp", "Messenger"]).to.include(item.channel);
+      expect(item.image_src).to.be.a("string");
+    });
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/home/reviews
+
+  Public customer screenshots on the home page. No auth. Hidden reviews are omitted.
+
+  The first call seeds six Bangla reviews. Later calls return the saved row. Clearing the row does not seed it again.
+}

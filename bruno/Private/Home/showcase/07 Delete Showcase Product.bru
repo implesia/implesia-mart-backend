@@ -1,0 +1,40 @@
+meta {
+  name: Delete Showcase Product
+  type: http
+  seq: 7
+}
+
+delete {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/products/{{SHOWCASE_PRODUCT_ID}}
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 204
+}
+
+tests {
+  test("deletes the hidden catalog product", function () {
+    expect(res.getStatus()).to.equal(204);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # DELETE /api/v1/admin/products/{id}
+
+  Removes the hidden fixture product created for this run.
+}

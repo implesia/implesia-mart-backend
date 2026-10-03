@@ -47,6 +47,30 @@ That order logs in before the private calls. **Create Product** writes `PRODUCT_
 
 **Home / Create Slide** writes `BANNER_SLIDE_ID` and keeps the new slide unpublished. Get, Update, and Delete use that fixture. The public hero stays the five live slides.
 
+**Home / Create Benefit** writes `TRUST_ITEM_ID` and keeps the new benefit hidden. Update, Reorder, and Delete use that fixture. Run List Benefits before Create so Reorder has every id. The public trust strip stays the live benefits.
+
+**Home / Create Category** writes `CATEGORY_TILE_ID` and keeps the new tile hidden. Update, Reorder, and Delete use that fixture. Run List Categories before Create so Reorder has every id. The public category grid stays the live tiles.
+
+**Home / Create Featured Product** writes `FEATURED_ITEM_ID` for a catalog product that is not already on the rail. Update, Reorder, and Delete use that fixture. Run List Featured and Pick Catalog Product first. Delete removes only the fixture, so the live rail returns to the seeded products.
+
+**Home / Create Showcase Product** creates a hidden catalog product, adds it to the gadgets row, then deletes both. The public rows stay the seeded products. Run List Showcase first so Reorder has every gadgets id.
+
+**Home / Create Review** adds a hidden screenshot to the review row, then deletes it. The public row stays the six seeded reviews. Run List Reviews first so Reorder has every id.
+
+**Home / Create FAQ** adds a hidden question, then deletes it. The public list stays the six seeded questions. Run List FAQ first so Reorder has every id.
+
+**Home / Create Perk** adds a hidden perk, then deletes it. The public subscribe block stays the three seeded perks. Run List Newsletter first so Reorder has every id.
+
+**Pages / Update About Hero** uploads a left photo and changes the title, then **Restore About Hero** puts the seeded banner back. The public about hero stays the seeded heading and two photos.
+
+**Pages / Create Stat** adds a hidden stat, then deletes it. The public about bar stays the four seeded stats. Run List Stats first so Reorder has every id.
+
+**Pages / Create Story** adds a hidden story, then deletes it. The public about page stays the seeded story. Run List Stories first so Reorder has every id.
+
+**Pages / Create Dress** adds a hidden custom-dress block, then deletes it. The public about page stays the seeded block. Run List Dresses first so Reorder has every id.
+
+**Pages / Hide Vision** turns the vision card off, then **Restore Vision** puts the seeded card back. Run them together so the public about page stays both cards.
+
 Do not include `Private / Auth / Change Password` in this run. It replaces the admin password.
 
 ## Error codes

@@ -1,0 +1,51 @@
+meta {
+  name: List Newsletter
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/newsletter
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && Array.isArray(body.perks)) {
+    bru.setEnvVar("NEWSLETTER_IDS", JSON.stringify(body.perks.map((perk) => perk.id)));
+  }
+}
+
+tests {
+  test("lists the perks", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.title).to.be.a("string");
+    expect(body.cta).to.be.a("string");
+    expect(body.perks).to.be.an("array");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/admin/home/newsletter
+
+  Editor lists every perk, including hidden ones. Stores `NEWSLETTER_IDS` for Reorder. Run this first.
+}

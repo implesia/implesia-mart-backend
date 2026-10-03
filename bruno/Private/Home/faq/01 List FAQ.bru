@@ -1,0 +1,51 @@
+meta {
+  name: List FAQ
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/faq
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && Array.isArray(body.items)) {
+    bru.setEnvVar("FAQ_IDS", JSON.stringify(body.items.map((item) => item.id)));
+  }
+}
+
+tests {
+  test("lists the questions", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.title).to.be.a("string");
+    expect(body.more_href).to.be.a("string");
+    expect(body.items).to.be.an("array");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/admin/home/faq
+
+  Editor lists every question, including hidden ones. Stores `FAQ_IDS` for Reorder. Run this first.
+}

@@ -1,0 +1,54 @@
+meta {
+  name: Update FAQ
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/faq/items/{{FAQ_ITEM_ID}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "category": "টেস্ট",
+    "question": "Bruno faq check?",
+    "answer": "আপডেট উত্তর।",
+    "is_active": false
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("keeps the fixture hidden", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.id).to.equal(bru.getEnvVar("FAQ_ITEM_ID"));
+    expect(body.answer).to.equal("আপডেট উত্তর।");
+    expect(body.is_active).to.equal(false);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/home/faq/items/{id}
+
+  Replaces one question. This request stays hidden.
+}

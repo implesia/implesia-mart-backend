@@ -1,0 +1,58 @@
+meta {
+  name: Create Story
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/about/stories
+  body: multipartForm
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:multipart-form {
+  payload: {"kicker":"","title":"Bruno story check","paragraphs":[{"text":"A hidden story."}],"cta_label":"","cta_href":"","is_active":false,"images":[]}
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body.id) {
+    bru.setEnvVar("STORY_ID", body.id);
+    const ids = JSON.parse(bru.getEnvVar("STORY_IDS") || "[]").filter((id) => id !== body.id);
+    bru.setEnvVar("STORY_ORDER", JSON.stringify([body.id, ...ids]));
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  test("adds a hidden story", function () {
+    expect(res.getStatus()).to.equal(201);
+    const body = res.getBody();
+    expect(body.id).to.be.a("string");
+    expect(body.title).to.equal("Bruno story check");
+    expect(body.is_active).to.equal(false);
+    expect(body.paragraphs[0].text).to.equal("A hidden story.");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # POST /api/v1/admin/pages/about/stories
+
+  Adds a hidden story so the public page does not change. `payload` is multipart JSON. Optional `image_0` through `image_5` replace those photo slots. Stores `STORY_ID` and `STORY_ORDER`.
+}

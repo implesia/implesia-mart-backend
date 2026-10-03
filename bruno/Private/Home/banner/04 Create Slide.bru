@@ -6,39 +6,20 @@ meta {
 
 post {
   url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/banner/slides
-  body: json
+  body: multipartForm
   auth: bearer
 }
 
 headers {
   Accept: application/json
-  Content-Type: application/json
 }
 
 auth:bearer {
   token: {{ACCESS_TOKEN}}
 }
 
-body:json {
-  {
-    "slug": "{{BANNER_SLIDE_SLUG}}",
-    "eyebrow": "ব্রুনো টেস্ট",
-    "title": "নতুন ব্যানার স্লাইড",
-    "description": "এই স্লাইডটি কালেকশন রান থেকে তৈরি। পাবলিক হিরোতে দেখায় না।",
-    "price": 500,
-    "compare_at_price": 1000,
-    "price_prefix": null,
-    "primary_cta_label": "অর্ডার",
-    "primary_cta_href": "/products",
-    "secondary_cta_label": "সব প্রোডাক্ট",
-    "secondary_cta_href": "/products",
-    "image_src": "/images/products/lamp/lamp-5.jpg",
-    "image_alt": "ব্রুনো টেস্ট স্লাইড",
-    "accent": "teal",
-    "sort_order": 99,
-    "is_published": false,
-    "internal_notes": "Bruno collection fixture. Safe to delete."
-  }
+body:multipart-form {
+  payload: {"slug":"{{BANNER_SLIDE_SLUG}}","eyebrow":"ব্রুনো টেস্ট","title":"নতুন ব্যানার স্লাইড","description":"এই স্লাইডটি কালেকশন রান থেকে তৈরি। পাবলিক হিরোতে দেখায় না।","price":500,"compare_at_price":1000,"price_prefix":null,"primary_cta_label":"অর্ডার","primary_cta_href":"/products","secondary_cta_label":"সব প্রোডাক্ট","secondary_cta_href":"/products","image_src":"/images/products/lamp/lamp-5.jpg","image_alt":"ব্রুনো টেস্ট স্লাইড","accent":"teal","sort_order":99,"is_published":false,"internal_notes":"Bruno collection fixture. Safe to delete."}
 }
 
 assert {
@@ -79,11 +60,11 @@ settings {
 docs {
   # POST /api/v1/admin/home/banner/slides
   
-  Editor adds a slide. `slug` is lowercase letters, numbers, and hyphens, and must be unique.
+  Editor adds a slide as `multipart/form-data`, the same shape as product create. `payload` is the slide JSON. `image` is an optional JPEG, PNG, WEBP, or GIF (at most 5 MB). When `image` is sent, it is stored under `/media/banners/` and replaces `image_src`.
   
-  This request keeps `is_published` false and a high `sort_order`, so the public hero stays the live five slides. Each run sets a new `BANNER_SLIDE_SLUG` and stores `BANNER_SLIDE_ID` for Get, Update, and Delete.
+  `slug` is lowercase letters, numbers, and hyphens, and must be unique. This request keeps `is_published` false and a high `sort_order`, so the public hero stays the live five slides. Each run sets a new `BANNER_SLIDE_SLUG` and stores `BANNER_SLIDE_ID` for Get, Update, and Delete.
   
-  `price` is integer BDT. `compare_at_price` and `price_prefix` are optional. CTA hrefs start with `/` or `http`. `accent` is `gold`, `teal`, `rose`, or `ink`.
+  `price` is integer BDT. `compare_at_price` and `price_prefix` are optional. CTA hrefs start with `/` or `http`. `accent` is `gold`, `teal`, `rose`, or `ink`. A path under `/uploads/` is rejected: send the file in `image` instead.
   
   ## Response `201`
   

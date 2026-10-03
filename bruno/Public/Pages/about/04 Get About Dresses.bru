@@ -1,0 +1,48 @@
+meta {
+  name: Get About Dresses
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/pages/about/dresses
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the custom dress block", function () {
+    expect(res.getStatus()).to.equal(200);
+    const items = res.getBody().items;
+    expect(items).to.have.lengthOf(1);
+    expect(items[0].kicker).to.equal("নতুন সংযোজন");
+    expect(items[0].title).to.equal("শুধু গ্যাজেট নয়, আমরা তৈরি করি গর্জিয়াস ড্রেসও");
+    expect(items[0].primary_label).to.equal("কাস্টম অর্ডার");
+    expect(items[0].primary_href).to.match(/^https:\/\/wa\.me\/8801516527932\?text=/);
+    expect(items[0].secondary_href).to.equal("/products?category=fashion");
+    expect(items[0].features).to.have.lengthOf(4);
+    expect(items[0].images).to.have.lengthOf(6);
+    expect(items[0]).to.not.have.property("is_active");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/pages/about/dresses
+
+  Public custom-dress blocks on the about page. No auth. Hidden blocks are omitted.
+
+  The first call seeds the Bangla block, its highlights, buttons, and six photos.
+}

@@ -6,26 +6,20 @@ meta {
 
 patch {
   url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/banner/slides/{{BANNER_SLIDE_ID}}
-  body: json
+  body: multipartForm
   auth: bearer
 }
 
 headers {
   Accept: application/json
-  Content-Type: application/json
 }
 
 auth:bearer {
   token: {{ACCESS_TOKEN}}
 }
 
-body:json {
-  {
-    "eyebrow": "ব্রুনো আপডেট",
-    "price": 750,
-    "compare_at_price": 1000,
-    "is_published": false
-  }
+body:multipart-form {
+  payload: {"eyebrow":"ব্রুনো আপডেট","price":750,"compare_at_price":1000,"is_published":false}
 }
 
 assert {
@@ -52,7 +46,7 @@ settings {
 docs {
   # PATCH /api/v1/admin/home/banner/slides/{slide_id}
   
-  Editor updates one slide. Send only the fields that change. `compare_at_price: null` clears the strike price. An empty `price_prefix` clears the prefix.
+  Editor updates one slide as `multipart/form-data`. `payload` is JSON with only the fields that change. Attach `image` to replace the picture; the previous `/media/banners/` file is removed. `compare_at_price: null` clears the strike price. An empty `price_prefix` clears the prefix.
   
   This request keeps the Bruno fixture unpublished.
   

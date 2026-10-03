@@ -1,0 +1,110 @@
+meta {
+  name: List Benefits
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/trust
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && Array.isArray(body)) {
+    bru.setEnvVar("TRUST_IDS", JSON.stringify(body.map((item) => item.id)));
+  }
+}
+
+tests {
+  test("lists every benefit", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.be.an("array");
+    expect(body.length).to.be.at.least(3);
+    const labels = body.map((item) => item.label);
+    expect(labels).to.include("ক্যাশ অন ডেলিভারি");
+    body.forEach((item) => {
+      expect(item.id).to.be.a("string");
+      expect(item.is_active).to.be.a("boolean");
+      expect(item.sort_order).to.be.a("number");
+      expect(item.href).to.be.a("string");
+    });
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/admin/home/trust
+
+  Editor lists every benefit, including hidden ones, ordered by `sort_order`. Stores `TRUST_IDS` for Reorder Benefits.
+
+  The first call seeds the three storefront benefits when none exist.
+
+  ## Response `200`
+
+  A JSON array. Each item has `id`, `icon`, `label`, `href`, `is_active`, and `sort_order`.
+
+  ## Errors
+
+  `401` `unauthenticated`. `403` `forbidden`.
+}
+
+example {
+  name: 200 OK
+  description: Admin benefit list
+
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/trust
+    method: GET
+    mode: none
+    headers: {
+      Accept: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        [
+          {
+            "id": "463ed76d-863d-45e6-9bff-687fdf7a49a4",
+            "icon": "payments",
+            "label": "ক্যাশ অন ডেলিভারি",
+            "href": "/shipping-returns",
+            "is_active": true,
+            "sort_order": 0
+          }
+        ]
+      '''
+    }
+  }
+}

@@ -1,0 +1,52 @@
+meta {
+  name: Reorder Categories
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/categories/tiles/order
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "ids": {{CATEGORY_ORDER}}
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("moves the fixture category first", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.tiles).to.be.an("array");
+    expect(body.tiles[0].id).to.equal(bru.getEnvVar("CATEGORY_TILE_ID"));
+    expect(body.tiles[0].is_active).to.equal(false);
+    expect(body.tiles.map((tile) => tile.id)).to.deep.equal(JSON.parse(bru.getEnvVar("CATEGORY_ORDER")));
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PUT /api/v1/admin/home/categories/tiles/order
+
+  Replaces the display order. `ids` must be every tile id, once each. The fixture stays hidden, so the public grid order of the live tiles does not change.
+}

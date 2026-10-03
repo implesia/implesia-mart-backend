@@ -1,0 +1,48 @@
+meta {
+  name: Get FAQ
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/home/faq
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the home questions", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.kicker).to.be.a("string");
+    expect(body.title).to.be.a("string");
+    expect(body.more_href).to.be.a("string");
+    expect(body.items).to.be.an("array");
+    body.items.forEach((item) => {
+      expect(item.question).to.be.a("string");
+      expect(item.answer).to.be.a("string");
+      expect(item.category).to.be.a("string");
+    });
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/home/faq
+
+  Public questions on the home page. No auth. Hidden questions are omitted.
+
+  The first call seeds six Bangla questions. Later calls return the saved list. Clearing the list does not seed it again.
+}

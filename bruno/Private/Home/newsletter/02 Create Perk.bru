@@ -1,0 +1,63 @@
+meta {
+  name: Create Perk
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/newsletter/perks
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "icon": "verified",
+    "label": "Bruno perk check",
+    "is_active": false
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body.id) {
+    bru.setEnvVar("NEWSLETTER_PERK_ID", body.id);
+    const ids = JSON.parse(bru.getEnvVar("NEWSLETTER_IDS") || "[]").filter((id) => id !== body.id);
+    bru.setEnvVar("NEWSLETTER_ORDER", JSON.stringify([body.id, ...ids]));
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  test("adds a hidden perk", function () {
+    expect(res.getStatus()).to.equal(201);
+    const body = res.getBody();
+    expect(body.id).to.be.a("string");
+    expect(body.label).to.equal("Bruno perk check");
+    expect(body.icon).to.equal("verified");
+    expect(body.is_active).to.equal(false);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # POST /api/v1/admin/home/newsletter/perks
+
+  Adds a hidden perk so the public list does not change. Stores `NEWSLETTER_PERK_ID` and `NEWSLETTER_ORDER`.
+}

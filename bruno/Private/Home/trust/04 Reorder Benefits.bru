@@ -1,0 +1,116 @@
+meta {
+  name: Reorder Benefits
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/trust/order
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "ids": {{TRUST_ORDER}}
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("moves the fixture benefit first", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.be.an("array");
+    expect(body[0].id).to.equal(bru.getEnvVar("TRUST_ITEM_ID"));
+    expect(body[0].is_active).to.equal(false);
+    expect(body.map((item) => item.id)).to.deep.equal(JSON.parse(bru.getEnvVar("TRUST_ORDER")));
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PUT /api/v1/admin/home/trust/order
+
+  Editor replaces the display order. `ids` must be every benefit id exactly once, in the new order. A missing or duplicate id is `422` with `Send every benefit in the new order`.
+
+  Create Benefit writes `TRUST_ORDER` as the new hidden benefit first, then the ids captured by List Benefits. Run those two requests first. Delete Benefit removes the fixture, so the original benefits stay in their previous relative order.
+
+  ## Response `200`
+
+  The full admin list in the new order.
+
+  ## Errors
+
+  `422` `validation_error` — the id list is not the complete set. `401` / `403` — auth.
+}
+
+example {
+  name: 200 OK
+  description: Fixture moved first
+
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/trust/order
+    method: PUT
+    mode: json
+    headers: {
+      Accept: application/json
+      Content-Type: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+
+    body:json: {
+      {
+        "ids": [
+          "a4fe249a-b466-4c69-a956-94d14e4c8bee",
+          "463ed76d-863d-45e6-9bff-687fdf7a49a4",
+          "ad9f350b-2f31-4752-b5b5-19b17a865f4c",
+          "7c81e75a-06e8-47c8-af30-8ea55fed9693"
+        ]
+      }
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        [
+          {
+            "id": "a4fe249a-b466-4c69-a956-94d14e4c8bee",
+            "icon": "verified",
+            "label": "Bruno trust updated",
+            "href": "/shipping-returns",
+            "is_active": false,
+            "sort_order": 0
+          }
+        ]
+      '''
+    }
+  }
+}

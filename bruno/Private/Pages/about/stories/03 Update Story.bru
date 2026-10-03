@@ -1,0 +1,48 @@
+meta {
+  name: Update Story
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/about/stories/{{STORY_ID}}
+  body: multipartForm
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:multipart-form {
+  payload: {"kicker":"","title":"Bruno story check","paragraphs":[{"text":"A hidden story."}],"cta_label":"","cta_href":"","is_active":false,"images":[]}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("keeps the fixture hidden", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.id).to.equal(bru.getEnvVar("STORY_ID"));
+    expect(body.title).to.equal("Bruno story check");
+    expect(body.is_active).to.equal(false);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/pages/about/stories/{id}
+
+  Replaces one story, including its paragraphs and photos. This request stays hidden.
+}

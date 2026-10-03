@@ -1,0 +1,51 @@
+meta {
+  name: List Reviews
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/reviews
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && Array.isArray(body.items)) {
+    bru.setEnvVar("REVIEW_IDS", JSON.stringify(body.items.map((item) => item.id)));
+  }
+}
+
+tests {
+  test("lists the review row", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.kicker).to.be.a("string");
+    expect(body.title).to.be.a("string");
+    expect(body.items).to.be.an("array");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/admin/home/reviews
+
+  Editor lists every review, including hidden ones. Stores `REVIEW_IDS` for Reorder. Run this first.
+}

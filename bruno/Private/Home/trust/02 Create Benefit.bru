@@ -1,0 +1,129 @@
+meta {
+  name: Create Benefit
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/trust
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "icon": "verified",
+    "label": "Bruno trust check",
+    "href": "",
+    "is_active": false
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body.id) {
+    bru.setEnvVar("TRUST_ITEM_ID", body.id);
+    const ids = JSON.parse(bru.getEnvVar("TRUST_IDS") || "[]").filter((id) => id !== body.id);
+    bru.setEnvVar("TRUST_IDS", JSON.stringify([...ids, body.id]));
+    bru.setEnvVar("TRUST_ORDER", JSON.stringify([body.id, ...ids]));
+  }
+}
+
+tests {
+  test("creates a hidden benefit", function () {
+    expect(res.getStatus()).to.equal(201);
+    const body = res.getBody();
+    expect(body.id).to.be.a("string");
+    expect(body.icon).to.equal("verified");
+    expect(body.label).to.equal("Bruno trust check");
+    expect(body.href).to.equal("/shipping-returns");
+    expect(body.is_active).to.equal(false);
+    expect(body.sort_order).to.be.a("number");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # POST /api/v1/admin/home/trust
+
+  Editor adds one benefit at the end of the list. This request keeps `is_active` false, so the public strip does not change. A blank `href` is stored as `/shipping-returns`. The label is trimmed and required.
+
+  Stores `TRUST_ITEM_ID` for Update and Delete, and `TRUST_ORDER` (the new id first, then the ids from List Benefits) for Reorder Benefits. Run List Benefits first.
+
+  At most 12 benefits. `icon` is one of `payments`, `local_shipping`, `assignment_return`, `verified`, `local_offer`, `campaign`, `shield`, `support_agent`, `schedule`.
+
+  ## Response `201`
+
+  The saved benefit.
+
+  ## Errors
+
+  `422` `validation_error` — blank label, bad href, unknown icon, or the list is already 12 long. `401` / `403` — auth.
+}
+
+example {
+  name: 201 Created
+  description: Hidden benefit
+
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/trust
+    method: POST
+    mode: json
+    headers: {
+      Accept: application/json
+      Content-Type: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+
+    body:json: {
+      {
+        "icon": "verified",
+        "label": "Bruno trust check",
+        "href": "",
+        "is_active": false
+      }
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+    }
+
+    status: {
+      code: 201
+      text: Created
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "id": "a4fe249a-b466-4c69-a956-94d14e4c8bee",
+          "icon": "verified",
+          "label": "Bruno trust check",
+          "href": "/shipping-returns",
+          "is_active": false,
+          "sort_order": 3
+        }
+      '''
+    }
+  }
+}

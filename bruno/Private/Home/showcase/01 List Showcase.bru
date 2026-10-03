@@ -1,0 +1,56 @@
+meta {
+  name: List Showcase
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/showcase
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  const body = res.getBody();
+  const gadgets = (body.rows || []).find((row) => row.key === "gadgets");
+  if (res.getStatus() === 200 && gadgets) {
+    bru.setEnvVar("SHOWCASE_GADGET_IDS", JSON.stringify(gadgets.items.map((item) => item.id)));
+  }
+}
+
+tests {
+  test("lists both category rows", function () {
+    expect(res.getStatus()).to.equal(200);
+    const rows = res.getBody().rows;
+    expect(rows.map((row) => row.key)).to.deep.equal(["gadgets", "fashion"]);
+    rows.forEach((row) => {
+      expect(row.heading).to.be.a("string");
+      expect(row.href).to.be.a("string");
+      expect(row.items).to.be.an("array");
+      expect(row.choices).to.be.an("array");
+    });
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/admin/home/showcase
+
+  Editor lists both rows, their products, and the products that can be added. Stores `SHOWCASE_GADGET_IDS` for Reorder. Run this first.
+}

@@ -1,0 +1,58 @@
+meta {
+  name: List Featured
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/featured
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && Array.isArray(body.items)) {
+    bru.setEnvVar("FEATURED_IDS", JSON.stringify(body.items.map((item) => item.id)));
+    bru.setEnvVar("FEATURED_PRODUCT_IDS", JSON.stringify(body.items.map((item) => item.product_id)));
+  }
+}
+
+tests {
+  test("lists the heading and every featured product", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.heading).to.be.a("string");
+    expect(body.view_all_href).to.be.a("string");
+    expect(body.items).to.be.an("array");
+    expect(body.choices).to.be.an("array");
+    body.items.forEach((item) => {
+      expect(item.id).to.be.a("string");
+      expect(item.product_id).to.be.a("string");
+      expect(item.sort_order).to.be.a("number");
+    });
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/admin/home/featured
+
+  Editor lists the heading, every featured product, and the catalog choices. Stores `FEATURED_IDS` and `FEATURED_PRODUCT_IDS`. Run this before Pick Catalog Product.
+}

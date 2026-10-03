@@ -1,0 +1,41 @@
+meta {
+  name: Delete Category
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/categories/tiles/{{CATEGORY_TILE_ID}}
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("deletes the fixture category", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().message).to.equal("Category deleted");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # DELETE /api/v1/admin/home/categories/tiles/{id}
+
+  Removes the fixture tile. The two seeded categories stay on the home page.
+}

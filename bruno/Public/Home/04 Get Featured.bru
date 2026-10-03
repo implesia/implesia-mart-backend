@@ -1,0 +1,44 @@
+meta {
+  name: Get Featured
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/home/featured
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the storefront featured rail", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.heading).to.be.a("string");
+    expect(body.view_all_label).to.be.a("string");
+    expect(body.view_all_href).to.be.a("string");
+    expect(body.product_ids).to.be.an("array");
+    body.product_ids.forEach((id) => expect(id).to.be.a("string"));
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/home/featured
+
+  Public featured row on the home page. No auth. Product ids are published products, in display order.
+
+  The first call seeds the heading ফিচার্ড প্রোডাক্ট and up to four published products that are marked featured. If none are marked featured, it seeds the first four published products. Later calls return the saved row. Hidden products are omitted. Clearing the rail does not seed it again.
+}

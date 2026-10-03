@@ -1,0 +1,51 @@
+meta {
+  name: Get Categories
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/home/categories
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the storefront categories", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.heading).to.be.a("string");
+    expect(body.tiles).to.be.an("array");
+    const labels = body.tiles.map((tile) => tile.label);
+    expect(labels).to.include("ট্রেন্ডিং গ্যাজেট");
+    expect(labels).to.include("গর্জিয়াস ড্রেস");
+    body.tiles.forEach((tile) => {
+      expect(tile.id).to.be.a("string");
+      expect(tile.href).to.be.a("string");
+      expect(tile.image_src).to.be.a("string");
+      expect(tile).to.not.have.property("is_active");
+      expect(tile).to.not.have.property("sort_order");
+    });
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/home/categories
+
+  Public category grid on the home page. No auth. Only active tiles, in display order.
+
+  The first call seeds the heading ক্যাটাগরি and two tiles when the parent row is missing: ট্রেন্ডিং গ্যাজেট and গর্জিয়াস ড্রেস. Later calls return the saved rows. Hidden tiles are omitted. Deleting every tile does not seed them again.
+}

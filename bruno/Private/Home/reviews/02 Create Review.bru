@@ -1,0 +1,58 @@
+meta {
+  name: Create Review
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/reviews/items
+  body: multipartForm
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:multipart-form {
+  payload: {"product":"Bruno review check","channel":"WhatsApp","image_src":"/images/reviews/sunset-lamp-1.jpg","image_alt":"টেস্ট স্ক্রিনশট","is_active":false}
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body.id) {
+    bru.setEnvVar("REVIEW_ITEM_ID", body.id);
+    const ids = JSON.parse(bru.getEnvVar("REVIEW_IDS") || "[]").filter((id) => id !== body.id);
+    bru.setEnvVar("REVIEW_ORDER", JSON.stringify([body.id, ...ids]));
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  test("adds a hidden review", function () {
+    expect(res.getStatus()).to.equal(201);
+    const body = res.getBody();
+    expect(body.id).to.be.a("string");
+    expect(body.product).to.equal("Bruno review check");
+    expect(body.is_active).to.equal(false);
+    expect(body.channel).to.equal("WhatsApp");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # POST /api/v1/admin/home/reviews/items
+
+  Multipart field `payload` is the review JSON. An optional `image` file replaces `image_src` and is stored under `/media/reviews/`. This request uses an existing static screenshot and stays hidden, so the public row does not change.
+}

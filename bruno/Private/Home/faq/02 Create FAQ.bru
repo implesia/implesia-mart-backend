@@ -1,0 +1,63 @@
+meta {
+  name: Create FAQ
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/faq/items
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "category": "টেস্ট",
+    "question": "Bruno faq check?",
+    "answer": "টেস্ট উত্তর।",
+    "is_active": false
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body.id) {
+    bru.setEnvVar("FAQ_ITEM_ID", body.id);
+    const ids = JSON.parse(bru.getEnvVar("FAQ_IDS") || "[]").filter((id) => id !== body.id);
+    bru.setEnvVar("FAQ_ORDER", JSON.stringify([body.id, ...ids]));
+  }
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  test("adds a hidden question", function () {
+    expect(res.getStatus()).to.equal(201);
+    const body = res.getBody();
+    expect(body.id).to.be.a("string");
+    expect(body.question).to.equal("Bruno faq check?");
+    expect(body.is_active).to.equal(false);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # POST /api/v1/admin/home/faq/items
+
+  Adds a hidden question so the public list does not change. Stores `FAQ_ITEM_ID` and `FAQ_ORDER`.
+}

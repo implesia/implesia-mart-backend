@@ -13,7 +13,7 @@ from app.core.exceptions import UnprocessableError
 
 _MAX_FILES = 12
 _READ = 64 * 1024
-_OWNED_PREFIX = "/media/products/"
+_FOLDERS = frozenset({"products", "banners", "categories", "reviews", "about"})
 
 # (signature, suffix). WebP is checked separately because the mark is not a prefix.
 _SIGNATURES: tuple[tuple[bytes, str], ...] = (
@@ -52,22 +52,31 @@ async def read_image(upload: UploadFile) -> bytes:
     return data
 
 
-def store_image(data: bytes) -> str:
+def _folder(name: str) -> str:
+    if name not in _FOLDERS:
+        raise ValueError(f"Unknown media folder: {name}")
+    return name
+
+
+def store_image(data: bytes, *, folder: str = "products") -> str:
+    folder = _folder(folder)
     suffix = sniff_image(data)
-    directory = (settings.media_root / "products").resolve()
+    directory = (settings.media_root / folder).resolve()
     directory.mkdir(parents=True, exist_ok=True)
     name = f"{uuid.uuid4().hex}{suffix}"
     path = directory / name
     path.write_bytes(data)
-    return f"{_OWNED_PREFIX}{name}"
+    return f"/media/{folder}/{name}"
 
 
-def delete_owned_media(refs: set[str]) -> None:
-    root = (settings.media_root / "products").resolve()
+def delete_owned_media(refs: set[str], *, folder: str = "products") -> None:
+    folder = _folder(folder)
+    prefix = f"/media/{folder}/"
+    root = (settings.media_root / folder).resolve()
     for ref in refs:
-        if not ref.startswith(_OWNED_PREFIX):
+        if not ref.startswith(prefix):
             continue
-        name = ref.removeprefix(_OWNED_PREFIX)
+        name = ref.removeprefix(prefix)
         if not name or "/" in name or "\\" in name or name.startswith("."):
             continue
         path = (root / name).resolve()
@@ -85,5 +94,6 @@ def real_uploads(files: list[UploadFile] | None) -> list[UploadFile]:
     return kept
 
 
-def owned_refs(*refs: str) -> set[str]:
-    return {ref for ref in refs if ref.startswith(_OWNED_PREFIX)}
+def owned_refs(*refs: str, folder: str = "products") -> set[str]:
+    prefix = f"/media/{_folder(folder)}/"
+    return {ref for ref in refs if ref.startswith(prefix)}

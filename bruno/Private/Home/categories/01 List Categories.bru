@@ -1,0 +1,60 @@
+meta {
+  name: List Categories
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/categories
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 200 && Array.isArray(body.tiles)) {
+    bru.setEnvVar("CATEGORY_IDS", JSON.stringify(body.tiles.map((tile) => tile.id)));
+  }
+}
+
+tests {
+  test("lists the heading and every tile", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.heading).to.be.a("string");
+    expect(body.tiles).to.be.an("array");
+    expect(body.tiles.length).to.be.at.least(2);
+    const labels = body.tiles.map((tile) => tile.label);
+    expect(labels).to.include("ট্রেন্ডিং গ্যাজেট");
+    body.tiles.forEach((tile) => {
+      expect(tile.id).to.be.a("string");
+      expect(tile.is_active).to.be.a("boolean");
+      expect(tile.sort_order).to.be.a("number");
+      expect(tile.href).to.be.a("string");
+      expect(tile.image_src).to.be.a("string");
+    });
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/admin/home/categories
+
+  Editor lists the heading and every tile, including hidden ones. Stores `CATEGORY_IDS` for Reorder. Run this before Create.
+}

@@ -1,0 +1,48 @@
+meta {
+  name: Update Dress
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/about/dresses/{{DRESS_ID}}
+  body: multipartForm
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:multipart-form {
+  payload: {"kicker":"","title":"Bruno dress check","subtitle":"","features":[],"primary_label":"","primary_href":"","secondary_label":"","secondary_href":"","is_active":false,"images":[]}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("keeps the fixture hidden", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.id).to.equal(bru.getEnvVar("DRESS_ID"));
+    expect(body.title).to.equal("Bruno dress check");
+    expect(body.is_active).to.equal(false);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PATCH /api/v1/admin/pages/about/dresses/{id}
+
+  Replaces one custom-dress block, including highlights and photos. This request stays hidden.
+}

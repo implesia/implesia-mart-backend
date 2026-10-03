@@ -1,0 +1,50 @@
+meta {
+  name: Get Newsletter
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/home/newsletter
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the home subscribe block", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.eyebrow).to.be.a("string");
+    expect(body.title).to.be.a("string");
+    expect(body.subtitle).to.be.a("string");
+    expect(body.placeholder).to.be.a("string");
+    expect(body.cta).to.be.a("string");
+    expect(body.success).to.be.a("string");
+    expect(body.perks).to.be.an("array");
+    body.perks.forEach((perk) => {
+      expect(perk.icon).to.be.a("string");
+      expect(perk.label).to.be.a("string");
+    });
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/home/newsletter
+
+  Public subscribe block on the home page. No auth. Hidden perks are omitted.
+
+  The first call seeds three Bangla perks. Later calls return the saved list. Clearing the list does not seed it again.
+}

@@ -1,0 +1,57 @@
+meta {
+  name: Create Showcase Product
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/products
+  body: multipartForm
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:multipart-form {
+  payload: {"title":"Bruno showcase check","slug":"{{SHOWCASE_SLUG}}","subtitle":"Hidden fixture","category":"gadgets","price":100,"status":"available","badge":null,"image_src":"/images/products/lamp/lamp-5.jpg","featured":false,"published":false,"content":{"tagline":"টেস্ট","description":"ব্রুনো শোকেস ফিক্সচার।","unit_label":"","image_alt":"টেস্ট","highlights":["টেস্ট"],"specs":[{"label":"ধরন","value":"টেস্ট","group":"general"}],"faqs":[{"question":"কী?","answer":"টেস্ট।"}]}}
+}
+
+script:pre-request {
+  bru.setEnvVar("SHOWCASE_SLUG", "bruno-showcase-" + Date.now());
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body.id) bru.setEnvVar("SHOWCASE_PRODUCT_ID", body.id);
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  test("creates a hidden gadget", function () {
+    expect(res.getStatus()).to.equal(201);
+    const body = res.getBody();
+    expect(body.id).to.be.a("string");
+    expect(body.published).to.equal(false);
+    expect(body.category).to.equal("gadgets");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # POST /api/v1/admin/products
+
+  Creates a hidden gadget so the public showcase rows do not change. Stores `SHOWCASE_PRODUCT_ID`. Delete Showcase Product removes it.
+}

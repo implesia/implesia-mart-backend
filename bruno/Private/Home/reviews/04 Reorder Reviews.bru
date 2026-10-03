@@ -1,0 +1,51 @@
+meta {
+  name: Reorder Reviews
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/reviews/items/order
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "ids": {{REVIEW_ORDER}}
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("moves the fixture first", function () {
+    expect(res.getStatus()).to.equal(200);
+    const items = res.getBody().items;
+    expect(items[0].id).to.equal(bru.getEnvVar("REVIEW_ITEM_ID"));
+    expect(items[0].is_active).to.equal(false);
+    expect(items.map((item) => item.id)).to.deep.equal(JSON.parse(bru.getEnvVar("REVIEW_ORDER")));
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PUT /api/v1/admin/home/reviews/items/order
+
+  The fixture stays hidden, so the public review row keeps its published screenshots in their previous order.
+}
