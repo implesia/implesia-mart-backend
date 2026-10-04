@@ -39,6 +39,8 @@ COPY --from=builder --chown=appuser:appuser /srv/alembic /srv/alembic
 COPY --from=builder --chown=appuser:appuser /srv/app /srv/app
 COPY --from=builder --chown=appuser:appuser /srv/scripts /srv/scripts
 
+RUN mkdir -p /srv/media && chown appuser:appuser /srv/media
+
 USER appuser
 
 EXPOSE 8000
