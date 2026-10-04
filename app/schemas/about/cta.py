@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class CtaLink(BaseModel):
     label: str
@@ -21,7 +23,7 @@ class CtaPublic(BaseModel):
     secondary_cta: CtaLink
 
 
-class CtaLinkWrite(BaseModel):
+class CtaLinkWrite(WriteModel):
     label: str = Field(default="", max_length=80)
     href: str = Field(default="", max_length=800)
 
@@ -33,7 +35,7 @@ class CtaLinkWrite(BaseModel):
         return value
 
 
-class CtaWrite(BaseModel):
+class CtaWrite(WriteModel):
     is_active: bool = True
     title: str = Field(default="", max_length=160)
     subtitle: str = Field(default="", max_length=400)

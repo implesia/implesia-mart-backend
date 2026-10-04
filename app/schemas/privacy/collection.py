@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class CardPublic(BaseModel):
     id: str
@@ -22,10 +24,10 @@ class CollectionPublic(BaseModel):
 
 class CollectionAdmin(CollectionPublic):
     is_active: bool
-    cards: list[CardRead]
+    cards: list[CardRead]  # type: ignore[assignment]
 
 
-class CardWrite(BaseModel):
+class CardWrite(WriteModel):
     id: str | None = None
     icon: str = Field(default="", max_length=40)
     title: str = Field(default="", max_length=200)
@@ -40,7 +42,7 @@ class CardWrite(BaseModel):
         return value
 
 
-class CollectionWrite(BaseModel):
+class CollectionWrite(WriteModel):
     is_active: bool = True
     icon: str = Field(default="", max_length=40)
     nav_label: str = Field(default="", max_length=80)

@@ -226,8 +226,8 @@ async def update_quality(
                         sort_order=index,
                     )
                 )
-        for extra in existing_badges[len(payload.badges) :]:
-            await db.delete(extra)
+        for stale in existing_badges[len(payload.badges) :]:
+            await db.delete(stale)
         await db.commit()
     except Exception:
         delete_owned_media(set(stored), folder=_MEDIA)

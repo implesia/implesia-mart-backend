@@ -3,6 +3,8 @@ import uuid
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 _SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
@@ -25,7 +27,7 @@ class BlockAdmin(BlockPublic):
     is_active: bool
 
 
-class BlockWrite(BaseModel):
+class BlockWrite(WriteModel):
     type: str
     text: str = Field(default="", max_length=4000)
     title: str = Field(default="", max_length=200)
@@ -65,7 +67,7 @@ class PostPublic(BaseModel):
 
 class PostAdmin(PostPublic):
     is_active: bool
-    blocks: list[BlockAdmin]
+    blocks: list[BlockAdmin]  # type: ignore[assignment]
 
 
 class PostsPublic(BaseModel):
@@ -76,7 +78,7 @@ class PostsAdmin(BaseModel):
     posts: list[PostAdmin]
 
 
-class PostWrite(BaseModel):
+class PostWrite(WriteModel):
     is_active: bool = True
     slug: str = Field(max_length=160)
     title: str = Field(default="", max_length=200)
@@ -130,7 +132,7 @@ class PostWrite(BaseModel):
         return [item.lower() for item in value]
 
 
-class PostReorder(BaseModel):
+class PostReorder(WriteModel):
     ids: list[uuid.UUID] = Field(max_length=50)
 
 

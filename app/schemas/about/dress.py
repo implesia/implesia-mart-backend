@@ -2,6 +2,8 @@ import uuid
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 def _href(value: str) -> str:
     cleaned = value.strip()
@@ -58,7 +60,7 @@ class DressesPublic(BaseModel):
     items: list[DressPublic]
 
 
-class DressFeatureWrite(BaseModel):
+class DressFeatureWrite(WriteModel):
     icon: str = Field(default="design_services", max_length=40)
     title: str = Field(default="", max_length=120)
     description: str = Field(default="", max_length=300)
@@ -74,7 +76,7 @@ class DressFeatureWrite(BaseModel):
         return value or "design_services"
 
 
-class DressImageWrite(BaseModel):
+class DressImageWrite(WriteModel):
     alt: str = Field(default="", max_length=200)
     src: str = Field(default="", max_length=255)
 
@@ -84,7 +86,7 @@ class DressImageWrite(BaseModel):
         return value.strip()
 
 
-class DressWrite(BaseModel):
+class DressWrite(WriteModel):
     kicker: str = Field(default="", max_length=80)
     title: str = Field(default="", max_length=200)
     subtitle: str = Field(default="", max_length=800)
@@ -112,5 +114,5 @@ class DressWrite(BaseModel):
         return [item for item in value if item.title or item.description]
 
 
-class DressReorder(BaseModel):
+class DressReorder(WriteModel):
     ids: list[uuid.UUID] = Field(max_length=12)

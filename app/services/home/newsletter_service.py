@@ -98,7 +98,7 @@ async def public_view(db: AsyncSession) -> NewsletterPublic:
         perks=[
             NewsletterPerkPublic(
                 id=perk.id,
-                icon=perk.icon,  # type: ignore[arg-type]
+                icon=perk.icon,
                 label=perk.label,
             )
             for perk in perks

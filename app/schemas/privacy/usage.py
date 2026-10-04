@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class ItemPublic(BaseModel):
     id: str
@@ -30,7 +32,7 @@ class ProtectionPublic(BaseModel):
 
 class ProtectionRead(ProtectionPublic):
     is_active: bool
-    badges: list[BadgeRead]
+    badges: list[BadgeRead]  # type: ignore[assignment]
 
 
 class UsagePublic(BaseModel):
@@ -44,11 +46,11 @@ class UsagePublic(BaseModel):
 
 class UsageAdmin(UsagePublic):
     is_active: bool
-    items: list[ItemRead]
+    items: list[ItemRead]  # type: ignore[assignment]
     protection: ProtectionRead
 
 
-class ItemWrite(BaseModel):
+class ItemWrite(WriteModel):
     id: str | None = None
     title: str = Field(default="", max_length=200)
     description: str = Field(default="", max_length=800)
@@ -62,7 +64,7 @@ class ItemWrite(BaseModel):
         return value
 
 
-class BadgeWrite(BaseModel):
+class BadgeWrite(WriteModel):
     id: str | None = None
     icon: str = Field(default="", max_length=40)
     label: str = Field(default="", max_length=80)
@@ -76,7 +78,7 @@ class BadgeWrite(BaseModel):
         return value
 
 
-class ProtectionWrite(BaseModel):
+class ProtectionWrite(WriteModel):
     is_active: bool = True
     icon: str = Field(default="", max_length=40)
     title: str = Field(default="", max_length=200)
@@ -91,7 +93,7 @@ class ProtectionWrite(BaseModel):
         return value
 
 
-class UsageWrite(BaseModel):
+class UsageWrite(WriteModel):
     is_active: bool = True
     icon: str = Field(default="", max_length=40)
     nav_label: str = Field(default="", max_length=80)

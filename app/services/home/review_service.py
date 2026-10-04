@@ -131,7 +131,7 @@ async def public_view(db: AsyncSession) -> ReviewPublic:
             ReviewItemPublic(
                 id=item.id,
                 product=item.product,
-                channel=item.channel,  # type: ignore[arg-type]
+                channel=item.channel,
                 image_src=item.image_src,
                 image_alt=item.image_alt,
             )

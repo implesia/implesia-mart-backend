@@ -2,6 +2,8 @@ import uuid
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 def _href(value: str) -> str:
     cleaned = value.strip()
@@ -47,7 +49,7 @@ class FeaturedPublic(BaseModel):
     product_ids: list[uuid.UUID]
 
 
-class FeaturedCopyUpdate(BaseModel):
+class FeaturedCopyUpdate(WriteModel):
     heading: str = Field(max_length=120)
     view_all_label: str = Field(max_length=80)
     view_all_href: str = Field("", max_length=255)
@@ -63,9 +65,9 @@ class FeaturedCopyUpdate(BaseModel):
         return _href(value)
 
 
-class FeaturedItemWrite(BaseModel):
+class FeaturedItemWrite(WriteModel):
     product_id: uuid.UUID
 
 
-class FeaturedReorder(BaseModel):
+class FeaturedReorder(WriteModel):
     ids: list[uuid.UUID] = Field(max_length=12)

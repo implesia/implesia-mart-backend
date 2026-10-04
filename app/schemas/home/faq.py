@@ -2,6 +2,8 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 def _href(value: str) -> str:
     cleaned = value.strip()
@@ -50,7 +52,7 @@ class FaqPublic(BaseModel):
     items: list[FaqItemPublic]
 
 
-class FaqCopyUpdate(BaseModel):
+class FaqCopyUpdate(WriteModel):
     kicker: str = Field(max_length=80)
     title: str = Field(max_length=160)
     subtitle: str = Field(max_length=400)
@@ -68,7 +70,7 @@ class FaqCopyUpdate(BaseModel):
         return _href(value)
 
 
-class FaqItemWrite(BaseModel):
+class FaqItemWrite(WriteModel):
     category: str = Field("", max_length=80)
     question: str = Field(min_length=1, max_length=240)
     answer: str = Field(min_length=1, max_length=2000)
@@ -96,7 +98,7 @@ class FaqItemWrite(BaseModel):
         return cleaned
 
 
-class FaqItemUpdate(BaseModel):
+class FaqItemUpdate(WriteModel):
     category: str | None = Field(None, max_length=80)
     question: str | None = Field(None, min_length=1, max_length=240)
     answer: str | None = Field(None, min_length=1, max_length=2000)
@@ -130,5 +132,5 @@ class FaqItemUpdate(BaseModel):
         return cleaned
 
 
-class FaqReorder(BaseModel):
+class FaqReorder(WriteModel):
     ids: list[uuid.UUID] = Field(max_length=24)

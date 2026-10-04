@@ -2,6 +2,8 @@ import uuid
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class AboutHeroImagePublic(BaseModel):
     id: uuid.UUID
@@ -35,7 +37,7 @@ class AboutHeroAdmin(BaseModel):
     images: list[AboutHeroImageAdmin]
 
 
-class AboutHeroImageWrite(BaseModel):
+class AboutHeroImageWrite(WriteModel):
     alt: str = Field(default="", max_length=200)
     src: str = Field(default="", max_length=255)
 
@@ -45,7 +47,7 @@ class AboutHeroImageWrite(BaseModel):
         return value.strip()
 
 
-class AboutHeroWrite(BaseModel):
+class AboutHeroWrite(WriteModel):
     eyebrow: str = Field(default="", max_length=80)
     title: str = Field(min_length=1, max_length=200)
     subtitle: str = Field(default="", max_length=500)

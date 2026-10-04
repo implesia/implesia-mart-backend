@@ -138,8 +138,8 @@ def _check(payload: DetailsWrite) -> None:
     platforms = [item.platform for item in payload.social]
     if len(platforms) != len(set(platforms)):
         raise UnprocessableError("Each social network can only be saved once.")
-    for item in payload.social:
-        _check_href(item.href, "Social")
+    for social in payload.social:
+        _check_href(social.href, "Social")
 
 
 def _apply_social(row: ContactDetails, social: list[SocialWrite]) -> None:

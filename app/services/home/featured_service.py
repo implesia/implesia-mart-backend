@@ -1,4 +1,5 @@
 import uuid
+from typing import Any
 
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,7 +46,7 @@ def _present(item: HomeFeaturedItem, product: Product | None) -> FeaturedItemRea
     )
 
 
-def _catalog_order():
+def _catalog_order() -> tuple[Any, Any, Any]:
     rank = case(
         (Product.badge == "Best Seller", 0),
         (Product.badge == "New", 1),

@@ -150,7 +150,7 @@ def _check(payload: UsageWrite) -> None:
         raise UnprocessableError("Fill in every use and badge, or remove the empty ones.")
 
 
-def _match(raw: str | None, existing: dict[uuid.UUID, object]) -> object | None:
+def _match[T](raw: str | None, existing: dict[uuid.UUID, T]) -> T | None:
     if not raw:
         return None
     try:
@@ -230,8 +230,8 @@ async def update_usage(db: AsyncSession, payload: UsageWrite) -> UsageAdmin:
     _apply_badges(db, row.id, payload.protection.badges, stored_badges)
     for extra in stored_items.values():
         await db.delete(extra)
-    for extra in stored_badges.values():
-        await db.delete(extra)
+    for stale in stored_badges.values():
+        await db.delete(stale)
     await db.commit()
     await db.refresh(row)
     return _admin(row, await _items(db, row.id), await _badges(db, row.id))

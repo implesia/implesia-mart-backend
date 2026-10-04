@@ -2,6 +2,8 @@ import uuid
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class SustainabilityHeroImagePublic(BaseModel):
     id: uuid.UUID
@@ -35,7 +37,7 @@ class SustainabilityHeroAdmin(BaseModel):
     images: list[SustainabilityHeroImageAdmin]
 
 
-class SustainabilityHeroImageWrite(BaseModel):
+class SustainabilityHeroImageWrite(WriteModel):
     alt: str = Field(default="", max_length=200)
     src: str = Field(default="", max_length=255)
 
@@ -45,7 +47,7 @@ class SustainabilityHeroImageWrite(BaseModel):
         return value.strip()
 
 
-class SustainabilityHeroWrite(BaseModel):
+class SustainabilityHeroWrite(WriteModel):
     eyebrow: str = Field(default="", max_length=80)
     title: str = Field(min_length=1, max_length=200)
     subtitle: str = Field(default="", max_length=500)

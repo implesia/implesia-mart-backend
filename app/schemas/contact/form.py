@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class FormField(BaseModel):
     label: str
@@ -25,7 +27,7 @@ class FormAdmin(FormPublic):
     is_active: bool
 
 
-class FormFieldWrite(BaseModel):
+class FormFieldWrite(WriteModel):
     label: str = Field(default="", max_length=80)
     placeholder: str = Field(default="", max_length=160)
 
@@ -37,14 +39,14 @@ class FormFieldWrite(BaseModel):
         return value
 
 
-class FormFieldsWrite(BaseModel):
+class FormFieldsWrite(WriteModel):
     name: FormFieldWrite = Field(default_factory=FormFieldWrite)
     phone: FormFieldWrite = Field(default_factory=FormFieldWrite)
     subject: FormFieldWrite = Field(default_factory=FormFieldWrite)
     message: FormFieldWrite = Field(default_factory=FormFieldWrite)
 
 
-class FormWrite(BaseModel):
+class FormWrite(WriteModel):
     is_active: bool = True
     title: str = Field(default="", max_length=200)
     subtitle: str = Field(default="", max_length=400)

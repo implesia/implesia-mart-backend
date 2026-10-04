@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class ItemPublic(BaseModel):
     id: str
@@ -24,7 +26,7 @@ class FaqAdmin(BaseModel):
     items: list[ItemRead]
 
 
-class ItemWrite(BaseModel):
+class ItemWrite(WriteModel):
     question: str = Field(default="", max_length=200)
     answer: str = Field(default="", max_length=800)
     is_active: bool = True
@@ -37,7 +39,7 @@ class ItemWrite(BaseModel):
         return value
 
 
-class FaqWrite(BaseModel):
+class FaqWrite(WriteModel):
     is_active: bool = True
     title: str = Field(default="", max_length=200)
     subtitle: str = Field(default="", max_length=400)

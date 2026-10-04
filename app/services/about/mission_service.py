@@ -42,7 +42,7 @@ DEFAULTS: tuple[dict[str, object], ...] = (
 def present(card: AboutMissionCard) -> MissionCardRead:
     return MissionCardRead(
         id=card.id,
-        key=card.card_key,  # type: ignore[arg-type]
+        key=card.card_key,
         icon=card.icon,
         title=card.title,
         description=card.description,
@@ -89,7 +89,7 @@ async def public_cards(db: AsyncSession) -> MissionPublic:
         items=[
             MissionCardPublic(
                 id=card.id,
-                key=card.card_key,  # type: ignore[arg-type]
+                key=card.card_key,
                 icon=card.icon,
                 title=card.title,
                 description=card.description,

@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 StatIcon = Literal[
     "payments",
     "local_shipping",
@@ -46,7 +48,7 @@ class StatsPublic(BaseModel):
     items: list[StatItemPublic]
 
 
-class StatItemWrite(BaseModel):
+class StatItemWrite(WriteModel):
     icon: StatIcon = "verified"
     value: str = Field(min_length=1, max_length=40)
     label: str = Field(min_length=1, max_length=80)
@@ -61,7 +63,7 @@ class StatItemWrite(BaseModel):
         return cleaned
 
 
-class StatItemUpdate(BaseModel):
+class StatItemUpdate(WriteModel):
     icon: StatIcon | None = None
     value: str | None = Field(None, min_length=1, max_length=40)
     label: str | None = Field(None, min_length=1, max_length=80)
@@ -78,5 +80,5 @@ class StatItemUpdate(BaseModel):
         return cleaned
 
 
-class StatReorder(BaseModel):
+class StatReorder(WriteModel):
     ids: list[uuid.UUID] = Field(max_length=12)

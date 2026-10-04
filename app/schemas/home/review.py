@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 ReviewChannel = Literal["WhatsApp", "Messenger"]
 
 
@@ -40,7 +42,7 @@ class ReviewPublic(BaseModel):
     items: list[ReviewItemPublic]
 
 
-class ReviewCopyUpdate(BaseModel):
+class ReviewCopyUpdate(WriteModel):
     kicker: str = Field(max_length=80)
     title: str = Field(max_length=160)
     subtitle: str = Field(max_length=400)
@@ -51,7 +53,7 @@ class ReviewCopyUpdate(BaseModel):
         return value.strip()
 
 
-class ReviewItemWrite(BaseModel):
+class ReviewItemWrite(WriteModel):
     product: str = Field(min_length=1, max_length=120)
     channel: ReviewChannel = "WhatsApp"
     image_src: str = Field("", max_length=255)
@@ -72,7 +74,7 @@ class ReviewItemWrite(BaseModel):
         return value.strip()
 
 
-class ReviewItemUpdate(BaseModel):
+class ReviewItemUpdate(WriteModel):
     product: str | None = Field(None, min_length=1, max_length=120)
     channel: ReviewChannel | None = None
     image_src: str | None = Field(None, max_length=255)
@@ -97,5 +99,5 @@ class ReviewItemUpdate(BaseModel):
         return value.strip()
 
 
-class ReviewReorder(BaseModel):
+class ReviewReorder(WriteModel):
     ids: list[uuid.UUID] = Field(max_length=24)

@@ -65,7 +65,7 @@ async def public_items(db: AsyncSession) -> StatsPublic:
         items=[
             StatItemPublic(
                 id=item.id,
-                icon=item.icon,  # type: ignore[arg-type]
+                icon=item.icon,
                 value=item.value,
                 label=item.label,
             )

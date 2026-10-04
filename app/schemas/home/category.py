@@ -2,6 +2,8 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 def _href(value: str) -> str:
     cleaned = value.strip()
@@ -44,7 +46,7 @@ class CategoryPublic(BaseModel):
     tiles: list[CategoryTilePublic]
 
 
-class CategoryHeadingUpdate(BaseModel):
+class CategoryHeadingUpdate(WriteModel):
     heading: str = Field(max_length=120)
 
     @field_validator("heading")
@@ -53,7 +55,7 @@ class CategoryHeadingUpdate(BaseModel):
         return value.strip()
 
 
-class CategoryTileWrite(BaseModel):
+class CategoryTileWrite(WriteModel):
     label: str = Field(min_length=1, max_length=120)
     href: str = Field("", max_length=255)
     image_src: str = Field("", max_length=255)
@@ -73,7 +75,7 @@ class CategoryTileWrite(BaseModel):
         return _href(value)
 
 
-class CategoryTileUpdate(BaseModel):
+class CategoryTileUpdate(WriteModel):
     label: str | None = Field(None, min_length=1, max_length=120)
     href: str | None = Field(None, max_length=255)
     image_src: str | None = Field(None, max_length=255)
@@ -97,5 +99,5 @@ class CategoryTileUpdate(BaseModel):
         return _href(value)
 
 
-class CategoryReorder(BaseModel):
+class CategoryReorder(WriteModel):
     ids: list[uuid.UUID] = Field(max_length=24)

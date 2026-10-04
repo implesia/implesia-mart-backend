@@ -301,8 +301,8 @@ async def _write_children(
             existing_images[index].sort_order = index
         else:
             db.add(AboutDressImage(dress_id=block.id, src=src, alt=alt, sort_order=index))
-    for extra in existing_images[len(images) :]:
-        await db.delete(extra)
+    for stale in existing_images[len(images) :]:
+        await db.delete(stale)
     return previous
 
 

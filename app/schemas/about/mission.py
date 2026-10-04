@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 CardKey = Literal["vision", "mission"]
 
 
@@ -27,7 +29,7 @@ class MissionPublic(BaseModel):
     items: list[MissionCardPublic]
 
 
-class MissionCardWrite(BaseModel):
+class MissionCardWrite(WriteModel):
     icon: str = Field(default="verified", max_length=40)
     title: str = Field(default="", max_length=120)
     description: str = Field(default="", max_length=800)

@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class RelatedPublic(BaseModel):
     toc_title: str
@@ -17,7 +19,7 @@ class RelatedAdmin(RelatedPublic):
     is_active: bool
 
 
-class RelatedWrite(BaseModel):
+class RelatedWrite(WriteModel):
     is_active: bool = True
     toc_title: str = Field(default="", max_length=120)
     products_title: str = Field(default="", max_length=200)

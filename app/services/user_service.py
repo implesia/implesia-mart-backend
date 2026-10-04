@@ -10,9 +10,17 @@ from app.core.exceptions import (
     NotFoundError,
     PermissionDeniedError,
 )
-from app.core.security import hash_password, verify_password
+from app.core.logging import get_logger
+from app.core.security import DUMMY_PASSWORD_HASH, hash_password, verify_password
+from app.models.audit_event import AuditAction
 from app.models.user import User, UserRole
 from app.schemas.user import UserCreate, UserUpdate
+from app.services import audit_service, login_alert, refresh_token_service
+
+logger = get_logger("auth")
+
+# One message for a missing account, a wrong password, and a disabled account.
+_INVALID_LOGIN = "Invalid email or password."
 
 
 async def get_by_id(db: AsyncSession, user_id: uuid.UUID) -> User:
@@ -91,12 +99,46 @@ async def update_user(db: AsyncSession, user: User, payload: UserUpdate, *, acto
     if losing_access and await _other_active_superadmins(db, user.id) == 0:
         raise PermissionDeniedError("The last active superadmin must keep that role")
 
+    previous_role = user.role
+    previous_active = user.is_active
     if email is not None:
         user.email = str(email).lower()
     if password:
         user.password_hash = hash_password(password)
     for field, value in data.items():
         setattr(user, field, value)
+
+    if password:
+        await audit_service.record(
+            db,
+            actor_id=actor.id,
+            action=AuditAction.PASSWORD_CHANGED,
+            target_type="user",
+            target_id=user.id,
+            metadata={"via": "admin", "email": user.email},
+        )
+    if "role" in data and user.role != previous_role:
+        await audit_service.record(
+            db,
+            actor_id=actor.id,
+            action=AuditAction.ROLE_CHANGED,
+            target_type="user",
+            target_id=user.id,
+            metadata={
+                "email": user.email,
+                "from": previous_role.value,
+                "to": user.role.value,
+            },
+        )
+    if previous_active and not user.is_active:
+        await audit_service.record(
+            db,
+            actor_id=actor.id,
+            action=AuditAction.USER_DISABLED,
+            target_type="user",
+            target_id=user.id,
+            metadata={"email": user.email},
+        )
 
     await db.commit()
     await db.refresh(user)
@@ -118,15 +160,20 @@ async def delete_user(db: AsyncSession, user: User, *, actor: User) -> None:
 
 async def authenticate(db: AsyncSession, email: str, password: str) -> User:
     user = await get_by_email(db, email)
-    # Always run a hash comparison so a missing account and a wrong password
-    # take roughly the same time and cannot be told apart.
-    reference_hash = user.password_hash if user else hash_password("invalid-placeholder")
+    # A missing account still runs bcrypt verify, against a fixed hash.
+    reference_hash = user.password_hash if user else DUMMY_PASSWORD_HASH
     password_ok = verify_password(password, reference_hash)
 
-    if user is None or not password_ok:
-        raise AuthenticationError("Incorrect email or password")
-    if not user.is_active:
-        raise AuthenticationError("This account is disabled")
+    if user is None or not password_ok or not user.is_active:
+        if user is None:
+            reason = "unknown_email"
+        elif not password_ok:
+            reason = "wrong_password"
+        else:
+            reason = "account_disabled"
+        logger.info("login_failed", reason=reason, email=email.lower())
+        await login_alert.note_failure(email, None if user is None else user.role)
+        raise AuthenticationError(_INVALID_LOGIN)
 
     user.last_login_at = datetime.now(UTC)
     await db.commit()
@@ -138,4 +185,13 @@ async def change_password(db: AsyncSession, user: User, current: str, new: str) 
     if not verify_password(current, user.password_hash):
         raise AuthenticationError("Current password is incorrect")
     user.password_hash = hash_password(new)
+    await refresh_token_service.revoke_user_sessions(db, user.id)
+    await audit_service.record(
+        db,
+        actor_id=user.id,
+        action=AuditAction.PASSWORD_CHANGED,
+        target_type="user",
+        target_id=user.id,
+        metadata={"via": "self", "email": user.email},
+    )
     await db.commit()

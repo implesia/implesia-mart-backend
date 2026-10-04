@@ -1,3 +1,4 @@
+import ipaddress
 import uuid
 from collections.abc import Callable, Coroutine
 from typing import Annotated, Any
@@ -75,14 +76,74 @@ RequireSuperadmin = Annotated[User, Depends(require_superadmin)]
 
 
 def no_store(response: Response) -> None:
-    """Stop shared caches from keeping catalog or admin responses."""
+    """Keep private responses out of shared caches.
+
+    Admin, cart, and order routes use this. Public CMS reads under ``/home``
+    and ``/pages`` are uncached for now. A later cache is only those public
+    GETs, for 30 seconds or with an ETag. Do not put that cache on these routes.
+    """
     response.headers["Cache-Control"] = "no-store"
 
 
 def client_ip(request: Request) -> str | None:
-    """Resolve the caller IP, trusting Cloudflare's header when present."""
-    return (
-        request.headers.get("cf-connecting-ip")
-        or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-        or (request.client.host if request.client else None)
-    )
+    """Return the caller address.
+
+    Forwarded headers count only when the socket peer is a trusted proxy.
+    A proxy that appends the connecting address cannot be fooled by a fake
+    address placed at the front of ``X-Forwarded-For``.
+    """
+    peer = _parse_ip(request.client.host) if request.client is not None else None
+    if peer is None:
+        return request.client.host if request.client is not None else None
+    if not _is_trusted(peer):
+        return str(peer)
+
+    chain = _forwarded_chain(request)
+    seen_by_proxy = _nearest_untrusted(chain)
+    cloudflare = _parse_ip(request.headers.get("cf-connecting-ip") or "")
+    cloudflare_agrees = seen_by_proxy is None or cloudflare == seen_by_proxy
+    if cloudflare is not None and not _is_trusted(cloudflare) and cloudflare_agrees:
+        return str(cloudflare)
+    if seen_by_proxy is not None:
+        return str(seen_by_proxy)
+    return str(peer)
+
+
+def _parse_ip(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    try:
+        return ipaddress.ip_address(value.strip())
+    except ValueError:
+        return None
+
+
+def _trusted_networks() -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for item in settings.trusted_proxies:
+        try:
+            network = ipaddress.ip_network(item.strip(), strict=False)
+        except ValueError:
+            continue
+        if network.prefixlen == 0:
+            continue
+        networks.append(network)
+    return networks
+
+
+def _is_trusted(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return any(address in network for network in _trusted_networks())
+
+
+def _forwarded_chain(
+    request: Request,
+) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    raw = request.headers.get("x-forwarded-for") or ""
+    return [parsed for part in raw.split(",") if (parsed := _parse_ip(part)) is not None]
+
+
+def _nearest_untrusted(
+    chain: list[ipaddress.IPv4Address | ipaddress.IPv6Address],
+) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    for hop in reversed(chain):
+        if not _is_trusted(hop):
+            return hop
+    return None

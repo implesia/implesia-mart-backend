@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class ItemPublic(BaseModel):
     id: str
@@ -33,12 +35,12 @@ class RightsPublic(BaseModel):
 
 class RightsAdmin(RightsPublic):
     is_active: bool
-    items: list[ItemRead]
+    items: list[ItemRead]  # type: ignore[assignment]
     retention: NoteRead
     updates: NoteRead
 
 
-class ItemWrite(BaseModel):
+class ItemWrite(WriteModel):
     id: str | None = None
     icon: str = Field(default="", max_length=40)
     title: str = Field(default="", max_length=200)
@@ -53,7 +55,7 @@ class ItemWrite(BaseModel):
         return value
 
 
-class NoteWrite(BaseModel):
+class NoteWrite(WriteModel):
     is_active: bool = True
     title: str = Field(default="", max_length=200)
     body: str = Field(default="", max_length=800)
@@ -66,7 +68,7 @@ class NoteWrite(BaseModel):
         return value
 
 
-class RightsWrite(BaseModel):
+class RightsWrite(WriteModel):
     is_active: bool = True
     icon: str = Field(default="", max_length=40)
     nav_label: str = Field(default="", max_length=80)

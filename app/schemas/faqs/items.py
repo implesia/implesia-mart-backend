@@ -2,6 +2,8 @@ import uuid
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class ItemPublic(BaseModel):
     id: str
@@ -22,7 +24,7 @@ class ItemsAdmin(BaseModel):
     items: list[ItemRead]
 
 
-class ItemWrite(BaseModel):
+class ItemWrite(WriteModel):
     category_id: str = ""
     question: str = Field(default="", max_length=240)
     answer: str = Field(default="", max_length=2000)
@@ -36,5 +38,5 @@ class ItemWrite(BaseModel):
         return value
 
 
-class ItemReorder(BaseModel):
+class ItemReorder(WriteModel):
     ids: list[uuid.UUID] = Field(max_length=40)

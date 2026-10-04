@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class ChipPublic(BaseModel):
     id: str
@@ -20,10 +22,10 @@ class SharingPublic(BaseModel):
 
 class SharingAdmin(SharingPublic):
     is_active: bool
-    chips: list[ChipRead]
+    chips: list[ChipRead]  # type: ignore[assignment]
 
 
-class ChipWrite(BaseModel):
+class ChipWrite(WriteModel):
     id: str | None = None
     label: str = Field(default="", max_length=80)
     is_active: bool = True
@@ -36,7 +38,7 @@ class ChipWrite(BaseModel):
         return value
 
 
-class SharingWrite(BaseModel):
+class SharingWrite(WriteModel):
     is_active: bool = True
     icon: str = Field(default="", max_length=40)
     nav_label: str = Field(default="", max_length=80)

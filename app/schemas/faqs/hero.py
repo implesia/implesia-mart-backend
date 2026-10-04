@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class SearchPublic(BaseModel):
     id: str
@@ -23,10 +25,10 @@ class HeroPublic(BaseModel):
 
 class HeroAdmin(HeroPublic):
     is_active: bool
-    trending: list[SearchRead]
+    trending: list[SearchRead]  # type: ignore[assignment]
 
 
-class SearchWrite(BaseModel):
+class SearchWrite(WriteModel):
     id: str | None = None
     label: str = Field(default="", max_length=80)
     is_active: bool = True
@@ -39,7 +41,7 @@ class SearchWrite(BaseModel):
         return value
 
 
-class HeroWrite(BaseModel):
+class HeroWrite(WriteModel):
     is_active: bool = True
     eyebrow: str = Field(default="", max_length=80)
     title: str = Field(default="", max_length=200)

@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class SupportPublic(BaseModel):
     icon: str
@@ -18,7 +20,7 @@ class SupportAdmin(SupportPublic):
     is_active: bool
 
 
-class SupportWrite(BaseModel):
+class SupportWrite(WriteModel):
     is_active: bool = True
     icon: str = Field(default="", max_length=40)
     nav_label: str = Field(default="", max_length=80)

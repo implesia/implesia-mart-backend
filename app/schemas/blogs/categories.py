@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class ItemPublic(BaseModel):
     id: str
@@ -19,7 +21,7 @@ class CategoriesAdmin(BaseModel):
     items: list[ItemRead]
 
 
-class ItemWrite(BaseModel):
+class ItemWrite(WriteModel):
     id: str | None = None
     label: str = Field(default="", max_length=80)
     is_active: bool = True
@@ -32,6 +34,6 @@ class ItemWrite(BaseModel):
         return value
 
 
-class CategoriesWrite(BaseModel):
+class CategoriesWrite(WriteModel):
     is_active: bool = True
     items: list[ItemWrite] = Field(default_factory=list, max_length=12)

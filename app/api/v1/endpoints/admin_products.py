@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
 from pydantic import ValidationError
 
-from app.api.deps import DbSession, no_store, require_editor
+from app.api.deps import DbSession, RequireEditor, no_store, require_editor
 from app.core.config import settings
 from app.core.exceptions import UnprocessableError
 from app.rate_limit import limiter
@@ -92,6 +92,7 @@ async def read_product(db: DbSession, product_id: uuid.UUID) -> AdminProductRead
 async def update_product(
     request: Request,
     db: DbSession,
+    actor: RequireEditor,
     product_id: uuid.UUID,
     payload: Annotated[str, Form()] = "{}",
     images: Annotated[list[UploadFile] | None, File()] = None,
@@ -111,6 +112,7 @@ async def update_product(
         _alts(image_alts),
         quality_image,
         quality_image_alt,
+        actor=actor,
     )
     return product_service.admin_read(updated)
 

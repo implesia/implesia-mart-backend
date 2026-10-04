@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class HeroPublic(BaseModel):
     eyebrow: str
@@ -12,7 +14,7 @@ class HeroAdmin(HeroPublic):
     is_active: bool
 
 
-class HeroWrite(BaseModel):
+class HeroWrite(WriteModel):
     is_active: bool = True
     eyebrow: str = Field(default="", max_length=80)
     title: str = Field(default="", max_length=200)

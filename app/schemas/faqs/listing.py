@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class ListingPublic(BaseModel):
     count_suffix: str
@@ -11,7 +13,7 @@ class ListingAdmin(ListingPublic):
     is_active: bool
 
 
-class ListingWrite(BaseModel):
+class ListingWrite(WriteModel):
     is_active: bool = True
     count_suffix: str = Field(default="", max_length=80)
     empty_title: str = Field(default="", max_length=200)

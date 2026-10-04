@@ -2,6 +2,8 @@ import uuid
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class ValueItemRead(BaseModel):
     id: uuid.UUID
@@ -32,7 +34,7 @@ class ValuesPublic(BaseModel):
     items: list[ValueItemPublic]
 
 
-class ValuesCopyUpdate(BaseModel):
+class ValuesCopyUpdate(WriteModel):
     kicker: str = Field(default="", max_length=80)
     title: str = Field(default="", max_length=160)
     subtitle: str = Field(default="", max_length=400)
@@ -45,7 +47,7 @@ class ValuesCopyUpdate(BaseModel):
         return value
 
 
-class ValueItemWrite(BaseModel):
+class ValueItemWrite(WriteModel):
     icon: str = Field(default="verified", max_length=40)
     title: str = Field(default="", max_length=120)
     description: str = Field(default="", max_length=400)
@@ -64,5 +66,5 @@ class ValueItemWrite(BaseModel):
         return value or "verified"
 
 
-class ValueReorder(BaseModel):
+class ValueReorder(WriteModel):
     ids: list[uuid.UUID] = Field(max_length=12)

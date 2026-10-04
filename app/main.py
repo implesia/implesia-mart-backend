@@ -10,7 +10,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from app import __version__
-from app.api.v1.endpoints import health
+from app.api.v1.endpoints import health, metrics
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
@@ -64,20 +64,21 @@ register_exception_handlers(app)
 
 
 @app.exception_handler(RateLimitExceeded)
-async def _rate_limit_handler(_: Request, exc: RateLimitExceeded) -> JSONResponse:
+async def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    logger.warning("rate_limited", path=request.url.path, detail=str(exc.detail))
     return JSONResponse(
         status_code=429,
         content={
             "error": {
                 "code": "rate_limited",
-                "message": "Too many requests. Please try again later.",
-                "details": str(exc.detail),
+                "message": "Too many requests.",
             }
         },
     )
 
 
 app.include_router(health.router, prefix="/health", tags=["health"])
+app.include_router(metrics.router, tags=["metrics"])
 app.include_router(api_router, prefix=settings.api_v1_prefix)
 
 settings.media_root.mkdir(parents=True, exist_ok=True)

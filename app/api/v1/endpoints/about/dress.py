@@ -1,4 +1,5 @@
 import uuid
+from typing import cast
 
 from fastapi import APIRouter, Depends, Form, Request, UploadFile, status
 from pydantic import ValidationError
@@ -34,7 +35,7 @@ def _uploads(form_items: list[tuple[str, object]]) -> dict[int, UploadFile]:
             continue
         suffix = key.removeprefix("image_")
         if suffix.isdigit() and isinstance(value, StarletteUpload):
-            uploads[int(suffix)] = value
+            uploads[int(suffix)] = cast(UploadFile, value)
     return uploads
 
 

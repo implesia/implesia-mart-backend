@@ -16,6 +16,10 @@ class Cart(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     The anonymous secret is never stored. ``guest_token_hash`` is the SHA-256
     of the token the browser keeps. Price is never stored on the cart.
+
+    Unused guest carts are not removed yet. A later job deletes rows whose
+    ``guest_token_hash`` is set and whose ``updated_at`` is past a threshold.
+    Logged-in carts stay.
     """
 
     __tablename__ = "carts"

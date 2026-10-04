@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class HelpPublic(BaseModel):
     title: str
@@ -16,7 +18,7 @@ class HelpAdmin(HelpPublic):
     is_active: bool
 
 
-class HelpWrite(BaseModel):
+class HelpWrite(WriteModel):
     is_active: bool = True
     title: str = Field(default="", max_length=200)
     subtitle: str = Field(default="", max_length=400)

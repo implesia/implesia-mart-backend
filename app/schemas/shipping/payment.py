@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class CardPublic(BaseModel):
     id: str
@@ -24,10 +26,10 @@ class PaymentPublic(BaseModel):
 
 class PaymentAdmin(PaymentPublic):
     is_active: bool
-    cards: list[CardRead]
+    cards: list[CardRead]  # type: ignore[assignment]
 
 
-class CardWrite(BaseModel):
+class CardWrite(WriteModel):
     id: str | None = None
     icon: str = Field(default="", max_length=40)
     badge: str = Field(default="", max_length=80)
@@ -44,7 +46,7 @@ class CardWrite(BaseModel):
         return value
 
 
-class PaymentWrite(BaseModel):
+class PaymentWrite(WriteModel):
     is_active: bool = True
     icon: str = Field(default="", max_length=40)
     nav_label: str = Field(default="", max_length=80)

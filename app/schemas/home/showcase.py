@@ -2,6 +2,7 @@ import uuid
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
 from app.schemas.home.featured import FeaturedProductCard
 
 
@@ -49,7 +50,7 @@ class ShowcasePublic(BaseModel):
     rows: list[ShowcaseRowPublic]
 
 
-class ShowcaseRowUpdate(BaseModel):
+class ShowcaseRowUpdate(WriteModel):
     heading: str = Field(max_length=120)
     href: str = Field("", max_length=255)
 
@@ -59,11 +60,11 @@ class ShowcaseRowUpdate(BaseModel):
         return value.strip()
 
 
-class ShowcaseItemWrite(BaseModel):
+class ShowcaseItemWrite(WriteModel):
     product_id: uuid.UUID
 
 
-class ShowcaseReorder(BaseModel):
+class ShowcaseReorder(WriteModel):
     ids: list[uuid.UUID] = Field(max_length=12)
 
 

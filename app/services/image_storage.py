@@ -1,5 +1,7 @@
-"""Store product images outside the application code.
+"""Store uploaded images on this instance's disk, under `/media`.
 
+Workers in one container share that directory. A second API instance behind a
+load balancer would not. Move these files to object storage before adding one.
 Bytes are identified by signature, not by the client-supplied type. The stored
 name is generated. SVG, HTML, and any other executable content are rejected.
 """

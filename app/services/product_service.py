@@ -13,7 +13,9 @@ from sqlalchemy.orm import defer
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.exceptions import ConflictError, NotFoundError, UnprocessableError
+from app.models.audit_event import AuditAction
 from app.models.product import Product, ProductBadge, ProductCategory, StockStatus
+from app.models.user import User
 from app.schemas.common import page_count
 from app.schemas.product import (
     SLUG_PATTERN,
@@ -39,6 +41,7 @@ from app.schemas.product import (
     PublicProductList,
     PublicSpec,
 )
+from app.services import audit_service
 from app.services.image_storage import (
     delete_owned_media,
     owned_refs,
@@ -247,6 +250,8 @@ async def update_product(
     image_alts: list[str] | None = None,
     quality_image: UploadFile | None = None,
     quality_image_alt: str = "",
+    *,
+    actor: User,
 ) -> Product:
     before = _media_refs(product)
     fallback_alt = (
@@ -261,7 +266,9 @@ async def update_product(
         if quality_image is not None and quality_image.filename:
             saved = await _saved_images([quality_image], [quality_image_alt], fallback_alt)
             quality_url = saved[0].src
-        await _apply_update(db, product, payload, added, quality_url, quality_image_alt)
+        await _apply_update(
+            db, product, payload, added, quality_url, quality_image_alt, actor
+        )
     except Exception:
         delete_owned_media(owned_refs(*(item.src for item in added), quality_url))
         raise
@@ -276,7 +283,14 @@ async def _apply_update(
     added: list[GalleryImage],
     quality_url: str,
     quality_image_alt: str,
+    actor: User,
 ) -> None:
+    before = {
+        "price": product.price,
+        "compare_at_price": product.compare_at_price,
+        "quantity": product.quantity,
+        "status": product.status,
+    }
     fields = payload.model_dump(exclude_unset=True, exclude={"content"})
     price = fields.get("price", product.price)
     if "compare_at_price" in fields:
@@ -312,8 +326,49 @@ async def _apply_update(
         if not product.image_src and gallery:
             product.image_src = gallery[0].src
 
+    await _audit_catalog_changes(db, product, actor, before)
     await db.commit()
     await db.refresh(product)
+
+
+async def _audit_catalog_changes(
+    db: AsyncSession,
+    product: Product,
+    actor: User,
+    before: dict[str, Any],
+) -> None:
+    price_changes = _field_changes(before, product, ("price", "compare_at_price"))
+    if price_changes:
+        await audit_service.record(
+            db,
+            actor_id=actor.id,
+            action=AuditAction.PRODUCT_PRICE_UPDATED,
+            target_type="product",
+            target_id=product.id,
+            metadata=price_changes,
+        )
+    stock_changes = _field_changes(before, product, ("quantity", "status"))
+    if stock_changes:
+        await audit_service.record(
+            db,
+            actor_id=actor.id,
+            action=AuditAction.PRODUCT_STOCK_UPDATED,
+            target_type="product",
+            target_id=product.id,
+            metadata=stock_changes,
+        )
+
+
+def _field_changes(
+    before: dict[str, Any], product: Product, fields: tuple[str, ...]
+) -> dict[str, Any]:
+    changes: dict[str, Any] = {}
+    for field in fields:
+        current = getattr(product, field)
+        if current == before[field]:
+            continue
+        changes[field] = {"from": before[field], "to": current}
+    return changes
 
 
 async def delete_product(db: AsyncSession, product: Product) -> None:
@@ -551,7 +606,7 @@ async def list_admin(db: AsyncSession, query: AdminProductQuery) -> AdminProduct
         .offset(query.offset)
         .limit(query.page_size)
     )
-    rows = list((await db.execute(stmt)).scalars().all())
+    rows: list[Product] = list((await db.execute(stmt)).scalars().all())
     counts = await _category_counts(db, _admin_filters(query, category=False, search=False))
     return AdminProductList(
         items=[admin_card(product) for product in rows],
@@ -578,7 +633,7 @@ async def list_public(db: AsyncSession, query: CatalogQuery) -> PublicProductLis
         .offset(query.offset)
         .limit(query.page_size)
     )
-    rows = list((await db.execute(stmt)).scalars().all())
+    rows: list[Product] = list((await db.execute(stmt)).scalars().all())
     categories = await _category_counts(db, _public_filters(query, ignore=frozenset({"category"})))
     availability = {"available": 0, "sold-out": 0, "coming-soon": 0}
     status_stmt = _apply(

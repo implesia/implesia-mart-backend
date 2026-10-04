@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class CtaPublic(BaseModel):
     title: str
@@ -14,7 +16,7 @@ class CtaAdmin(CtaPublic):
     is_active: bool
 
 
-class CtaWrite(BaseModel):
+class CtaWrite(WriteModel):
     is_active: bool = True
     title: str = Field(default="", max_length=200)
     subtitle: str = Field(default="", max_length=400)

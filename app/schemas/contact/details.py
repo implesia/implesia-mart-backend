@@ -2,6 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class ChannelPublic(BaseModel):
     id: str
@@ -42,7 +44,7 @@ class DetailsAdmin(BaseModel):
     social: list[SocialRead]
 
 
-class ChannelWrite(BaseModel):
+class ChannelWrite(WriteModel):
     icon: str = Field(default="call", max_length=40)
     title: str = Field(default="", max_length=80)
     value: str = Field(default="", max_length=160)
@@ -57,7 +59,7 @@ class ChannelWrite(BaseModel):
         return value
 
 
-class SocialWrite(BaseModel):
+class SocialWrite(WriteModel):
     platform: Literal["facebook", "linkedin"]
     label: str = Field(default="", max_length=80)
     href: str = Field(default="", max_length=800)
@@ -71,7 +73,7 @@ class SocialWrite(BaseModel):
         return value
 
 
-class DetailsWrite(BaseModel):
+class DetailsWrite(WriteModel):
     is_active: bool = True
     title: str = Field(default="", max_length=200)
     subtitle: str = Field(default="", max_length=400)

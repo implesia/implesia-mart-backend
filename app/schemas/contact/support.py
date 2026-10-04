@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class HourPublic(BaseModel):
     id: str
@@ -37,7 +39,7 @@ class SupportAdmin(BaseModel):
     quick_links: list[LinkRead]
 
 
-class HourWrite(BaseModel):
+class HourWrite(WriteModel):
     label: str = Field(default="", max_length=80)
     value: str = Field(default="", max_length=80)
     is_active: bool = True
@@ -50,7 +52,7 @@ class HourWrite(BaseModel):
         return value
 
 
-class LinkWrite(BaseModel):
+class LinkWrite(WriteModel):
     icon: str = Field(default="help", max_length=40)
     label: str = Field(default="", max_length=80)
     href: str = Field(default="", max_length=800)
@@ -64,7 +66,7 @@ class LinkWrite(BaseModel):
         return value
 
 
-class SupportWrite(BaseModel):
+class SupportWrite(WriteModel):
     is_active: bool = True
     title: str = Field(default="", max_length=200)
     subtitle: str = Field(default="", max_length=400)

@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, Form, Request
+from typing import cast
+
+from fastapi import APIRouter, Depends, Form, Request, UploadFile
 from pydantic import ValidationError
 from starlette.datastructures import UploadFile as StarletteUpload
 
@@ -24,14 +26,14 @@ def _payload(raw: str) -> OriginWrite:
         raise UnprocessableError("Request payload is invalid") from exc
 
 
-def _uploads(form_items: list[tuple[str, object]]) -> dict[int, StarletteUpload]:
-    uploads: dict[int, StarletteUpload] = {}
+def _uploads(form_items: list[tuple[str, object]]) -> dict[int, UploadFile]:
+    uploads: dict[int, UploadFile] = {}
     for key, value in form_items:
         if not key.startswith("image_"):
             continue
         suffix = key.removeprefix("image_")
         if suffix.isdigit() and isinstance(value, StarletteUpload):
-            uploads[int(suffix)] = value
+            uploads[int(suffix)] = cast(UploadFile, value)
     return uploads
 
 

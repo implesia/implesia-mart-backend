@@ -2,6 +2,8 @@ import uuid
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class DurabilityImageRead(BaseModel):
     src: str
@@ -31,7 +33,7 @@ class DurabilityAdmin(BaseModel):
     bullets: list[DurabilityBulletRead]
 
 
-class DurabilityImageWrite(BaseModel):
+class DurabilityImageWrite(WriteModel):
     src: str = Field(default="", max_length=255)
     alt: str = Field(default="", max_length=200)
 
@@ -43,7 +45,7 @@ class DurabilityImageWrite(BaseModel):
         return value
 
 
-class DurabilityBulletWrite(BaseModel):
+class DurabilityBulletWrite(WriteModel):
     text: str = Field(default="", max_length=300)
     is_active: bool = True
 
@@ -55,7 +57,7 @@ class DurabilityBulletWrite(BaseModel):
         return value
 
 
-class DurabilityWrite(BaseModel):
+class DurabilityWrite(WriteModel):
     title: str = Field(default="", max_length=200)
     body: str = Field(default="", max_length=800)
     image: DurabilityImageWrite

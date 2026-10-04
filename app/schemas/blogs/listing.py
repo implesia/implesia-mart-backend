@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class ListingPublic(BaseModel):
     heading: str
@@ -16,7 +18,7 @@ class ListingAdmin(ListingPublic):
     is_active: bool
 
 
-class ListingWrite(BaseModel):
+class ListingWrite(WriteModel):
     is_active: bool = True
     heading: str = Field(default="", max_length=200)
     all_label: str = Field(default="", max_length=80)

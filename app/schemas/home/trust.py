@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 TrustIcon = Literal[
     "payments",
     "local_shipping",
@@ -51,7 +53,7 @@ class TrustPublic(BaseModel):
     items: list[TrustItemPublic]
 
 
-class TrustItemWrite(BaseModel):
+class TrustItemWrite(WriteModel):
     icon: TrustIcon = "verified"
     label: str = Field(min_length=1, max_length=120)
     href: str = Field("", max_length=255)
@@ -71,7 +73,7 @@ class TrustItemWrite(BaseModel):
         return _href(value)
 
 
-class TrustItemUpdate(BaseModel):
+class TrustItemUpdate(WriteModel):
     icon: TrustIcon | None = None
     label: str | None = Field(None, min_length=1, max_length=120)
     href: str | None = Field(None, max_length=255)
@@ -95,5 +97,5 @@ class TrustItemUpdate(BaseModel):
         return _href(value)
 
 
-class TrustReorder(BaseModel):
+class TrustReorder(WriteModel):
     ids: list[uuid.UUID] = Field(max_length=12)

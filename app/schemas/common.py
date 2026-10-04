@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 def page_count(total: int, page_size: int) -> int:
@@ -26,3 +26,9 @@ class Page[T](BaseModel):
 
 class Message(BaseModel):
     message: str
+
+
+class WriteModel(BaseModel):
+    """Admin request body. A field the schema does not declare is rejected."""
+
+    model_config = ConfigDict(extra="forbid")

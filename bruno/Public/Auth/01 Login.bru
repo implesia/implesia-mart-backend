@@ -25,7 +25,7 @@ body:json {
 docs {
   # POST /api/v1/auth/login
 
-  Staff login. No Bearer token.
+  Staff login. No Bearer token. The same address, and the same email, are each limited to 10 requests a minute.
 
   ## Request body
 
@@ -53,10 +53,10 @@ docs {
 
   ## Errors
 
-  `401` `unauthenticated` — wrong email or password, or the account is disabled.
+  `401` `unauthenticated` — an unknown email, a wrong password, and a disabled account all return the same message.
 
   ```json
-  { "error": { "code": "unauthenticated", "message": "Incorrect email or password", "details": null } }
+  { "error": { "code": "unauthenticated", "message": "Invalid email or password.", "details": null } }
   ```
 }
 

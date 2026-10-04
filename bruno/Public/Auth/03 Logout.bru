@@ -1,0 +1,60 @@
+meta {
+  name: Logout
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{BASE_URL}}/api/v1/auth/logout
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "refresh_token": "{{REFRESH_TOKEN}}"
+  }
+}
+
+docs {
+  # POST /api/v1/auth/logout
+
+  Ends the login that issued this refresh token. Run **Login** first, and run this last: every refresh token from that login stops working. The access token stays valid until it expires.
+
+  ## Request body
+
+  ```json
+  { "refresh_token": "{{REFRESH_TOKEN}}" }
+  ```
+
+  ## Response `200`
+
+  ```json
+  { "message": "Signed out" }
+  ```
+
+  ## Errors
+
+  `401` `unauthenticated` — token is missing, expired, or is an access token.
+}
+
+tests {
+  test("ends the refresh session", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().message).to.equal("Signed out");
+  });
+}
+
+assert {
+  res.status: eq 200
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}

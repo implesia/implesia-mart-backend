@@ -2,6 +2,8 @@ import uuid
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class QualityImageRead(BaseModel):
     src: str
@@ -43,7 +45,7 @@ class QualityAdmin(BaseModel):
     badges: list[QualityBadgeRead]
 
 
-class QualityImageWrite(BaseModel):
+class QualityImageWrite(WriteModel):
     src: str = Field(default="", max_length=255)
     alt: str = Field(default="", max_length=200)
 
@@ -55,7 +57,7 @@ class QualityImageWrite(BaseModel):
         return value
 
 
-class QualityStepWrite(BaseModel):
+class QualityStepWrite(WriteModel):
     text: str = Field(default="", max_length=300)
     is_active: bool = True
 
@@ -67,7 +69,7 @@ class QualityStepWrite(BaseModel):
         return value
 
 
-class QualityBadgeWrite(BaseModel):
+class QualityBadgeWrite(WriteModel):
     icon: str = Field(default="check_circle", max_length=40)
     label: str = Field(default="", max_length=80)
     is_active: bool = True
@@ -85,7 +87,7 @@ class QualityBadgeWrite(BaseModel):
         return value or "check_circle"
 
 
-class QualityWrite(BaseModel):
+class QualityWrite(WriteModel):
     title: str = Field(default="", max_length=200)
     body: str = Field(default="", max_length=800)
     image: QualityImageWrite

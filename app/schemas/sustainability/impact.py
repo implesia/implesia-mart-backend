@@ -2,6 +2,8 @@ import uuid
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class ImpactItemRead(BaseModel):
     id: uuid.UUID
@@ -32,7 +34,7 @@ class ImpactPublic(BaseModel):
     items: list[ImpactItemPublic]
 
 
-class ImpactCopyUpdate(BaseModel):
+class ImpactCopyUpdate(WriteModel):
     kicker: str = Field(default="", max_length=80)
     title: str = Field(default="", max_length=160)
     subtitle: str = Field(default="", max_length=400)
@@ -45,7 +47,7 @@ class ImpactCopyUpdate(BaseModel):
         return value
 
 
-class ImpactItemWrite(BaseModel):
+class ImpactItemWrite(WriteModel):
     icon: str = Field(default="verified", max_length=40)
     value: str = Field(default="", max_length=40)
     label: str = Field(default="", max_length=80)
@@ -64,5 +66,5 @@ class ImpactItemWrite(BaseModel):
         return value or "verified"
 
 
-class ImpactReorder(BaseModel):
+class ImpactReorder(WriteModel):
     ids: list[uuid.UUID] = Field(max_length=12)

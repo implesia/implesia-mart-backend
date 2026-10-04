@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class CalloutPublic(BaseModel):
     eyebrow: str
@@ -10,7 +12,7 @@ class CalloutAdmin(CalloutPublic):
     is_active: bool
 
 
-class CalloutWrite(BaseModel):
+class CalloutWrite(WriteModel):
     is_active: bool = True
     eyebrow: str = Field(default="", max_length=80)
     body: str = Field(default="", max_length=800)

@@ -120,11 +120,11 @@ def _public(
     )
 
 
-async def _rows(db: AsyncSession, model: type, block_id: uuid.UUID) -> list:
+async def _rows[T](db: AsyncSession, model: type[T], block_id: uuid.UUID) -> list[T]:
     rows = await db.scalars(
         select(model)
-        .where(model.block_id == block_id)
-        .order_by(model.sort_order, model.created_at)
+        .where(model.block_id == block_id)  # type: ignore[attr-defined]
+        .order_by(model.sort_order, model.created_at)  # type: ignore[attr-defined]
     )
     return list(rows)
 
@@ -180,7 +180,7 @@ def _check(payload: BlockWrite) -> None:
         raise UnprocessableError("Choose a card style.")
 
 
-def _match(raw: str | None, existing: dict) -> object | None:
+def _match[T](raw: str | None, existing: dict[uuid.UUID, T]) -> T | None:
     if not raw:
         return None
     try:

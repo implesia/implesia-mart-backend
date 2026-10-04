@@ -1,3 +1,5 @@
+import uuid
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -84,11 +86,11 @@ def _public(
     )
 
 
-async def _ordered(db: AsyncSession, model: type, support_id: object) -> list:
+async def _ordered[T](db: AsyncSession, model: type[T], support_id: uuid.UUID) -> list[T]:
     rows = await db.scalars(
         select(model)
-        .where(model.support_id == support_id)
-        .order_by(model.sort_order, model.created_at)
+        .where(model.support_id == support_id)  # type: ignore[attr-defined]
+        .order_by(model.sort_order, model.created_at)  # type: ignore[attr-defined]
     )
     return list(rows)
 
@@ -199,8 +201,8 @@ async def update_support(db: AsyncSession, payload: SupportWrite) -> SupportAdmi
     _sync_links(db, row, links, payload.quick_links)
     for extra in hours[len(payload.hours) :]:
         await db.delete(extra)
-    for extra in links[len(payload.quick_links) :]:
-        await db.delete(extra)
+    for stale in links[len(payload.quick_links) :]:
+        await db.delete(stale)
     await db.commit()
     await db.refresh(row)
     return _admin(

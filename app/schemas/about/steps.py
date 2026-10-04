@@ -2,6 +2,8 @@ import uuid
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class StepItemRead(BaseModel):
     id: uuid.UUID
@@ -34,7 +36,7 @@ class StepsPublic(BaseModel):
     items: list[StepItemPublic]
 
 
-class StepsCopyUpdate(BaseModel):
+class StepsCopyUpdate(WriteModel):
     kicker: str = Field(default="", max_length=80)
     title: str = Field(default="", max_length=160)
     subtitle: str = Field(default="", max_length=400)
@@ -47,7 +49,7 @@ class StepsCopyUpdate(BaseModel):
         return value
 
 
-class StepItemWrite(BaseModel):
+class StepItemWrite(WriteModel):
     step: str = Field(default="", max_length=20)
     icon: str = Field(default="task_alt", max_length=40)
     title: str = Field(default="", max_length=120)
@@ -67,5 +69,5 @@ class StepItemWrite(BaseModel):
         return value or "task_alt"
 
 
-class StepReorder(BaseModel):
+class StepReorder(WriteModel):
     ids: list[uuid.UUID] = Field(max_length=12)

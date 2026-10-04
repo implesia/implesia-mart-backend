@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class StepPublic(BaseModel):
     id: str
@@ -21,10 +23,10 @@ class RefundPublic(BaseModel):
 
 class RefundAdmin(RefundPublic):
     is_active: bool
-    steps: list[StepRead]
+    steps: list[StepRead]  # type: ignore[assignment]
 
 
-class StepWrite(BaseModel):
+class StepWrite(WriteModel):
     id: str | None = None
     title: str = Field(default="", max_length=200)
     body: str = Field(default="", max_length=800)
@@ -38,7 +40,7 @@ class StepWrite(BaseModel):
         return value
 
 
-class RefundWrite(BaseModel):
+class RefundWrite(WriteModel):
     is_active: bool = True
     icon: str = Field(default="", max_length=40)
     nav_label: str = Field(default="", max_length=80)

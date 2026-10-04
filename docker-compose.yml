@@ -1,9 +1,13 @@
+# Local development only. Do not deploy this file.
+# Reload, source mounts, and the local database password stay here.
+# Production is render.yaml: managed Postgres, managed Redis, Gunicorn, no reload.
 name: implesia-mart-backend
 
 services:
   postgres:
     image: postgres:16-alpine
     environment:
+      # Local volume password. Production credentials come from Render.
       POSTGRES_USER: ${POSTGRES_USER:-implesia_mart}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-implesia_mart}
       POSTGRES_DB: ${POSTGRES_DB:-implesia_mart}
@@ -37,9 +41,14 @@ services:
     build: .
     env_file: .env
     environment:
+      # These override .env so this stack cannot boot as production
+      # or follow a hosted DATABASE_URL pasted into that file.
+      ENVIRONMENT: local
+      DEBUG: "true"
       POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
+      POSTGRES_PORT: "5432"
       REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: ""
     depends_on:
       postgres:
         condition: service_healthy

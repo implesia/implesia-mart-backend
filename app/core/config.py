@@ -1,12 +1,17 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from pydantic import AliasChoices, Field, PostgresDsn, field_validator
+from pydantic import AliasChoices, Field, PostgresDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 Environment = Literal["local", "test", "staging", "production"]
+
+# HS256 needs a 256-bit key. The placeholder is rejected on its own so a longer
+# copy of it still cannot sign production tokens.
+DEFAULT_SECRET_KEY = "change-me-in-production"
+MIN_PRODUCTION_SECRET_KEY_LENGTH = 32
 
 # NoDecode stops pydantic-settings from JSON-parsing the raw env value, so the
 # "before" validator below can accept a plain comma separated string.
@@ -33,10 +38,12 @@ class Settings(BaseSettings):
     cors_origins: CsvList = Field(default_factory=list)
 
     # Security
-    secret_key: str = "change-me-in-production"
+    secret_key: str = DEFAULT_SECRET_KEY
+    # IPs or CIDRs of reverse proxies allowed to set the client address.
+    # A direct caller is never trusted, even if it sends forwarding headers.
+    trusted_proxies: CsvList = Field(default_factory=list)
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 14
-    jwt_algorithm: str = "HS256"
 
     # Database
     postgres_host: str = "localhost"
@@ -54,6 +61,10 @@ class Settings(BaseSettings):
 
     # Rate limiting
     rate_limit_default: str = "200/minute"
+    rate_limit_login_ip: str = "10/minute"
+    rate_limit_login_account: str = "10/minute"
+    rate_limit_refresh_ip: str = "10/minute"
+    rate_limit_refresh_account: str = "10/minute"
     rate_limit_orders: str = "5/hour"
     rate_limit_order_lookup: str = "30/minute"
     rate_limit_product_writes: str = "30/minute"
@@ -77,7 +88,25 @@ class Settings(BaseSettings):
     # Cloudflare Turnstile
     turnstile_secret_key: str = ""
 
-    @field_validator("cors_origins", "order_notification_recipients", mode="before")
+    @model_validator(mode="after")
+    def _production_secret_key(self) -> Self:
+        if self.environment != "production":
+            return self
+        secret = self.secret_key.strip()
+        if not secret:
+            raise ValueError("SECRET_KEY is required in production")
+        if secret == DEFAULT_SECRET_KEY:
+            raise ValueError("SECRET_KEY must not use the default value in production")
+        if len(secret) < MIN_PRODUCTION_SECRET_KEY_LENGTH:
+            raise ValueError(
+                "SECRET_KEY must be at least "
+                f"{MIN_PRODUCTION_SECRET_KEY_LENGTH} characters in production"
+            )
+        return self
+
+    @field_validator(
+        "cors_origins", "order_notification_recipients", "trusted_proxies", mode="before"
+    )
     @classmethod
     def _split_csv(cls, value: object) -> object:
         if isinstance(value, str):

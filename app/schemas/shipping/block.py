@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class CardPublic(BaseModel):
     id: str
@@ -48,12 +50,12 @@ class BlockPublic(BaseModel):
 
 class BlockAdmin(BlockPublic):
     is_active: bool
-    cards: list[CardRead]
-    timelines: list[TimeRead]
-    notes: list[NoteRead]
+    cards: list[CardRead]  # type: ignore[assignment]
+    timelines: list[TimeRead]  # type: ignore[assignment]
+    notes: list[NoteRead]  # type: ignore[assignment]
 
 
-class CardWrite(BaseModel):
+class CardWrite(WriteModel):
     id: str | None = None
     icon: str = Field(default="", max_length=40)
     eyebrow: str = Field(default="", max_length=80)
@@ -70,7 +72,7 @@ class CardWrite(BaseModel):
         return value
 
 
-class TimeWrite(BaseModel):
+class TimeWrite(WriteModel):
     id: str | None = None
     label: str = Field(default="", max_length=120)
     value: str = Field(default="", max_length=80)
@@ -84,7 +86,7 @@ class TimeWrite(BaseModel):
         return value
 
 
-class NoteWrite(BaseModel):
+class NoteWrite(WriteModel):
     id: str | None = None
     icon: str = Field(default="", max_length=40)
     title: str = Field(default="", max_length=200)
@@ -99,7 +101,7 @@ class NoteWrite(BaseModel):
         return value
 
 
-class BlockWrite(BaseModel):
+class BlockWrite(WriteModel):
     is_active: bool = True
     icon: str = Field(default="", max_length=40)
     nav_label: str = Field(default="", max_length=80)

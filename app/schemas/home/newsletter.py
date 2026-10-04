@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 NewsletterIcon = Literal[
     "payments",
     "local_shipping",
@@ -52,7 +54,7 @@ class NewsletterPublic(BaseModel):
     perks: list[NewsletterPerkPublic]
 
 
-class NewsletterCopyUpdate(BaseModel):
+class NewsletterCopyUpdate(WriteModel):
     eyebrow: str = Field(max_length=80)
     title: str = Field(max_length=160)
     subtitle: str = Field(max_length=400)
@@ -66,7 +68,7 @@ class NewsletterCopyUpdate(BaseModel):
         return value.strip()
 
 
-class NewsletterPerkWrite(BaseModel):
+class NewsletterPerkWrite(WriteModel):
     icon: NewsletterIcon = "local_offer"
     label: str = Field(min_length=1, max_length=120)
     is_active: bool = True
@@ -80,7 +82,7 @@ class NewsletterPerkWrite(BaseModel):
         return cleaned
 
 
-class NewsletterPerkUpdate(BaseModel):
+class NewsletterPerkUpdate(WriteModel):
     icon: NewsletterIcon | None = None
     label: str | None = Field(None, min_length=1, max_length=120)
     is_active: bool | None = None
@@ -96,5 +98,5 @@ class NewsletterPerkUpdate(BaseModel):
         return cleaned
 
 
-class NewsletterReorder(BaseModel):
+class NewsletterReorder(WriteModel):
     ids: list[uuid.UUID] = Field(max_length=12)

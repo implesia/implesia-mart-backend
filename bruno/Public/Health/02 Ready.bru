@@ -1,80 +1,79 @@
 meta {
-  name: Ready
-  type: http
-  seq: 2
+name: Ready
+type: http
+seq: 2
 }
 
 get {
-  url: {{BASE_URL}}/health/ready
-  body: none
-  auth: none
+url: {{BASE_URL}}/health/ready
+body: none
+auth: none
 }
 
 headers {
-  Accept: application/json
+Accept: application/json
 }
 
 docs {
-  # GET /health/ready
+# GET /health/ready
 
-  Readiness probe. Runs `SELECT 1` against Postgres.
+Readiness probe. Runs `SELECT 1` against Postgres and pings the rate-limit store. In production that store is Redis. Liveness does not check either dependency.
 
-  No request body.
+No request body.
 
-  ## Response `200`
+## Response `200`
 
-  ```json
-  { "status": "ok", "database": "ok" }
-  ```
+```json
+{ "status": "ok", "database": "ok", "redis": "ok" }
+```
 
-  If Postgres is down the status stays `200` and `database` is `unreachable`.
+If Postgres or Redis is down the response is `503`. `database` or `redis` is `unreachable`. `/health/live` stays `200`.
 }
 
-
 tests {
-  test("database is reachable", function () {
-    expect(res.getStatus()).to.equal(200);
-    expect(res.getBody().status).to.equal("ok");
-    expect(res.getBody().database).to.equal("ok");
-  });
+test("database is reachable", function () {
+expect(res.getStatus()).to.equal(200)          ;
+expect(res.getBody().status).to.equal("ok");
+expect(res.getBody().database).to.equal("ok");
+})                                             ;
 }
 
 assert {
-  res.status: eq 200
+res.status: eq 200
 }
 
 example {
-  name: 200 OK
-  description: Database is reachable
+name: 200 OK
+description: Database is reachable
 
-  request: {
-    url: {{BASE_URL}}/health/ready
-    method: GET
-    headers: {
-      Accept: application/json
-    }
-  }
+request: {
+url: {{BASE_URL}}/health/ready
+method: GET
+headers: {
+Accept: application/json
+}
+}
 
-  response: {
-    headers: {
-      content-type: application/json
-    }
+response: {
+headers: {
+content-type: application/json
+}
 
-    status: {
-      code: 200
-      text: OK
-    }
+status: {
+code: 200
+text: OK
+}
 
-    body: {
-      type: json
-      content: '''
-        { "status": "ok", "database": "ok" }
-      '''
-    }
-  }
+body: {
+type: json
+content: '''
+{ "status": "ok", "database": "ok", "redis": "ok" }
+'''
+}
+}
 }
 
 settings {
-  encodeUrl: true
-  timeout: 25000
+encodeUrl: true
+timeout: 25000
 }

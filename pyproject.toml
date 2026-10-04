@@ -23,6 +23,7 @@ dependencies = [
     "jinja2>=3.1",
     "aiosmtplib>=3.0",
     "python-slugify>=8.0",
+    "prometheus-client>=0.21",
 ]
 
 [project.optional-dependencies]
@@ -61,3 +62,6 @@ ignore_missing_imports = true
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+markers = [
+    "postgres: PostgreSQL integration tests; skipped when the server is down",
+]

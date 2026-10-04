@@ -4,10 +4,12 @@ import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.exceptions import NotFoundError, UnprocessableError
 from app.models.cart import Cart, CartItem
@@ -194,7 +196,7 @@ def _admin(cart: Cart, rates: delivery_service.StoreFees) -> AdminCartRead:
     )
 
 
-def _stmt():
+def _stmt() -> Select[Cart]:
     return select(Cart).options(*_CART_LOAD)
 
 
@@ -384,7 +386,7 @@ def _like(term: str) -> str:
     return f"%{escaped}%"
 
 
-def _has_items():
+def _has_items() -> ColumnElement[bool]:
     return select(CartItem.id).where(CartItem.cart_id == Cart.id).exists()
 
 
@@ -416,13 +418,13 @@ async def list_carts(db: AsyncSession, query: AdminCartQuery) -> AdminCartList:
         )
         conditions.append(or_(user_match, product_match))
 
-    def _apply(stmt):
+    def _apply(stmt: Select[Any]) -> Select[Any]:
         for condition in conditions:
             stmt = stmt.where(condition)
         return stmt
 
     total = int((await db.execute(_apply(select(func.count()).select_from(Cart)))).scalar_one())
-    rows = (
+    rows: list[Cart] = list(
         (
             await db.execute(
                 _apply(_stmt())

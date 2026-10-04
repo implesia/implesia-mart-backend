@@ -2,8 +2,9 @@ import hmac
 import re
 import secrets
 import uuid
+from typing import Any
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import Select, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -70,7 +71,7 @@ def _read(order: Order) -> OrderRead:
     return OrderRead(
         id=order.id,
         number=order.number,
-        source=order.source,  # type: ignore[arg-type]
+        source=order.source,
         status=order.status,
         payment_method="cod",
         anonymous=order.user_id is None,
@@ -81,7 +82,7 @@ def _read(order: Order) -> OrderRead:
         area=order.area,
         address=order.address,
         notes=order.notes,
-        delivery_zone=order.delivery_zone,  # type: ignore[arg-type]
+        delivery_zone=order.delivery_zone,
         subtotal=order.subtotal,
         shipping=order.shipping,
         total=order.total,
@@ -191,7 +192,7 @@ def _totals(
         subtotal=subtotal,
         shipping=shipping,
         total=subtotal + shipping,
-        delivery_zone=zone,  # type: ignore[arg-type]
+        delivery_zone=zone,
         delivery_available=available,
     )
 
@@ -407,19 +408,19 @@ async def list_orders(db: AsyncSession, query: AdminOrderQuery) -> AdminOrderLis
             )
         )
 
-    def _apply(stmt):
+    def _apply(stmt: Select[Any]) -> Select[Any]:
         for condition in conditions:
             stmt = stmt.where(condition)
         return stmt
 
     total = int((await db.execute(_apply(select(func.count()).select_from(Order)))).scalar_one())
-    ordering = {
+    ordering: tuple[Any, Any] = {
         "oldest": (Order.created_at.asc(), Order.id.asc()),
         "high": (Order.total.desc(), Order.id.desc()),
         "low": (Order.total.asc(), Order.id.asc()),
         "newest": (Order.created_at.desc(), Order.id.desc()),
     }[query.sort]
-    rows = (
+    rows: list[Order] = list(
         (
             await db.execute(
                 _apply(select(Order).options(_ORDER_LOAD))
@@ -452,7 +453,7 @@ def _public(order: Order) -> PublicOrderRead:
         area=order.area,
         address=order.address,
         notes=order.notes,
-        delivery_zone=order.delivery_zone,  # type: ignore[arg-type]
+        delivery_zone=order.delivery_zone,
         subtotal=order.subtotal,
         shipping=order.shipping,
         total=order.total,

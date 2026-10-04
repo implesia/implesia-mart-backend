@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.home.banner import BannerAccent
+from app.schemas.common import WriteModel
 
 
 def _href(value: str) -> str:
@@ -82,7 +83,7 @@ class HomeBannerRead(BaseModel):
     updated_at: datetime
 
 
-class HomeBannerUpdate(BaseModel):
+class HomeBannerUpdate(WriteModel):
     brand_name: str | None = Field(None, min_length=1, max_length=80)
     aria_label: str | None = Field(None, min_length=1, max_length=120)
     trust_line: str | None = Field(None, min_length=1, max_length=200)
@@ -106,7 +107,7 @@ class BannerSlideAdmin(BannerSlidePublic):
     updated_at: datetime
 
 
-class BannerSlideWrite(BaseModel):
+class BannerSlideWrite(WriteModel):
     slug: str | None = Field(
         None, min_length=1, max_length=180, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
     )
@@ -142,7 +143,7 @@ class BannerSlideWrite(BaseModel):
         return stripped or None
 
 
-class BannerSlideUpdate(BaseModel):
+class BannerSlideUpdate(WriteModel):
     slug: str | None = Field(
         None, min_length=1, max_length=180, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
     )
@@ -180,5 +181,5 @@ class BannerSlideUpdate(BaseModel):
         return stripped or None
 
 
-class BannerSlideMove(BaseModel):
+class BannerSlideMove(WriteModel):
     direction: Literal["earlier", "later"]

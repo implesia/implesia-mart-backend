@@ -17,6 +17,7 @@ from app.models.about.story import (
     AboutStorySection,
 )
 from app.models.about.values import AboutValueItem, AboutValues
+from app.models.audit_event import AuditEvent
 from app.models.blogs.categories import BlogCategories, BlogCategoryItem
 from app.models.blogs.cta import BlogCta
 from app.models.blogs.hero import BlogHero
@@ -54,6 +55,7 @@ from app.models.privacy.sharing import PrivacySharing, PrivacySharingChip
 from app.models.privacy.support import PrivacySupport
 from app.models.privacy.usage import PrivacyUsage, PrivacyUsageBadge, PrivacyUsageItem
 from app.models.product import Product
+from app.models.refresh_token import RefreshToken
 from app.models.shipping.block import (
     ShippingBlock,
     ShippingBlockCard,
@@ -106,6 +108,7 @@ __all__ = [
     "AboutStorySection",
     "AboutValueItem",
     "AboutValues",
+    "AuditEvent",
     "BannerAccent",
     "Base",
     "BlogCategories",
@@ -171,6 +174,7 @@ __all__ = [
     "PrivacyUsageBadge",
     "PrivacyUsageItem",
     "Product",
+    "RefreshToken",
     "ShippingBlock",
     "ShippingBlockCard",
     "ShippingBlockNote",

@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class ContentsPublic(BaseModel):
     title: str
@@ -11,7 +13,7 @@ class ContentsAdmin(ContentsPublic):
     is_active: bool
 
 
-class ContentsWrite(BaseModel):
+class ContentsWrite(WriteModel):
     is_active: bool = True
     title: str = Field(default="", max_length=200)
     subtitle: str = Field(default="", max_length=400)

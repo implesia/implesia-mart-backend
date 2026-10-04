@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class ParagraphPublic(BaseModel):
     id: str
@@ -19,10 +21,10 @@ class IntroductionPublic(BaseModel):
 
 class IntroductionAdmin(IntroductionPublic):
     is_active: bool
-    paragraphs: list[ParagraphRead]
+    paragraphs: list[ParagraphRead]  # type: ignore[assignment]
 
 
-class ParagraphWrite(BaseModel):
+class ParagraphWrite(WriteModel):
     id: str | None = None
     text: str = Field(default="", max_length=800)
     is_active: bool = True
@@ -35,7 +37,7 @@ class ParagraphWrite(BaseModel):
         return value
 
 
-class IntroductionWrite(BaseModel):
+class IntroductionWrite(WriteModel):
     is_active: bool = True
     icon: str = Field(default="", max_length=40)
     nav_label: str = Field(default="", max_length=80)

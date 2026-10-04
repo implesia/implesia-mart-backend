@@ -2,6 +2,8 @@ import uuid
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 def _href(value: str) -> str:
     cleaned = value.strip()
@@ -50,7 +52,7 @@ class StoriesPublic(BaseModel):
     items: list[StoryPublic]
 
 
-class StoryParagraphWrite(BaseModel):
+class StoryParagraphWrite(WriteModel):
     text: str = Field(default="", max_length=2000)
 
     @field_validator("text")
@@ -59,7 +61,7 @@ class StoryParagraphWrite(BaseModel):
         return value.strip()
 
 
-class StoryImageWrite(BaseModel):
+class StoryImageWrite(WriteModel):
     alt: str = Field(default="", max_length=200)
     src: str = Field(default="", max_length=255)
 
@@ -69,7 +71,7 @@ class StoryImageWrite(BaseModel):
         return value.strip()
 
 
-class StoryWrite(BaseModel):
+class StoryWrite(WriteModel):
     kicker: str = Field(default="", max_length=80)
     title: str = Field(default="", max_length=200)
     paragraphs: list[StoryParagraphWrite] = Field(default_factory=list)
@@ -94,5 +96,5 @@ class StoryWrite(BaseModel):
         return [item for item in value if item.text]
 
 
-class StoryReorder(BaseModel):
+class StoryReorder(WriteModel):
     ids: list[uuid.UUID] = Field(max_length=12)

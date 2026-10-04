@@ -2,6 +2,8 @@ import uuid
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WriteModel
+
 
 class OriginImagePublic(BaseModel):
     id: uuid.UUID
@@ -29,7 +31,7 @@ class OriginAdmin(BaseModel):
     images: list[OriginImageAdmin]
 
 
-class OriginImageWrite(BaseModel):
+class OriginImageWrite(WriteModel):
     alt: str = Field(default="", max_length=200)
     src: str = Field(default="", max_length=255)
     is_active: bool = True
@@ -42,7 +44,7 @@ class OriginImageWrite(BaseModel):
         return value
 
 
-class OriginWrite(BaseModel):
+class OriginWrite(WriteModel):
     eyebrow: str = Field(default="", max_length=80)
     title: str = Field(default="", max_length=200)
     body: str = Field(default="", max_length=800)

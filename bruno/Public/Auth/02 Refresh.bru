@@ -24,7 +24,7 @@ body:json {
 docs {
   # POST /api/v1/auth/refresh
 
-  Exchange a refresh token for a new pair. Run **Login** first. An access token in this body is `401`.
+  Exchange a refresh token for a new pair. Run **Login** first. The same address, and the same account, are each limited to 10 requests a minute. The previous refresh token dies. Presenting it again revokes the whole login, including the token this response just issued. An access token in this body is `401`.
 
   ## Request body
 
