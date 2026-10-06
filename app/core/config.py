@@ -159,11 +159,10 @@ def _asyncpg_url(url: str) -> str:
     query.pop("channel_binding", None)
     if "ssl" not in query:
         host = (parts.hostname or "").lower()
-        if sslmode not in {"disable", "allow"} and host not in {
-            "localhost",
-            "127.0.0.1",
-            "postgres",
-        }:
+        # A single-label host is private DNS (compose "postgres", Slasher "db").
+        # Those servers do not speak TLS. Public hosts still require it.
+        private = "." not in host or host in {"localhost", "127.0.0.1"}
+        if sslmode not in {"disable", "allow"} and not private:
             query["ssl"] = "require"
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
 
