@@ -17,6 +17,7 @@
     }
   ],
   "vars": {
-    "ORIGIN": "https://implesia-mart-api.onrender.com"
+    "ORIGIN": "http://72.60.199.155",
+    "ORIGIN_HOST": "implesia-mart-api.vps.flygertech.cloud"
   }
 }

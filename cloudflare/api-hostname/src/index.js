@@ -36,7 +36,9 @@ export default {
 
     const upstream = new URL(url.pathname + url.search, origin);
     const headers = new Headers(request.headers);
-    headers.set("host", new URL(origin).host);
+    // ORIGIN_HOST lets the proxy dial an IP while Caddy still matches the app hostname.
+    const originHost = String(env.ORIGIN_HOST || new URL(origin).host);
+    headers.set("host", originHost);
     headers.delete("cf-connecting-ip");
 
     return fetch(upstream, {
