@@ -147,14 +147,12 @@ class PublicOrderItemRead(BaseModel):
 
 
 class PublicOrderRead(BaseModel):
+    """Status, money, and tracking. No street address, area, or notes."""
+
     number: str
     status: str
     customer_name: str
     phone: str
-    district: str
-    area: str
-    address: str
-    notes: str
     delivery_zone: DeliveryZone
     subtotal: int
     shipping: int

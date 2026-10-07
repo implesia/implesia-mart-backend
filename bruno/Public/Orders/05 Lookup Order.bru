@@ -25,5 +25,5 @@ body:json {
 docs {
   # POST /api/v1/orders/lookup
 
-  Public status for an anonymous customer. The order number and the checkout mobile must both match. A wrong phone and an unknown number return the same 404. The response has no internal id.
+  Public status for an anonymous customer. The order number and the checkout mobile must both match. A wrong phone and an unknown number return the same 404. The response has no internal id, street address, notes, or full phone. The number is 8 random hex characters, and the route is limited per address.
 }

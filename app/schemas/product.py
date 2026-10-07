@@ -353,7 +353,7 @@ class ProductCreate(BaseModel):
     badge: ProductBadge | None = None
     image_src: str = ""
     featured: bool = False
-    published: bool = True
+    published: bool = False
     slug: str | None = None
     content: ProductContent = Field(default_factory=ProductContent)
 

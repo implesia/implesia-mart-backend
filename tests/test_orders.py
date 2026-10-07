@@ -1,3 +1,4 @@
+import re
 import uuid
 
 from httpx import AsyncClient
@@ -85,7 +86,7 @@ async def test_direct_order_ignores_client_prices_and_replays(
 
     stolen = await client.post(
         "/api/v1/orders",
-        headers={**auth_headers, "Idempotency-Key": key},
+        headers={"Idempotency-Key": key, "X-Cart-Token": "d" * 32},
         json={
             "source": "direct",
             "items": [{"product_id": product["id"], "quantity": 1}],
@@ -205,12 +206,18 @@ async def test_public_lookup_needs_the_order_phone(
     assert found.status_code == 200, found.text
     body = found.json()
     assert body["number"] == number
+    assert re.fullmatch(r"IM-[0-9A-F]{8}", number)
     assert body["status"] == "new"
-    assert body["phone"] == "01700000000"
+    assert body["phone"] == "017••••000"
     assert body["total"] == body["subtotal"] + body["shipping"]
     assert body["items"][0]["title"] == "Lookup gown"
     assert "id" not in body
     assert "anonymous" not in body
+    assert "address" not in body
+    assert "notes" not in body
+    assert "email" not in body
+    assert "district" not in body
+    assert "area" not in body
     assert "id" not in body["items"][0]
 
     wrong = await client.post(

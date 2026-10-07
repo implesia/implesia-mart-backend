@@ -1,5 +1,11 @@
-from httpx import AsyncClient
+import uuid
 
+from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.cart import Cart, CartItem
+from app.models.user import User
 from tests.test_products import _create
 
 
@@ -24,13 +30,13 @@ async def test_add_to_cart_uses_the_server_price(
 
     added = await client.post(
         "/api/v1/cart/items",
-        headers=auth_headers,
         json={"product_id": product["id"], "quantity": 2},
     )
     assert added.status_code == 200, added.text
     body = added.json()
-    assert body["anonymous"] is False
-    assert body["cart_token"] is None
+    assert body["anonymous"] is True
+    token = body["cart_token"]
+    assert token
     assert body["item_count"] == 2
     assert body["items"][0]["unit_price"] == 15000
     assert body["items"][0]["line_total"] == 30000
@@ -40,7 +46,7 @@ async def test_add_to_cart_uses_the_server_price(
 
     again = await client.post(
         "/api/v1/cart/items",
-        headers=auth_headers,
+        headers=_guest(token),
         json={"product_id": product["id"], "quantity": 1},
     )
     assert again.status_code == 200
@@ -79,7 +85,7 @@ async def test_anonymous_cart_stays_private(
     assert stolen.status_code == 404
 
 
-async def test_login_adopts_the_anonymous_cart(
+async def test_an_admin_token_does_not_claim_the_shopper_cart(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
     product = await _create(client, auth_headers, title="Merge gown", price=800, quantity=5)
@@ -88,29 +94,34 @@ async def test_login_adopts_the_anonymous_cart(
         json={"product_id": product["id"], "quantity": 2},
     )
     token = added.json()["cart_token"]
-    merged = await client.get("/api/v1/cart", headers={**auth_headers, **_guest(token)})
-    assert merged.status_code == 200, merged.text
-    body = merged.json()
-    assert body["anonymous"] is False
-    assert body["cart_token"] is None
+    claimed = await client.get("/api/v1/cart", headers={**auth_headers, **_guest(token)})
+    assert claimed.status_code == 200, claimed.text
+    body = claimed.json()
+    assert body["anonymous"] is True
+    assert body["cart_token"] == token
     assert body["items"][0]["quantity"] == 2
 
-    abandoned = await client.get("/api/v1/cart", headers=_guest(token))
-    assert abandoned.json()["items"] == []
+    staff = await client.get("/api/v1/cart", headers=auth_headers)
+    assert staff.json()["items"] == []
+
+    still = await client.get("/api/v1/cart", headers=_guest(token))
+    assert still.json()["items"][0]["quantity"] == 2
 
 
 async def test_dashboard_lists_logged_in_and_anonymous_carts(
-    client: AsyncClient, auth_headers: dict[str, str]
+    client: AsyncClient, auth_headers: dict[str, str], db_session: AsyncSession
 ) -> None:
     gown = await _create(client, auth_headers, title="Listed gown", price=1000, quantity=5)
     lamp = await _create(client, auth_headers, title="Listed lamp", price=400, quantity=5)
 
-    user_cart = await client.post(
-        "/api/v1/cart/items",
-        headers=auth_headers,
-        json={"product_id": gown["id"], "quantity": 1},
+    owner = await db_session.scalar(select(User).where(User.email == "admin@implesia.com"))
+    assert owner is not None
+    owned = Cart(user_id=owner.id)
+    owned.items.append(
+        CartItem(product_id=uuid.UUID(gown["id"]), quantity=1, selection=[])
     )
-    assert user_cart.status_code == 200, user_cart.text
+    db_session.add(owned)
+    await db_session.commit()
     guest_cart = await client.post(
         "/api/v1/cart/items",
         json={"product_id": lamp["id"], "quantity": 3},

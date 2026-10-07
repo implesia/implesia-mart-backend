@@ -129,6 +129,27 @@ async def test_catalog_follows_the_product_pages(
     assert page["category_counts"]["fashion"] == 1
 
 
+async def test_a_new_product_stays_off_the_public_catalog(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    body = _product(title="Night upload check", slug="night-upload-check")
+    del body["published"]
+    response = await client.post(
+        "/api/v1/admin/products",
+        headers=auth_headers,
+        files=_parts(body),
+    )
+    assert response.status_code == 201, response.text
+    created = response.json()
+    assert created["published"] is False
+
+    public = await client.get(f"/api/v1/products/{created['id']}")
+    assert public.status_code == 404
+
+    catalog = await client.get("/api/v1/products")
+    assert all(item["title"] != "Night upload check" for item in catalog.json()["items"])
+
+
 async def test_hidden_products_are_not_confirmed(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
@@ -500,3 +521,50 @@ async def test_create_and_update_upload_the_page_images(
         "পিছনের দিক",
         "পাশ",
     ]
+
+
+AVIF = b"\x00\x00\x00\x20ftypavif\x00\x00\x00\x00avifmif1"
+
+
+async def test_product_images_reject_avif_and_a_thirteenth_file(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    avif = await client.post(
+        "/api/v1/admin/products",
+        headers=auth_headers,
+        files=_parts(
+            _product(title="Avif Gown", image_src=""),
+            images=[("photo.avif", AVIF, "image/avif")],
+        ),
+    )
+    assert avif.status_code == 422
+    assert "JPEG" in avif.json()["error"]["message"]
+
+    too_many = await client.post(
+        "/api/v1/admin/products",
+        headers=auth_headers,
+        files=_parts(
+            _product(title="Too Many Photos", image_src=""),
+            images=[(f"{index}.jpg", JPEG, "image/jpeg") for index in range(13)],
+        ),
+    )
+    assert too_many.status_code == 422
+    assert "12" in too_many.json()["error"]["message"]
+
+
+async def test_operations_routes_reject_a_missing_token(client: AsyncClient) -> None:
+    missing = "00000000-0000-4000-8000-000000000001"
+    checks = [
+        ("GET", "/api/v1/admin/orders"),
+        ("GET", f"/api/v1/admin/orders/{missing}"),
+        ("PATCH", f"/api/v1/admin/orders/{missing}"),
+        ("GET", "/api/v1/admin/products"),
+        ("POST", "/api/v1/admin/products"),
+        ("GET", "/api/v1/admin/carts"),
+        ("GET", f"/api/v1/admin/carts/{missing}"),
+        ("GET", "/api/v1/admin/delivery"),
+        ("PATCH", "/api/v1/admin/delivery"),
+    ]
+    for method, path in checks:
+        response = await client.request(method, path, json={})
+        assert response.status_code == 401, (method, path, response.status_code, response.text)

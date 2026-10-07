@@ -147,11 +147,11 @@ async def test_checkout_and_cart_use_the_saved_rates(
     product = await _create(client, auth_headers, price=1000, quantity=4)
     added = await client.post(
         "/api/v1/cart/items",
-        headers=auth_headers,
         json={"product_id": product["id"], "quantity": 2},
     )
     assert added.status_code == 200, added.text
     cart = added.json()
+    guest = {"X-Cart-Token": cart["cart_token"]}
     assert cart["inside_dhaka"] == 80
     assert cart["dhaka_suburban"] == 100
     assert cart["outside_dhaka"] == 120
@@ -257,7 +257,7 @@ async def test_checkout_and_cart_use_the_saved_rates(
         },
     )
     assert same.status_code == 200
-    refreshed = await client.get("/api/v1/cart", headers=auth_headers)
+    refreshed = await client.get("/api/v1/cart", headers=guest)
     assert refreshed.json()["shipping"] == 90
     assert refreshed.json()["total"] == refreshed.json()["subtotal"] + 90
 

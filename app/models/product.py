@@ -8,7 +8,6 @@ from sqlalchemy import (
     Integer,
     String,
     false,
-    true,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -105,7 +104,7 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Boolean, nullable=False, default=False, server_default=false()
     )
     published: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True, server_default=true()
+        Boolean, nullable=False, default=False, server_default=false()
     )
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     content: Mapped[dict[str, Any]] = mapped_column(

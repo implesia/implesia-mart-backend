@@ -443,16 +443,18 @@ async def list_orders(db: AsyncSession, query: AdminOrderQuery) -> AdminOrderLis
     )
 
 
+def _mask_phone(phone: str) -> str:
+    if len(phone) < 8:
+        return phone
+    return f"{phone[:3]}••••{phone[-3:]}"
+
+
 def _public(order: Order) -> PublicOrderRead:
     return PublicOrderRead(
         number=order.number,
         status=order.status,
         customer_name=order.customer_name,
-        phone=order.phone,
-        district=order.district,
-        area=order.area,
-        address=order.address,
-        notes=order.notes,
+        phone=_mask_phone(order.phone),
         delivery_zone=order.delivery_zone,
         subtotal=order.subtotal,
         shipping=order.shipping,
@@ -484,9 +486,7 @@ def _same_secret(stored: str, given: str) -> bool:
 
 async def lookup_order(db: AsyncSession, payload: OrderLookup) -> PublicOrderRead:
     order = (
-        await db.execute(
-            select(Order).options(_ORDER_LOAD).where(Order.number == payload.number)
-        )
+        await db.execute(select(Order).options(_ORDER_LOAD).where(Order.number == payload.number))
     ).scalar_one_or_none()
     stored = order.phone if order is not None else "00000000000"
     if order is None or not _same_secret(stored, payload.phone):

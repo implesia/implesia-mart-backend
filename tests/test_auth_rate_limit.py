@@ -29,6 +29,17 @@ def _limits_off_after_test() -> Iterator[None]:
     limiter.reset()
 
 
+async def test_order_lookup_is_limited_per_address(client: AsyncClient) -> None:
+    payload = {"number": "IM-00000000", "phone": "01700000000"}
+    with enforced_limits():
+        for _ in range(30):
+            response = await client.post("/api/v1/orders/lookup", json=payload)
+            assert response.status_code == 404, response.text
+        blocked = await client.post("/api/v1/orders/lookup", json=payload)
+    assert blocked.status_code == 429
+    assert blocked.json()["error"]["code"] == "rate_limited"
+
+
 async def test_login_is_limited_per_address(client: AsyncClient) -> None:
     with enforced_limits():
         for index in range(10):
@@ -42,9 +53,7 @@ async def test_login_is_limited_per_address(client: AsyncClient) -> None:
             json={"email": "another@example.com", "password": WRONG_PASSWORD},
         )
     assert blocked.status_code == 429
-    assert blocked.json() == {
-        "error": {"code": "rate_limited", "message": "Too many requests."}
-    }
+    assert blocked.json() == {"error": {"code": "rate_limited", "message": "Too many requests."}}
     assert "per" not in blocked.text
 
 
@@ -98,9 +107,7 @@ async def test_login_is_limited_per_email_across_addresses(
     assert other.status_code == 401
 
 
-async def test_refresh_is_limited_per_address(
-    client: AsyncClient, superadmin_token: str
-) -> None:
+async def test_refresh_is_limited_per_address(client: AsyncClient, superadmin_token: str) -> None:
     login = await client.post(
         "/api/v1/auth/login",
         json={"email": "admin@implesia.com", "password": TEST_PASSWORD},

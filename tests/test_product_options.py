@@ -64,7 +64,6 @@ async def test_cart_and_order_store_the_chosen_labels(
 
     added = await client.post(
         "/api/v1/cart/items",
-        headers=auth_headers,
         json={
             "product_id": created["id"],
             "quantity": 1,
@@ -72,6 +71,7 @@ async def test_cart_and_order_store_the_chosen_labels(
         },
     )
     assert added.status_code == 200, added.text
+    guest = {"X-Cart-Token": added.json()["cart_token"]}
     line = added.json()["items"][0]
     assert line["selection"] == [
         {"name": "কালার", "label": "লাল", "swatch": "#b42318"},
@@ -80,7 +80,7 @@ async def test_cart_and_order_store_the_chosen_labels(
 
     changed = await client.post(
         "/api/v1/cart/items",
-        headers=auth_headers,
+        headers=guest,
         json={
             "product_id": created["id"],
             "quantity": 1,
@@ -93,7 +93,7 @@ async def test_cart_and_order_store_the_chosen_labels(
 
     placed = await client.post(
         "/api/v1/orders",
-        headers={**auth_headers, "Idempotency-Key": _key()},
+        headers={**guest, "Idempotency-Key": _key()},
         json={"source": "cart", **SHIPPING},
     )
     assert placed.status_code == 201, placed.text

@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Request
 
-from app.api.deps import DbSession, OptionalUser, no_store
+from app.api.deps import DbSession, no_store
 from app.core.config import settings
 from app.rate_limit import limiter
 from app.schemas.cart import CartItemCreate, CartItemUpdate, CartRead
@@ -14,10 +14,10 @@ router = APIRouter(dependencies=[Depends(no_store)])
 
 
 async def shopper(
-    user: OptionalUser,
     x_cart_token: Annotated[str | None, Header()] = None,
 ) -> Shopper:
-    return Shopper(user=user, guest_token=x_cart_token)
+    """A bearer token is not a shopper. Cart and checkout stay on the guest token."""
+    return Shopper(guest_token=x_cart_token)
 
 
 ShopperDep = Annotated[Shopper, Depends(shopper)]
