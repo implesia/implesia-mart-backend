@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from app.api.deps import DbSession, RequireEditor, no_store, require_editor
 from app.core.config import settings
-from app.core.exceptions import UnprocessableError
+from app.core.exceptions import UnprocessableError, payload_errors
 from app.rate_limit import limiter
 from app.schemas.product import (
     AdminProductList,
@@ -31,7 +31,7 @@ def _model(
     try:
         return model.model_validate_json(raw)
     except ValidationError as exc:
-        raise UnprocessableError("Request payload is invalid") from exc
+        raise UnprocessableError("Request payload is invalid", payload_errors(exc)) from exc
 
 
 def _alts(raw: str) -> list[str]:

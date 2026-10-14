@@ -10,9 +10,7 @@ def _href(value: str) -> str:
     if not cleaned:
         return "/products"
     if not (
-        cleaned.startswith("/")
-        or cleaned.startswith("http://")
-        or cleaned.startswith("https://")
+        cleaned.startswith("/") or cleaned.startswith("http://") or cleaned.startswith("https://")
     ):
         raise ValueError("href must start with / or http")
     return cleaned

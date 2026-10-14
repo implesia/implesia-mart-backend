@@ -7,7 +7,7 @@ from starlette.datastructures import UploadFile as StarletteUpload
 
 from app.api.deps import DbSession, no_store, require_editor
 from app.core.config import settings
-from app.core.exceptions import UnprocessableError
+from app.core.exceptions import UnprocessableError, payload_errors
 from app.rate_limit import limiter
 from app.schemas.about.dress import DressesPublic, DressRead, DressReorder, DressWrite
 from app.schemas.common import Message
@@ -25,7 +25,7 @@ def _payload(raw: str) -> DressWrite:
     try:
         return DressWrite.model_validate_json(raw)
     except ValidationError as exc:
-        raise UnprocessableError("Request payload is invalid") from exc
+        raise UnprocessableError("Request payload is invalid", payload_errors(exc)) from exc
 
 
 def _uploads(form_items: list[tuple[str, object]]) -> dict[int, UploadFile]:

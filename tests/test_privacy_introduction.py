@@ -77,8 +77,7 @@ async def test_editor_saves_hides_and_rejects_a_blank_paragraph(
     )
     assert empty.status_code == 422
     assert (
-        empty.json()["error"]["message"]
-        == "Every paragraph needs text, or remove the empty ones."
+        empty.json()["error"]["message"] == "Every paragraph needs text, or remove the empty ones."
     )
 
     saved = await client.patch(

@@ -10,13 +10,10 @@ from app.schemas.contact.hero import HeroAdmin, HeroLink, HeroPublic, HeroWrite
 SECTION_SLUG = "contact"
 DEFAULT_EYEBROW = "যোগাযোগ"
 DEFAULT_TITLE = "অর্ডার বা প্রোডাক্ট নিয়ে সাহায্য লাগলে বলুন"
-DEFAULT_SUBTITLE = (
-    "কল বা হোয়াটসঅ্যাপে সরাসরি যোগাযোগ করুন। কর্মঘণ্টায় রিপ্লাই দেওয়ার চেষ্টা করি।"
-)
+DEFAULT_SUBTITLE = "কল বা হোয়াটসঅ্যাপে সরাসরি যোগাযোগ করুন। কর্মঘণ্টায় রিপ্লাই দেওয়ার চেষ্টা করি।"
 DEFAULT_PRIMARY_LABEL = "হোয়াটসঅ্যাপ"
-DEFAULT_PRIMARY_HREF = (
-    "https://wa.me/8801516527932?text="
-    + quote("হ্যালো, আমি ইমপ্লেসিয়া মার্ট সম্পর্কে জানতে চাই।")
+DEFAULT_PRIMARY_HREF = "https://wa.me/8801516527932?text=" + quote(
+    "হ্যালো, আমি ইমপ্লেসিয়া মার্ট সম্পর্কে জানতে চাই।"
 )
 DEFAULT_SECONDARY_LABEL = "কল করুন"
 DEFAULT_SECONDARY_HREF = "tel:+8801516527932"

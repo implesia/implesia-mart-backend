@@ -9,7 +9,7 @@ JPEG = (
 )
 GALLERY = [
     "/images/products/baby-products/baby-frock-with-baby.jpeg",
-    "/images/products/baby-products/female-gorgious-ground-dress.jpeg",
+    "/images/products/baby-products/wedding-dress.jpeg",
     "/images/products/baby-products/baby-ground-frog-more.jpeg",
     "/images/products/baby-products/baby-ground-frog-3.jpeg",
     "/images/products/baby-products/3-quater-ground-frog2.jpeg",

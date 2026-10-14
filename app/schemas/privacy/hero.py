@@ -23,9 +23,7 @@ class HeroWrite(WriteModel):
     updated_label: str = Field(default="", max_length=80)
     last_updated: str = Field(default="", max_length=80)
 
-    @field_validator(
-        "eyebrow", "title", "subtitle", "updated_label", "last_updated", mode="before"
-    )
+    @field_validator("eyebrow", "title", "subtitle", "updated_label", "last_updated", mode="before")
     @classmethod
     def _strip(cls, value: object) -> object:
         if isinstance(value, str):

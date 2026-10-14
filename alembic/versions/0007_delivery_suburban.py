@@ -30,9 +30,7 @@ def upgrade() -> None:
             "WHERE id = 1 AND inside_dhaka = 70 AND outside_dhaka = 70"
         )
     )
-    op.drop_constraint(
-        "ck_delivery_settings_fees_non_negative", "delivery_settings", type_="check"
-    )
+    op.drop_constraint("ck_delivery_settings_fees_non_negative", "delivery_settings", type_="check")
     op.create_check_constraint(
         "ck_delivery_settings_fees_non_negative",
         "delivery_settings",
@@ -41,9 +39,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint(
-        "ck_delivery_settings_fees_non_negative", "delivery_settings", type_="check"
-    )
+    op.drop_constraint("ck_delivery_settings_fees_non_negative", "delivery_settings", type_="check")
     op.create_check_constraint(
         "ck_delivery_settings_fees_non_negative",
         "delivery_settings",

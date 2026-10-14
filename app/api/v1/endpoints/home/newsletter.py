@@ -34,9 +34,7 @@ async def update_newsletter_copy(db: DbSession, payload: NewsletterCopyUpdate) -
     return await newsletter_service.update_copy(db, payload)
 
 
-@admin_router.post(
-    "/perks", response_model=NewsletterPerkRead, status_code=status.HTTP_201_CREATED
-)
+@admin_router.post("/perks", response_model=NewsletterPerkRead, status_code=status.HTTP_201_CREATED)
 async def create_newsletter_perk(db: DbSession, payload: NewsletterPerkWrite) -> NewsletterPerkRead:
     return await newsletter_service.create_perk(db, payload)
 

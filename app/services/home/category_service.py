@@ -92,9 +92,7 @@ async def public_view(db: AsyncSession) -> CategoryPublic:
     )
 
 
-async def update_heading(
-    db: AsyncSession, payload: CategoryHeadingUpdate
-) -> CategoryAdmin:
+async def update_heading(db: AsyncSession, payload: CategoryHeadingUpdate) -> CategoryAdmin:
     row = await ensure_categories(db)
     row.heading = payload.heading
     await db.commit()

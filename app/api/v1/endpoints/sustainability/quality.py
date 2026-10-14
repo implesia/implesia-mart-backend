@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from app.api.deps import DbSession, no_store, require_editor
 from app.core.config import settings
-from app.core.exceptions import UnprocessableError
+from app.core.exceptions import UnprocessableError, payload_errors
 from app.rate_limit import limiter
 from app.schemas.sustainability.quality import QualityAdmin, QualityPublic, QualityWrite
 from app.services.sustainability import quality_service
@@ -22,7 +22,7 @@ def _payload(raw: str) -> QualityWrite:
     try:
         return QualityWrite.model_validate_json(raw)
     except ValidationError as exc:
-        raise UnprocessableError("Request payload is invalid") from exc
+        raise UnprocessableError("Request payload is invalid", payload_errors(exc)) from exc
 
 
 @public_router.get("", response_model=QualityPublic)

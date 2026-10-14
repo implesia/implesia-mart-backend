@@ -117,9 +117,7 @@ async def test_dashboard_lists_logged_in_and_anonymous_carts(
     owner = await db_session.scalar(select(User).where(User.email == "admin@implesia.com"))
     assert owner is not None
     owned = Cart(user_id=owner.id)
-    owned.items.append(
-        CartItem(product_id=uuid.UUID(gown["id"]), quantity=1, selection=[])
-    )
+    owned.items.append(CartItem(product_id=uuid.UUID(gown["id"]), quantity=1, selection=[]))
     db_session.add(owned)
     await db_session.commit()
     guest_cart = await client.post(

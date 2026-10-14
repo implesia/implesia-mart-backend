@@ -84,7 +84,7 @@ tests/                   SQLite unit tests
 | Area        | Public                                                                                | Admin                                                | Minimum role                    |
 | ----------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------- |
 | Health      | `GET /health/live`, `GET /health/ready`                                               | —                                                    | —                               |
-| Metrics     | `GET /metrics`                                                                        | —                                                    | —                               |
+| Metrics     | `GET /metrics` (Bearer `METRICS_TOKEN`; 404 whenever it is unset)                 | —                                                    | —                               |
 | Auth        | `POST /api/v1/auth/login`, `refresh`, `logout`                                        | `GET /auth/me`, `POST /auth/change-password`         | viewer for the signed-in routes |
 | Catalog     | `GET /api/v1/products`, `GET /api/v1/products/{id}`                                   | `GET` `POST` `PATCH` `DELETE /api/v1/admin/products` | editor                          |
 | Cart        | `GET /api/v1/cart`, plus item create, update, and delete                              | `GET /api/v1/admin/carts`                            | editor for the inbox            |
@@ -123,6 +123,17 @@ Roles are hierarchical: `superadmin` > `editor` > `viewer`. A higher role can ca
 | `superadmin` | Create and edit staff accounts, and read the audit log          |
 
 Disabling an account, changing a role, changing a password, and changing a product price or stock write an audit event in the same transaction. The audit list is superadmin-only.
+
+## Session security (logout and token revocation)
+
+- Login issues an access JWT (`ACCESS_TOKEN_EXPIRE_MINUTES`, default 30) and a refresh JWT (`REFRESH_TOKEN_EXPIRE_DAYS`, default 14). The storefront/admin BFF keeps both in `httpOnly`, `SameSite=Lax` cookies, `Secure` in production. Tokens are never logged; only a SHA-256 of the refresh `jti` is stored.
+- Each login is a refresh-token **family**. Refresh rotates the token. Presenting an already-used refresh token is treated as theft: the whole family is revoked.
+- Access tokens carry `sid` = the family id. `get_current_user` accepts a token only while that family still has an unrevoked, unexpired refresh row (one indexed query on `refresh_tokens.family_id`).
+  - `POST /auth/logout` revokes **that session only**. Its access tokens stop working at once; the user's other sessions are unaffected. The BFF also clears the cookies.
+  - Reuse detection, password change and disabling an account revoke the affected sessions and their access tokens.
+  - Tokens without a `sid` (minted before this change) are refused: users sign in once after deploy.
+- Failure policy: the check uses Postgres, the same store that authenticates the user, so there is no separate cache that can be down. If the database is unavailable the request fails (fail closed); it never falls back to trusting the JWT alone. No Redis dependency was added.
+- Every rejection returns `401 Could not validate credentials` (or `Invalid refresh token`) without saying why.
 
 ## Migration
 
@@ -171,7 +182,19 @@ Backup, retention, restore, and the monthly restore test for that database are i
 
 Returning to the previous image, and when to downgrade a migration, is in [`docs/rollback.md`](docs/rollback.md).
 
-`GET /metrics` counts API responses, including 5xx, 401, and 429, and records request latency. It also reports whether Postgres and Redis answered at scrape time. Health probes are not included in those request counts. Gunicorn workers in one container share the counters. No separate metrics service is required.
+`GET /metrics` counts API responses, including 5xx, 401, and 429, and records request latency. It also reports whether Postgres and Redis answered at scrape time. Health probes are not included in those request counts. Gunicorn workers in one container share the counters. No separate metrics service is required. Set `METRICS_TOKEN` (a long random value) and scrape with `Authorization: Bearer <token>`. The header is checked on every request with a constant-time compare; a missing, wrong or non-Bearer header gets the same `404` as an unknown route. With `METRICS_TOKEN` unset the endpoint is disabled (`404`) in every environment, local included. Metrics carry no path, user or id labels (only fixed counters and one `kind` label), so cardinality stays bounded and no PII is exported. Prometheus scrape config:
+
+```yaml
+scrape_configs:
+  - job_name: implesia-api
+    scheme: https
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/implesia_metrics_token
+    static_configs:
+      - targets: ["api.example.com"]
+```
 
 A failed login writes `failed_login_alert` once per window: 5 failures for the admin email or any superadmin within 10 minutes, and 20 failures for any account within 5 minutes. Those counters are `login_failures_total`, `admin_login_failures_total`, and `failed_login_alerts_total`. An expired access token is not a login failure. Workers share the window through Redis.
 

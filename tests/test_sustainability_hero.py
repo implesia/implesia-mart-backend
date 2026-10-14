@@ -8,7 +8,7 @@ JPEG = (
     b"\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xd9"
 )
 LEFT = "/images/products/lamp/lamp-1.jpg"
-RIGHT = "/images/products/baby-products/female-gorgious-ground-dress.jpeg"
+RIGHT = "/images/products/baby-products/wedding-dress.jpeg"
 
 
 def _parts(
@@ -99,9 +99,7 @@ async def test_editor_saves_copy_and_a_photo_together(
         "/api/v1/admin/pages/sustainability/hero",
         headers=auth_headers,
         files=_parts(
-            _seed_body(
-                images=[{"alt": "Left", "src": "blob:hero"}, {"alt": "Right", "src": RIGHT}]
-            )
+            _seed_body(images=[{"alt": "Left", "src": "blob:hero"}, {"alt": "Right", "src": RIGHT}])
         ),
     )
     assert staged.status_code == 422
@@ -142,8 +140,10 @@ async def test_editor_saves_copy_and_a_photo_together(
     assert body["images"][0]["src"].startswith("/media/sustainability/")
     assert body["images"][0]["id"] == original_ids[0]
     assert body["images"][1]["src"] == RIGHT
-    stored = tmp_path / "sustainability" / body["images"][0]["src"].removeprefix(
-        "/media/sustainability/"
+    stored = (
+        tmp_path
+        / "sustainability"
+        / body["images"][0]["src"].removeprefix("/media/sustainability/")
     )
     assert stored.is_file()
 

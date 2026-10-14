@@ -277,9 +277,7 @@ async def create_story(
     if int(count or 0) >= MAX_STORIES:
         raise UnprocessableError("You can show up to 12 stories")
     current = await db.scalar(
-        select(func.max(AboutStoryBlock.sort_order)).where(
-            AboutStoryBlock.section_id == section.id
-        )
+        select(func.max(AboutStoryBlock.sort_order)).where(AboutStoryBlock.section_id == section.id)
     )
     resolved, stored = await _resolve_images(payload, uploads)
     block = AboutStoryBlock(

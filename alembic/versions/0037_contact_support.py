@@ -91,13 +91,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(
-        op.f("ix_contact_support_links_support_id"), table_name="contact_support_links"
-    )
+    op.drop_index(op.f("ix_contact_support_links_support_id"), table_name="contact_support_links")
     op.drop_table("contact_support_links")
-    op.drop_index(
-        op.f("ix_contact_support_hours_support_id"), table_name="contact_support_hours"
-    )
+    op.drop_index(op.f("ix_contact_support_hours_support_id"), table_name="contact_support_hours")
     op.drop_table("contact_support_hours")
     op.drop_index(op.f("ix_contact_supports_slug"), table_name="contact_supports")
     op.drop_table("contact_supports")

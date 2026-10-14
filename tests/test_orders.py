@@ -237,3 +237,59 @@ async def test_public_lookup_needs_the_order_phone(
         json={"number": "IM-1001", "phone": "01700000000"},
     )
     assert bad.status_code == 422
+
+
+async def _place(client: AsyncClient, headers: dict[str, str], product_id: str) -> str:
+    placed = await client.post(
+        "/api/v1/orders",
+        headers={**headers, "Idempotency-Key": _key()},
+        json={"source": "direct", "items": [{"product_id": product_id, "quantity": 1}], **SHIPPING},
+    )
+    assert placed.status_code == 201, placed.text
+    assert placed.json()["next_statuses"] == ["confirmed", "cancelled"]
+    return placed.json()["id"]
+
+
+async def _move(client: AsyncClient, headers: dict[str, str], order_id: str, status: str):
+    return await client.patch(
+        f"/api/v1/admin/orders/{order_id}", headers=headers, json={"status": status}
+    )
+
+
+async def test_order_follows_lifecycle_and_returns_restock(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    product = await _create(client, auth_headers, title="Lifecycle lamp", price=500, quantity=3)
+    order_id = await _place(client, auth_headers, product["id"])
+    for status, following in [
+        ("confirmed", ["shipped", "cancelled"]),
+        ("shipped", ["delivered", "returned"]),
+        ("delivered", ["returned"]),
+        ("returned", []),
+    ]:
+        moved = await _move(client, auth_headers, order_id, status)
+        assert moved.status_code == 200, moved.text
+        assert moved.json()["status"] == status
+        assert moved.json()["next_statuses"] == following
+    assert (await _stock(client, auth_headers, product["id"]))["quantity"] == 3
+
+
+async def test_terminal_and_skipping_transitions_are_rejected(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    product = await _create(client, auth_headers, title="Strict lamp", price=500, quantity=3)
+    order_id = await _place(client, auth_headers, product["id"])
+
+    skipped = await _move(client, auth_headers, order_id, "delivered")
+    assert skipped.status_code == 409
+    assert "Allowed: confirmed, cancelled" in skipped.text
+
+    assert (await _move(client, auth_headers, order_id, "cancelled")).status_code == 200
+    assert (await _stock(client, auth_headers, product["id"]))["quantity"] == 3
+    for status in ["new", "confirmed", "delivered", "returned"]:
+        rejected = await _move(client, auth_headers, order_id, status)
+        assert rejected.status_code == 409, status
+    assert (await _stock(client, auth_headers, product["id"]))["quantity"] == 3
+    final = await client.get(f"/api/v1/admin/orders/{order_id}", headers=auth_headers)
+    assert final.json()["status"] == "cancelled"
+    assert final.json()["next_statuses"] == []

@@ -126,7 +126,14 @@ async def test_user_changes_are_recorded_without_secrets(
         json={"current_password": TEST_PASSWORD, "new_password": NEW_PASSWORD},
     )
     assert changed.status_code == 200, changed.text
-    own = await _events(client, auth_headers, target_id=me.json()["id"], action="PASSWORD_CHANGED")
+    # A password change ends every session, including this one (IM-QA-013): sign in again.
+    relogin = await client.post(
+        "/api/v1/auth/login", json={"email": "admin@implesia.com", "password": NEW_PASSWORD}
+    )
+    assert relogin.status_code == 200, relogin.text
+    fresh = {"Authorization": f"Bearer {relogin.json()['access_token']}"}
+    assert (await client.get("/api/v1/auth/me", headers=auth_headers)).status_code == 401
+    own = await _events(client, fresh, target_id=me.json()["id"], action="PASSWORD_CHANGED")
     assert own[0]["metadata"] == {"via": "self", "email": "admin@implesia.com"}
     assert NEW_PASSWORD not in str(own)
 
@@ -200,3 +207,35 @@ async def test_audit_log_is_superadmin_only(
         headers={"Authorization": f"Bearer {login.json()['access_token']}"},
     )
     assert editor.status_code == 403
+
+
+async def test_admin_writes_and_order_status_are_audited(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    from tests.test_orders import _place
+    from tests.test_products import _create
+
+    trust = await client.post(
+        "/api/v1/admin/home/trust", headers=auth_headers, json={"label": "Audited perk"}
+    )
+    assert trust.status_code == 201, trust.text
+    rejected = await client.post("/api/v1/admin/home/trust", headers=auth_headers, json={})
+    assert rejected.status_code == 422
+
+    product = await _create(client, auth_headers, title="Audited lamp", price=500, quantity=2)
+    order_id = await _place(client, auth_headers, product["id"])
+    moved = await client.patch(
+        f"/api/v1/admin/orders/{order_id}", headers=auth_headers, json={"status": "confirmed"}
+    )
+    assert moved.status_code == 200, moved.text
+
+    events = await client.get(
+        "/api/v1/admin/audit-events", headers=auth_headers, params={"page_size": 100}
+    )
+    items = events.json()["items"]
+    writes = [e for e in items if e["action"] == "ADMIN_WRITE"]
+    assert any(e["target_type"] == "home/trust" for e in writes)
+    assert sum(1 for e in writes if e["target_type"] == "home/trust") == 1
+    assert any(e["target_type"] == "products" for e in writes)
+    status = [e for e in items if e["action"] == "ORDER_STATUS_CHANGED"]
+    assert status and status[0]["target_id"] == order_id

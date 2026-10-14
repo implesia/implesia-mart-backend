@@ -98,6 +98,18 @@ class HomeBannerUpdate(WriteModel):
     disable_on_interaction: bool | None = None
     cross_fade: bool | None = None
 
+    @field_validator(
+        "brand_name", "aria_label", "trust_line", "previous_label", "next_label", "slide_label"
+    )
+    @classmethod
+    def _no_blank_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("must not be blank")
+        return stripped
+
 
 class BannerSlideAdmin(BannerSlidePublic):
     sort_order: int

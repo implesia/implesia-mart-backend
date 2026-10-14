@@ -234,9 +234,7 @@ async def test_hero_form_can_create_reorder_and_hide_a_draft(
         json={"direction": "earlier"},
     )
     assert moved.status_code == 200, moved.text
-    again = await client.get(
-        "/api/v1/admin/home/banner/slides?page_size=100", headers=auth_headers
-    )
+    again = await client.get("/api/v1/admin/home/banner/slides?page_size=100", headers=auth_headers)
     assert [item["id"] for item in again.json()["items"]][-2] == slide_id
 
     draft = await client.post(
@@ -273,3 +271,24 @@ async def test_hero_form_can_create_reorder_and_hide_a_draft(
         ),
     )
     assert rejected.status_code == 422
+
+
+async def test_banner_text_is_trimmed_and_blank_text_rejected(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    blank = await client.patch(
+        "/api/v1/admin/home/banner", headers=auth_headers, json={"brand_name": "   "}
+    )
+    assert blank.status_code == 422
+
+    xss = "<script>alert(1)</script> Mart"
+    saved = await client.patch(
+        "/api/v1/admin/home/banner",
+        headers=auth_headers,
+        json={"brand_name": f"  {xss}  ", "next_label": " Next "},
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["brand_name"] == xss
+    assert saved.json()["next_label"] == "Next"
+    public = await client.get("/api/v1/home/banner")
+    assert public.json()["brand_name"] == xss

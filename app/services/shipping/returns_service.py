@@ -71,9 +71,7 @@ def _public(
         heading=row.heading,
         eligibility_title=row.eligibility_title,
         eligibility_body=row.eligibility_body,
-        rules=[
-            RulePublic(id=str(item.id), text=item.text) for item in rules if item.is_active
-        ],
+        rules=[RulePublic(id=str(item.id), text=item.text) for item in rules if item.is_active],
         notes=[
             NotePublic(id=str(item.id), icon=item.icon, title=item.title, body=item.body)
             for item in notes

@@ -9,9 +9,7 @@ def _body(*, active: bool = True, title: str = TITLE, primary_href: str | None =
         "is_active": active,
         "eyebrow": EYEBROW,
         "title": title,
-        "subtitle": (
-            "কল বা হোয়াটসঅ্যাপে সরাসরি যোগাযোগ করুন। কর্মঘণ্টায় রিপ্লাই দেওয়ার চেষ্টা করি।"
-        ),
+        "subtitle": ("কল বা হোয়াটসঅ্যাপে সরাসরি যোগাযোগ করুন। কর্মঘণ্টায় রিপ্লাই দেওয়ার চেষ্টা করি।"),
         "primary_cta": {
             "label": "হোয়াটসঅ্যাপ",
             "href": primary_href or "https://wa.me/8801516527932",

@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Annotated, Literal, Self
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from pydantic import AliasChoices, Field, PostgresDsn, field_validator, model_validator
+from pydantic import AliasChoices, Field, PostgresDsn, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 Environment = Literal["local", "test", "staging", "production"]
@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     trusted_proxies: CsvList = Field(default_factory=list)
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 14
+    # Bearer token a scraper must send to read /metrics. Empty: /metrics is disabled
+    # (404) in every environment. SecretStr keeps it out of reprs and logs.
+    metrics_token: SecretStr = SecretStr("")
 
     # Database
     postgres_host: str = "localhost"

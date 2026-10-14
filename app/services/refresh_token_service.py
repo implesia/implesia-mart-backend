@@ -28,9 +28,9 @@ def _as_utc(value: datetime) -> datetime:
     return value
 
 
-def _pair(user_id: uuid.UUID, refresh_token: str) -> TokenPair:
+def _pair(user_id: uuid.UUID, refresh_token: str, family_id: uuid.UUID) -> TokenPair:
     return TokenPair(
-        access_token=create_access_token(str(user_id)),
+        access_token=create_access_token(str(user_id), session_id=str(family_id)),
         refresh_token=refresh_token,
         expires_in=settings.access_token_expire_minutes * 60,
     )
@@ -74,6 +74,26 @@ async def _family_has_rows(db: AsyncSession, family_id: uuid.UUID) -> bool:
     return found is not None
 
 
+async def session_is_live(db: AsyncSession, family_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+    """True while this login family still holds an unrevoked, unexpired refresh token.
+
+    Rotation revokes the old row and inserts the new one in one commit, so a live
+    session never reads as revoked mid-rotation. Logout and reuse detection revoke
+    the whole family, which ends every access token carrying that ``sid``.
+    """
+    found = await db.scalar(
+        select(RefreshToken.id)
+        .where(
+            RefreshToken.family_id == family_id,
+            RefreshToken.user_id == user_id,
+            RefreshToken.revoked_at.is_(None),
+            RefreshToken.expires_at > datetime.now(UTC),
+        )
+        .limit(1)
+    )
+    return found is not None
+
+
 async def revoke_user_sessions(db: AsyncSession, user_id: uuid.UUID) -> None:
     """Mark every live refresh token for this user revoked. The caller commits."""
     await db.execute(
@@ -107,7 +127,7 @@ async def issue_session(db: AsyncSession, user: User) -> TokenPair:
     token, expires_at = create_refresh_token(str(user.id), jti=jti, family_id=str(family_id))
     _remember(db, user_id=user.id, family_id=family_id, jti=jti, expires_at=expires_at)
     await db.commit()
-    return _pair(user.id, token)
+    return _pair(user.id, token, family_id)
 
 
 async def rotate_session(db: AsyncSession, raw: str) -> TokenPair:
@@ -141,7 +161,7 @@ async def rotate_session(db: AsyncSession, raw: str) -> TokenPair:
     token, expires_at = create_refresh_token(str(user_id), jti=jti, family_id=str(family_id))
     _remember(db, user_id=user_id, family_id=family_id, jti=jti, expires_at=expires_at)
     await db.commit()
-    return _pair(user_id, token)
+    return _pair(user_id, token, family_id)
 
 
 async def _reject_reuse(

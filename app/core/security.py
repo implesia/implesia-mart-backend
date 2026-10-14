@@ -43,20 +43,23 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def _create_token(subject: str, token_type: TokenType, expires_delta: timedelta) -> str:
+def create_access_token(subject: str, *, session_id: str) -> str:
+    """Mint an access JWT bound to one login session.
+
+    ``sid`` is the refresh-token family id. Every authenticated request checks
+    that the family still has a live refresh token, so logging out (or reuse
+    detection) revokes the access token immediately instead of at ``exp``.
+    """
     now = datetime.now(UTC)
     payload: dict[str, Any] = {
         "sub": subject,
-        "type": token_type,
+        "type": "access",
+        "sid": session_id,
         "iat": int(now.timestamp()),
-        "exp": int((now + expires_delta).timestamp()),
+        "exp": int((now + timedelta(minutes=settings.access_token_expire_minutes)).timestamp()),
         "jti": uuid.uuid4().hex,
     }
     return jwt.encode(payload, settings.secret_key, algorithm=JWT_ALGORITHM)
-
-
-def create_access_token(subject: str) -> str:
-    return _create_token(subject, "access", timedelta(minutes=settings.access_token_expire_minutes))
 
 
 def create_refresh_token(subject: str, *, jti: str, family_id: str) -> tuple[str, datetime]:

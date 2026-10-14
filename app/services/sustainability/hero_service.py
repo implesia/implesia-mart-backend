@@ -34,7 +34,7 @@ DEFAULT_IMAGES: tuple[dict[str, object], ...] = (
         "sort_order": 0,
     },
     {
-        "src": "/images/products/baby-products/female-gorgious-ground-dress.jpeg",
+        "src": "/images/products/baby-products/wedding-dress.jpeg",
         "alt": "হাতে তৈরি গর্জিয়াস উইমেন্স গাউন",
         "sort_order": 1,
     },
@@ -164,9 +164,7 @@ async def update_hero(
                 existing[index].alt = alt
                 existing[index].sort_order = index
             else:
-                db.add(
-                    SustainabilityHeroImage(hero_id=row.id, src=src, alt=alt, sort_order=index)
-                )
+                db.add(SustainabilityHeroImage(hero_id=row.id, src=src, alt=alt, sort_order=index))
         for extra in existing[len(resolved) :]:
             await db.delete(extra)
         row.eyebrow = payload.eyebrow

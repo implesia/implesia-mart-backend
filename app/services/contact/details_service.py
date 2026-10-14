@@ -46,9 +46,7 @@ def _social_pair(row: ContactDetails) -> list[SocialRead]:
     ]
 
 
-def _admin(
-    row: ContactDetails, channels: list[ContactDetailChannel]
-) -> DetailsAdmin:
+def _admin(row: ContactDetails, channels: list[ContactDetailChannel]) -> DetailsAdmin:
     return DetailsAdmin(
         is_active=row.is_active,
         title=row.title,

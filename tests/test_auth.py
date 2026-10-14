@@ -186,10 +186,11 @@ async def test_logout_revokes_the_refresh_family(
         "/api/v1/auth/refresh", json={"refresh_token": body["refresh_token"]}
     )
     assert refreshed.status_code == 401
+    # IM-QA-013: the access token is bound to the session (sid) and dies with it.
     me = await client.get(
         "/api/v1/auth/me", headers={"Authorization": f"Bearer {body['access_token']}"}
     )
-    assert me.status_code == 200
+    assert me.status_code == 401
 
 
 async def test_password_change_revokes_refresh_sessions(

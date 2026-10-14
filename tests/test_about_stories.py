@@ -115,8 +115,7 @@ async def test_editor_can_hide_reorder_upload_and_remove_a_story(
     )
     assert button.status_code == 422
     assert (
-        button.json()["error"]["message"]
-        == "Add a link for the button, or clear the button label."
+        button.json()["error"]["message"] == "Add a link for the button, or clear the button label."
     )
 
     created = await client.post(

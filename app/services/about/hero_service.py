@@ -34,7 +34,7 @@ DEFAULT_IMAGES: tuple[dict[str, object], ...] = (
         "sort_order": 0,
     },
     {
-        "src": "/images/products/baby-products/female-gorgious-ground-dress.jpeg",
+        "src": "/images/products/baby-products/wedding-dress.jpeg",
         "alt": "হাতে তৈরি গর্জিয়াস উইমেন্স গাউন",
         "sort_order": 1,
     },

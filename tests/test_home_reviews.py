@@ -37,7 +37,7 @@ async def test_public_reviews_seed_the_home_row(client: AsyncClient) -> None:
     assert body["title"] == "কাস্টমাররা যা বলছেন"
     assert [item["product"] for item in body["items"]] == SEEDED
     assert body["items"][1]["channel"] == "Messenger"
-    assert body["items"][0]["image_src"] == "/images/reviews/sunset-lamp-1.jpg"
+    assert body["items"][0]["image_src"] == "/images/products/lamp/lamp-1.jpg"
     assert "is_active" not in body["items"][0]
 
 

@@ -183,8 +183,7 @@ async def public_view(db: AsyncSession) -> ShowcasePublic:
                 product_ids=[
                     item.product_id
                     for item in items
-                    if (product := products.get(item.product_id)) is not None
-                    and product.published
+                    if (product := products.get(item.product_id)) is not None and product.published
                 ],
             )
         )

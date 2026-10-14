@@ -7,7 +7,7 @@ from starlette.datastructures import UploadFile as StarletteUpload
 
 from app.api.deps import DbSession, no_store, require_editor
 from app.core.config import settings
-from app.core.exceptions import UnprocessableError
+from app.core.exceptions import UnprocessableError, payload_errors
 from app.rate_limit import limiter
 from app.schemas.about.story import StoriesPublic, StoryRead, StoryReorder, StoryWrite
 from app.schemas.common import Message
@@ -25,7 +25,7 @@ def _payload(raw: str) -> StoryWrite:
     try:
         return StoryWrite.model_validate_json(raw)
     except ValidationError as exc:
-        raise UnprocessableError("Request payload is invalid") from exc
+        raise UnprocessableError("Request payload is invalid", payload_errors(exc)) from exc
 
 
 def _uploads(form_items: list[tuple[str, object]]) -> dict[int, UploadFile]:
@@ -51,9 +51,7 @@ async def list_about_stories(db: DbSession) -> list[StoryRead]:
 
 @admin_router.post("", response_model=StoryRead, status_code=status.HTTP_201_CREATED)
 @limiter.limit(settings.rate_limit_product_writes)
-async def create_about_story(
-    request: Request, db: DbSession, payload: str = Form()
-) -> StoryRead:
+async def create_about_story(request: Request, db: DbSession, payload: str = Form()) -> StoryRead:
     form = await request.form()
     return await story_service.create_story(
         db, _payload(payload), _uploads(list(form.multi_items()))

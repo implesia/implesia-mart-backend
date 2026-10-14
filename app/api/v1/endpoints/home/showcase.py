@@ -29,9 +29,7 @@ async def list_showcase(db: DbSession) -> ShowcaseAdmin:
 
 
 @admin_router.patch("/rows/{key}", response_model=ShowcaseAdmin)
-async def update_showcase_row(
-    db: DbSession, key: str, payload: ShowcaseRowUpdate
-) -> ShowcaseAdmin:
+async def update_showcase_row(db: DbSession, key: str, payload: ShowcaseRowUpdate) -> ShowcaseAdmin:
     row = await showcase_service.get_row(db, key)
     return await showcase_service.update_row(db, row, payload)
 

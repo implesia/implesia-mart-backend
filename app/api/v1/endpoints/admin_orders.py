@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.api.deps import DbSession, no_store, require_editor
+from app.api.deps import DbSession, RequireEditor, no_store, require_editor
 from app.schemas.order import AdminOrderList, AdminOrderQuery, OrderRead, OrderUpdate
 from app.services import order_service
 
@@ -26,7 +26,8 @@ async def read_order(db: DbSession, order_id: uuid.UUID) -> OrderRead:
 @router.patch("/{order_id}", response_model=OrderRead)
 async def update_order(
     db: DbSession,
+    actor: RequireEditor,
     order_id: uuid.UUID,
     payload: OrderUpdate,
 ) -> OrderRead:
-    return await order_service.update_order(db, order_id, payload)
+    return await order_service.update_order(db, order_id, payload, actor=actor)

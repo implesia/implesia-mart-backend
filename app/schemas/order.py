@@ -186,6 +186,7 @@ class OrderRead(BaseModel):
     tracking_number: str
     items: list[OrderItemRead]
     created_at: datetime
+    next_statuses: list[str] = Field(default_factory=list)
 
 
 class OrderUpdate(BaseModel):

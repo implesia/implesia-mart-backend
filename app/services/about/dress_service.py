@@ -52,7 +52,7 @@ DEFAULT_IMAGES: tuple[tuple[str, str], ...] = (
         "হাতে তৈরি বেবি পার্টি ড্রেস — সরাসরি ব্যবহারের ছবি",
     ),
     (
-        "/images/products/baby-products/female-gorgious-ground-dress.jpeg",
+        "/images/products/baby-products/wedding-dress.jpeg",
         "নারীদের জন্য হাতে তৈরি গর্জিয়াস গাউন",
     ),
     (

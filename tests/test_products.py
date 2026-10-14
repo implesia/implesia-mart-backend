@@ -568,3 +568,34 @@ async def test_operations_routes_reject_a_missing_token(client: AsyncClient) -> 
     for method, path in checks:
         response = await client.request(method, path, json={})
         assert response.status_code == 401, (method, path, response.status_code, response.text)
+
+
+async def test_invalid_multipart_payload_reports_fields(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    response = await client.post(
+        "/api/v1/admin/products",
+        headers=auth_headers,
+        data={"payload": '{"category": "gadgets", "price": -1}'},
+    )
+    assert response.status_code == 422
+    locs = {tuple(item["loc"]) for item in response.json()["error"]["details"]}
+    assert ("payload", "title") in locs
+    assert ("payload", "price") in locs
+
+
+async def test_public_product_by_slug_hides_unpublished(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    created = await _create(client, auth_headers, title="Slug lamp", price=500, quantity=2)
+    found = await client.get(f"/api/v1/products/by-slug/{created['slug']}")
+    assert found.status_code == 200, found.text
+    assert found.json()["id"] == created["id"]
+    hidden = await client.patch(
+        f"/api/v1/admin/products/{created['id']}",
+        headers=auth_headers,
+        data={"payload": '{"published": false}'},
+    )
+    assert hidden.status_code == 200, hidden.text
+    assert (await client.get(f"/api/v1/products/by-slug/{created['slug']}")).status_code == 404
+    assert (await client.get("/api/v1/products/by-slug/Bad Slug")).status_code == 422

@@ -67,9 +67,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(
-        op.f("ix_privacy_sharing_chips_sharing_id"), table_name="privacy_sharing_chips"
-    )
+    op.drop_index(op.f("ix_privacy_sharing_chips_sharing_id"), table_name="privacy_sharing_chips")
     op.drop_table("privacy_sharing_chips")
     op.drop_index(op.f("ix_privacy_sharings_slug"), table_name="privacy_sharings")
     op.drop_table("privacy_sharings")

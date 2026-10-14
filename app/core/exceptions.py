@@ -22,6 +22,14 @@ class AppError(Exception):
         self.details = details
 
 
+def payload_errors(exc: Any) -> list[dict[str, Any]]:
+    """Field errors from a form ``payload`` JSON, shaped like FastAPI's body errors."""
+    return [
+        {"type": error["type"], "loc": ["payload", *error["loc"]], "msg": error["msg"]}
+        for error in exc.errors(include_url=False, include_context=False, include_input=False)
+    ]
+
+
 class NotFoundError(AppError):
     status_code = status.HTTP_404_NOT_FOUND
     code = "not_found"
@@ -40,6 +48,11 @@ class AuthenticationError(AppError):
 class PermissionDeniedError(AppError):
     status_code = status.HTTP_403_FORBIDDEN
     code = "forbidden"
+
+
+class TooManyRequestsError(AppError):
+    status_code = 429
+    code = "rate_limited"
 
 
 class UnprocessableError(AppError):

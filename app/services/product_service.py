@@ -266,9 +266,7 @@ async def update_product(
         if quality_image is not None and quality_image.filename:
             saved = await _saved_images([quality_image], [quality_image_alt], fallback_alt)
             quality_url = saved[0].src
-        await _apply_update(
-            db, product, payload, added, quality_url, quality_image_alt, actor
-        )
+        await _apply_update(db, product, payload, added, quality_url, quality_image_alt, actor)
     except Exception:
         delete_owned_media(owned_refs(*(item.src for item in added), quality_url))
         raise
@@ -662,10 +660,16 @@ async def list_public(db: AsyncSession, query: CatalogQuery) -> PublicProductLis
 
 
 async def read_public(db: AsyncSession, product_id: uuid.UUID) -> PublicProductDetail:
-    # Missing and unpublished share one response so a hidden id is not confirmed.
-    result = await db.execute(
-        select(Product).where(Product.id == product_id, Product.published.is_(True))
-    )
+    return await _public_detail(db, Product.id == product_id)
+
+
+async def read_public_by_slug(db: AsyncSession, slug: str) -> PublicProductDetail:
+    return await _public_detail(db, Product.slug == slug)
+
+
+async def _public_detail(db: AsyncSession, match: Any) -> PublicProductDetail:
+    # Missing and unpublished share one response so a hidden product is not confirmed.
+    result = await db.execute(select(Product).where(match, Product.published.is_(True)))
     product = result.scalar_one_or_none()
     if product is None:
         raise NotFoundError("Product not found")

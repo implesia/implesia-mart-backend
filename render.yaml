@@ -36,6 +36,9 @@ services:
         value: https://mart.implesia.com,https://implesia-mart.implesiaitltd.workers.dev
       - key: SECRET_KEY
         generateValue: true
+      # Scraper sends Authorization: Bearer <METRICS_TOKEN>; unset = /metrics returns 404.
+      - key: METRICS_TOKEN
+        sync: false
       - key: FIRST_SUPERUSER_EMAIL
         value: admin@implesia.com
       - key: FIRST_SUPERUSER_PASSWORD

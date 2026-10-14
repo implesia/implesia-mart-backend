@@ -30,6 +30,25 @@ class OrderStatus(StrEnum):
     RETURNED = "returned"
 
 
+# Allowed forward moves. Cancelled and returned are terminal: their stock is already restored.
+ORDER_TRANSITIONS: dict[str, frozenset[str]] = {
+    OrderStatus.NEW.value: frozenset({OrderStatus.CONFIRMED.value, OrderStatus.CANCELLED.value}),
+    OrderStatus.CONFIRMED.value: frozenset(
+        {OrderStatus.SHIPPED.value, OrderStatus.CANCELLED.value}
+    ),
+    OrderStatus.SHIPPED.value: frozenset({OrderStatus.DELIVERED.value, OrderStatus.RETURNED.value}),
+    OrderStatus.DELIVERED.value: frozenset({OrderStatus.RETURNED.value}),
+    OrderStatus.CANCELLED.value: frozenset(),
+    OrderStatus.RETURNED.value: frozenset(),
+}
+_STATUS_ORDER = [status.value for status in OrderStatus]
+
+
+def next_statuses(current: str) -> list[str]:
+    allowed = ORDER_TRANSITIONS.get(current, frozenset())
+    return [status for status in _STATUS_ORDER if status in allowed]
+
+
 class OrderSource(StrEnum):
     CART = "cart"
     DIRECT = "direct"

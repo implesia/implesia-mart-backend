@@ -1,6 +1,6 @@
 import ipaddress
 import uuid
-from collections.abc import Callable, Coroutine
+from collections.abc import AsyncIterator, Callable, Coroutine
 from typing import Annotated, Any
 
 from fastapi import Depends, Request, Response
@@ -12,6 +12,7 @@ from app.core.exceptions import AuthenticationError, PermissionDeniedError
 from app.core.security import InvalidTokenError, decode_token
 from app.db.session import get_db
 from app.models.user import User, UserRole
+from app.services import refresh_token_service
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.api_v1_prefix}/auth/login")
 oauth2_scheme_optional = OAuth2PasswordBearer(
@@ -29,8 +30,13 @@ async def get_current_user(
     try:
         payload = decode_token(token, expected_type="access")
         user_id = uuid.UUID(payload["sub"])
-    except (InvalidTokenError, ValueError) as exc:
+        # Tokens minted before session binding carry no sid; they are refused (fail closed).
+        session_id = uuid.UUID(str(payload["sid"]))
+    except (InvalidTokenError, ValueError, KeyError) as exc:
         raise AuthenticationError("Could not validate credentials") from exc
+
+    if not await refresh_token_service.session_is_live(db, session_id, user_id):
+        raise AuthenticationError("Could not validate credentials")
 
     user = await db.get(User, user_id)
     if user is None or not user.is_active:
@@ -147,3 +153,41 @@ def _nearest_untrusted(
         if not _is_trusted(hop):
             return hop
     return None
+
+
+_WRITES = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+_SPECIFIC_UPDATES = frozenset({"products", "orders"})
+
+
+async def audit_admin_write(
+    request: Request, db: DbSession, user: CurrentUser
+) -> AsyncIterator[None]:
+    """Record every successful admin write (products, delivery, CMS) in the audit log.
+
+    Runs after the endpoint returned without error; a failed write raises at ``yield``
+    and is not recorded. Specific events (price, stock, order status) are kept as well.
+    """
+    from app.services import audit_service
+
+    actor_id = user.id  # read now: the endpoint's commit expires loaded rows
+    yield
+    if request.method not in _WRITES:
+        return
+    prefix = f"{settings.api_v1_prefix}/admin/"
+    path = request.url.path
+    section = path.removeprefix(prefix)
+    if request.method == "PATCH" and section.split("/")[0] in _SPECIFIC_UPDATES:
+        return  # these record field-level events (price, stock, order status) themselves
+    target_type = "/".join(
+        part for part in section.split("/") if part not in request.path_params.values()
+    )[:32]
+    target_id = ",".join(str(value) for value in request.path_params.values()) or "-"
+    await audit_service.record(
+        db,
+        actor_id=actor_id,
+        action="ADMIN_WRITE",
+        target_type=target_type or "admin",
+        target_id=target_id[:64],
+        metadata={"method": request.method, "path": path},
+    )
+    await db.commit()

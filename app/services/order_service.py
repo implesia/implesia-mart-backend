@@ -10,8 +10,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import ConflictError, NotFoundError, UnprocessableError
-from app.models.order import Order, OrderIdempotency, OrderItem, OrderStatus
+from app.models.audit_event import AuditAction
+from app.models.order import (
+    ORDER_TRANSITIONS,
+    Order,
+    OrderIdempotency,
+    OrderItem,
+    OrderStatus,
+    next_statuses,
+)
 from app.models.product import Product, StockStatus
+from app.models.user import User
 from app.schemas.order import (
     AdminOrderList,
     AdminOrderMetrics,
@@ -28,7 +37,7 @@ from app.schemas.order import (
     QuoteRead,
     order_page_count,
 )
-from app.services import delivery_service
+from app.services import audit_service, delivery_service
 from app.services.cart_service import MAX_QTY, Shopper, _cap, _purchasable, open_cart, shopper_actor
 from app.services.product_options import resolve_selection, selection_of
 from app.services.product_service import content_of
@@ -103,6 +112,7 @@ def _read(order: Order) -> OrderRead:
             for item in order.items
         ],
         created_at=order.created_at,
+        next_statuses=next_statuses(order.status),
     )
 
 
@@ -263,6 +273,13 @@ async def _replay(db: AsyncSession, actor: str, key: str) -> Order | None:
     if existing.actor != actor:
         raise ConflictError("This idempotency key was already used")
     return await _load(db, existing.order_id)
+
+
+async def replayed(db: AsyncSession, shopper: Shopper, idempotency_key: str) -> OrderRead | None:
+    """The order an earlier request with this key already placed, if any."""
+    key = require_idempotency_key(idempotency_key)
+    order = await _replay(db, shopper_actor(shopper), key)
+    return _read(order) if order is not None else None
 
 
 async def create_order(
@@ -499,7 +516,16 @@ async def get_order(db: AsyncSession, order_id: uuid.UUID) -> OrderRead:
 
 
 async def _restore(db: AsyncSession, order: Order) -> None:
-    if not order.inventory_held:
+    # Release the hold in one conditional update so two concurrent requests cannot both restock.
+    released = (
+        await db.execute(
+            update(Order)
+            .where(Order.id == order.id, Order.inventory_held.is_(True))
+            .values(inventory_held=False)
+            .returning(Order.id)
+        )
+    ).one_or_none()
+    if released is None:
         return
     for item in order.items:
         if item.product_id is None:
@@ -516,15 +542,43 @@ async def _restore(db: AsyncSession, order: Order) -> None:
             .where(Product.quantity > 0)
             .values(status=StockStatus.AVAILABLE.value)
         )
-    order.inventory_held = False
 
 
-async def update_order(db: AsyncSession, order_id: uuid.UUID, payload: OrderUpdate) -> OrderRead:
+async def update_order(
+    db: AsyncSession, order_id: uuid.UUID, payload: OrderUpdate, *, actor: User | None = None
+) -> OrderRead:
+    actor_id = actor.id if actor is not None else None
     order = await _load(db, order_id)
     if payload.status is not None and payload.status.value != order.status:
-        if payload.status.value in _RESTOCK:
+        current = order.status
+        target = payload.status.value
+        if target not in ORDER_TRANSITIONS.get(current, frozenset()):
+            allowed = ", ".join(next_statuses(current)) or "none (final status)"
+            raise ConflictError(
+                f"Cannot change an order from {current} to {target}. Allowed: {allowed}"
+            )
+        # Compare-and-set on the status so a concurrent change is not silently overwritten.
+        moved = (
+            await db.execute(
+                update(Order)
+                .where(Order.id == order.id, Order.status == current)
+                .values(status=target)
+                .returning(Order.id)
+            )
+        ).one_or_none()
+        if moved is None:
+            await db.rollback()
+            raise ConflictError("This order was changed by someone else. Reload and try again.")
+        if target in _RESTOCK:
             await _restore(db, order)
-        order.status = payload.status.value
+        await audit_service.record(
+            db,
+            actor_id=actor_id,
+            action=AuditAction.ORDER_STATUS_CHANGED,
+            target_type="order",
+            target_id=order.id,
+            metadata={"number": order.number, "from": current, "to": target},
+        )
     if payload.courier_name is not None:
         order.courier_name = payload.courier_name
     if payload.tracking_number is not None:

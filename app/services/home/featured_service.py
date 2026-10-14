@@ -210,9 +210,7 @@ async def create_item(db: AsyncSession, payload: FeaturedItemWrite) -> FeaturedI
     if int(count or 0) >= MAX_ITEMS:
         raise UnprocessableError("You can feature up to 12 products")
     current = await db.scalar(
-        select(func.max(HomeFeaturedItem.sort_order)).where(
-            HomeFeaturedItem.featured_id == row.id
-        )
+        select(func.max(HomeFeaturedItem.sort_order)).where(HomeFeaturedItem.featured_id == row.id)
     )
     item = HomeFeaturedItem(
         featured_id=row.id,
