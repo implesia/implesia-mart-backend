@@ -20,7 +20,8 @@ from app.schemas.sustainability.quality import (
     QualityStepRead,
     QualityWrite,
 )
-from app.services.image_storage import delete_owned_media, owned_refs, read_image, store_image
+from app.services.image_storage import delete_owned_media, owned_refs
+from app.services.sustainability.optional_image import resolve_optional_image
 
 SECTION_SLUG = "sustainability"
 _MEDIA = "sustainability"
@@ -48,6 +49,10 @@ def _image(row: SustainabilityQuality) -> QualityImageRead:
     return QualityImageRead(src=row.image_src, alt=row.image_alt)
 
 
+def _images(row: SustainabilityQuality) -> list[QualityImageRead]:
+    return [_image(row)] if row.image_src else []
+
+
 def _public(
     row: SustainabilityQuality,
     steps: list[SustainabilityQualityStep],
@@ -57,6 +62,7 @@ def _public(
         title=row.title,
         body=row.body,
         image=_image(row),
+        images=_images(row),
         steps=[QualityStepPublic(id=step.id, text=step.text) for step in steps if step.is_active],
         badges=[
             QualityBadgePublic(id=badge.id, icon=badge.icon, label=badge.label)
@@ -75,6 +81,7 @@ def _admin(
         title=row.title,
         body=row.body,
         image=_image(row),
+        images=_images(row),
         steps=[
             QualityStepRead(id=step.id, text=step.text, is_active=step.is_active) for step in steps
         ],
@@ -160,17 +167,6 @@ def _check(payload: QualityWrite) -> None:
         raise UnprocessableError("Write each badge, or remove the empty one.")
 
 
-def _reject_staged_path(src: str) -> None:
-    if src.startswith("/uploads/") or src.startswith("blob:"):
-        raise UnprocessableError("Send the image file with the quality")
-
-
-async def _take_image(upload: UploadFile | None) -> str | None:
-    if upload is None or not upload.filename:
-        return None
-    return store_image(await read_image(upload), folder=_MEDIA)
-
-
 async def update_quality(
     db: AsyncSession, payload: QualityWrite, upload: UploadFile | None
 ) -> QualityAdmin:
@@ -178,20 +174,16 @@ async def update_quality(
     row = await ensure_quality(db)
     stored: list[str] = []
     try:
-        taken = await _take_image(upload)
-        if taken is not None:
+        src, alt, taken = await resolve_optional_image(
+            payload.image, upload, "Send the image file with the quality"
+        )
+        if taken:
             stored.append(taken)
-            src = taken
-        else:
-            src = payload.image.src
-            if not src:
-                raise UnprocessableError("Cover photo is required.")
-            _reject_staged_path(src)
         previous = owned_refs(row.image_src, folder=_MEDIA)
         row.title = payload.title
         row.body = payload.body
         row.image_src = src
-        row.image_alt = payload.image.alt
+        row.image_alt = alt
         existing_steps = await _steps(db, row.id)
         for index, step in enumerate(payload.steps):
             if index < len(existing_steps):

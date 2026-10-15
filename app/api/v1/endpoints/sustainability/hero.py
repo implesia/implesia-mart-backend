@@ -45,9 +45,9 @@ async def update_sustainability_hero(
     request: Request,
     db: DbSession,
     payload: Annotated[str, Form()],
+    image: Annotated[UploadFile | None, File()] = None,
     image_0: Annotated[UploadFile | None, File()] = None,
-    image_1: Annotated[UploadFile | None, File()] = None,
 ) -> SustainabilityHeroAdmin:
     del request
     data = _payload(payload)
-    return await hero_service.update_hero(db, data, image_0, image_1)
+    return await hero_service.update_hero(db, data, image or image_0)

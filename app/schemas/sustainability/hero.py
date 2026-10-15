@@ -2,7 +2,7 @@ import uuid
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.schemas.common import WriteModel
+from app.schemas.sustainability.optional_image import OptionalImageMixin, OptionalImageWrite
 
 
 class SustainabilityHeroImagePublic(BaseModel):
@@ -23,6 +23,8 @@ class SustainabilityHeroPublic(BaseModel):
     primary_href: str
     secondary_label: str
     secondary_href: str
+    image: SustainabilityHeroImagePublic | None = None
+    # Legacy mirror of `image` (0 or 1 item) for clients from before 0072.
     images: list[SustainabilityHeroImagePublic]
 
 
@@ -34,20 +36,14 @@ class SustainabilityHeroAdmin(BaseModel):
     primary_href: str
     secondary_label: str
     secondary_href: str
+    image: SustainabilityHeroImageAdmin | None = None
     images: list[SustainabilityHeroImageAdmin]
 
 
-class SustainabilityHeroImageWrite(WriteModel):
-    alt: str = Field(default="", max_length=200)
-    src: str = Field(default="", max_length=255)
-
-    @field_validator("alt", "src")
-    @classmethod
-    def _strip(cls, value: str) -> str:
-        return value.strip()
+SustainabilityHeroImageWrite = OptionalImageWrite
 
 
-class SustainabilityHeroWrite(WriteModel):
+class SustainabilityHeroWrite(OptionalImageMixin):
     eyebrow: str = Field(default="", max_length=80)
     title: str = Field(min_length=1, max_length=200)
     subtitle: str = Field(default="", max_length=500)
@@ -55,7 +51,6 @@ class SustainabilityHeroWrite(WriteModel):
     primary_href: str = Field(default="", max_length=255)
     secondary_label: str = Field(default="", max_length=80)
     secondary_href: str = Field(default="", max_length=255)
-    images: list[SustainabilityHeroImageWrite] = Field(min_length=2, max_length=2)
 
     @field_validator(
         "eyebrow",

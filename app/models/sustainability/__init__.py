@@ -8,6 +8,7 @@ from app.models.sustainability.durability import (
     SustainabilityDurabilityBullet,
 )
 from app.models.sustainability.hero import SustainabilityHero, SustainabilityHeroImage
+from app.models.sustainability.image_archive import SustainabilityImageArchive
 from app.models.sustainability.impact import SustainabilityImpact, SustainabilityImpactItem
 from app.models.sustainability.origin import SustainabilityOrigin, SustainabilityOriginImage
 from app.models.sustainability.quality import (
@@ -24,6 +25,7 @@ __all__ = [
     "SustainabilityDurabilityBullet",
     "SustainabilityHero",
     "SustainabilityHeroImage",
+    "SustainabilityImageArchive",
     "SustainabilityImpact",
     "SustainabilityImpactItem",
     "SustainabilityOrigin",

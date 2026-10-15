@@ -26,15 +26,13 @@ def _payload(raw: str) -> OriginWrite:
         raise UnprocessableError("Request payload is invalid", payload_errors(exc)) from exc
 
 
-def _uploads(form_items: list[tuple[str, object]]) -> dict[int, UploadFile]:
-    uploads: dict[int, UploadFile] = {}
+def _upload(form_items: list[tuple[str, object]]) -> UploadFile | None:
+    """The single photo arrives as ``image`` (``image_0`` from older admin builds)."""
+    found: dict[str, UploadFile] = {}
     for key, value in form_items:
-        if not key.startswith("image_"):
-            continue
-        suffix = key.removeprefix("image_")
-        if suffix.isdigit() and isinstance(value, StarletteUpload):
-            uploads[int(suffix)] = cast(UploadFile, value)
-    return uploads
+        if key in ("image", "image_0") and isinstance(value, StarletteUpload):
+            found[key] = cast(UploadFile, value)
+    return found.get("image") or found.get("image_0")
 
 
 @public_router.get("", response_model=OriginPublic)
@@ -54,5 +52,5 @@ async def update_sustainability_origin(
 ) -> OriginAdmin:
     form = await request.form()
     return await origin_service.update_origin(
-        db, _payload(payload), _uploads(list(form.multi_items()))
+        db, _payload(payload), _upload(list(form.multi_items()))
     )

@@ -4,7 +4,6 @@ from fastapi import UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import UnprocessableError
 from app.models.sustainability.hero import SustainabilityHero, SustainabilityHeroImage
 from app.schemas.sustainability.hero import (
     SustainabilityHeroAdmin,
@@ -13,7 +12,8 @@ from app.schemas.sustainability.hero import (
     SustainabilityHeroPublic,
     SustainabilityHeroWrite,
 )
-from app.services.image_storage import delete_owned_media, owned_refs, read_image, store_image
+from app.services.image_storage import delete_owned_media, owned_refs
+from app.services.sustainability.optional_image import resolve_optional_image
 
 HERO_SLUG = "sustainability"
 _MEDIA = "sustainability"
@@ -32,11 +32,6 @@ DEFAULT_IMAGES: tuple[dict[str, object], ...] = (
         "src": "/images/products/lamp/lamp-1.jpg",
         "alt": "সানসেট ল্যাম্প — কোয়ালিটি চেক করা গ্যাজেট",
         "sort_order": 0,
-    },
-    {
-        "src": "/images/products/baby-products/wedding-dress.jpeg",
-        "alt": "হাতে তৈরি গর্জিয়াস উইমেন্স গাউন",
-        "sort_order": 1,
     },
 )
 
@@ -62,7 +57,8 @@ def _public(
         primary_href=row.primary_href,
         secondary_label=row.secondary_label,
         secondary_href=row.secondary_href,
-        images=[_public_image(image) for image in images],
+        image=_public_image(images[0]) if images else None,
+        images=[_public_image(image) for image in images[:1]],
     )
 
 
@@ -77,7 +73,8 @@ def _admin(
         primary_href=row.primary_href,
         secondary_label=row.secondary_label,
         secondary_href=row.secondary_href,
-        images=[_admin_image(image) for image in images],
+        image=_admin_image(images[0]) if images else None,
+        images=[_admin_image(image) for image in images[:1]],
     )
 
 
@@ -123,49 +120,27 @@ async def admin_view(db: AsyncSession) -> SustainabilityHeroAdmin:
     return _admin(row, await _images(db, row.id))
 
 
-def _reject_staged_path(src: str) -> None:
-    if src.startswith("/uploads/") or src.startswith("blob:"):
-        raise UnprocessableError("Send the image file with the hero")
-
-
-async def _take_image(upload: UploadFile | None) -> str | None:
-    if upload is None or not upload.filename:
-        return None
-    return store_image(await read_image(upload), folder=_MEDIA)
-
-
 async def update_hero(
     db: AsyncSession,
     payload: SustainabilityHeroWrite,
-    image_0: UploadFile | None = None,
-    image_1: UploadFile | None = None,
+    image: UploadFile | None = None,
 ) -> SustainabilityHeroAdmin:
+    """Save the banner. The single photo is optional; with no photo the row is removed."""
     row = await ensure_hero(db)
-    uploads = (image_0, image_1)
-    stored: list[str] = []
+    src, alt, stored = await resolve_optional_image(
+        payload.image, image, "Send the image file with the hero"
+    )
     try:
-        resolved: list[tuple[str, str]] = []
-        for index, image in enumerate(payload.images):
-            taken = await _take_image(uploads[index] if index < len(uploads) else None)
-            if taken is not None:
-                stored.append(taken)
-                src = taken
-            else:
-                src = image.src
-                if not src:
-                    raise UnprocessableError("Both banner photos are required.")
-                _reject_staged_path(src)
-            resolved.append((src, image.alt))
         existing = await _images(db, row.id)
         previous = owned_refs(*(item.src for item in existing), folder=_MEDIA)
-        for index, (src, alt) in enumerate(resolved):
-            if index < len(existing):
-                existing[index].src = src
-                existing[index].alt = alt
-                existing[index].sort_order = index
+        if src:
+            if existing:
+                existing[0].src = src
+                existing[0].alt = alt
+                existing[0].sort_order = 0
             else:
-                db.add(SustainabilityHeroImage(hero_id=row.id, src=src, alt=alt, sort_order=index))
-        for extra in existing[len(resolved) :]:
+                db.add(SustainabilityHeroImage(hero_id=row.id, src=src, alt=alt, sort_order=0))
+        for extra in existing[1:] if src else existing:
             await db.delete(extra)
         row.eyebrow = payload.eyebrow
         row.title = payload.title
@@ -176,7 +151,8 @@ async def update_hero(
         row.secondary_href = payload.secondary_href
         await db.commit()
     except Exception:
-        delete_owned_media(set(stored), folder=_MEDIA)
+        if stored:
+            delete_owned_media({stored}, folder=_MEDIA)
         raise
     await db.refresh(row)
     current = await _images(db, row.id)

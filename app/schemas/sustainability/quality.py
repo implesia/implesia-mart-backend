@@ -3,6 +3,7 @@ import uuid
 from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.common import WriteModel
+from app.schemas.sustainability.optional_image import OptionalImageWrite
 
 
 class QualityImageRead(BaseModel):
@@ -32,7 +33,10 @@ class QualityBadgeRead(QualityBadgePublic):
 class QualityPublic(BaseModel):
     title: str
     body: str
+    # src is "" when the section has no photo (shape kept for older clients).
     image: QualityImageRead
+    # 0 or 1 item, same as other sustainability sections.
+    images: list[QualityImageRead] = Field(default_factory=list)
     steps: list[QualityStepPublic]
     badges: list[QualityBadgePublic]
 
@@ -40,21 +44,15 @@ class QualityPublic(BaseModel):
 class QualityAdmin(BaseModel):
     title: str
     body: str
+    # src is "" when the section has no photo (shape kept for older clients).
     image: QualityImageRead
+    # 0 or 1 item, same as other sustainability sections.
+    images: list[QualityImageRead] = Field(default_factory=list)
     steps: list[QualityStepRead]
     badges: list[QualityBadgeRead]
 
 
-class QualityImageWrite(WriteModel):
-    src: str = Field(default="", max_length=255)
-    alt: str = Field(default="", max_length=200)
-
-    @field_validator("src", "alt", mode="before")
-    @classmethod
-    def _strip(cls, value: object) -> object:
-        if isinstance(value, str):
-            return value.strip()
-        return value
+QualityImageWrite = OptionalImageWrite
 
 
 class QualityStepWrite(WriteModel):
@@ -90,7 +88,7 @@ class QualityBadgeWrite(WriteModel):
 class QualityWrite(WriteModel):
     title: str = Field(default="", max_length=200)
     body: str = Field(default="", max_length=800)
-    image: QualityImageWrite
+    image: QualityImageWrite | None = None
     steps: list[QualityStepWrite] = Field(default_factory=list, max_length=12)
     badges: list[QualityBadgeWrite] = Field(default_factory=list, max_length=12)
 

@@ -17,7 +17,8 @@ from app.schemas.sustainability.durability import (
     DurabilityPublic,
     DurabilityWrite,
 )
-from app.services.image_storage import delete_owned_media, owned_refs, read_image, store_image
+from app.services.image_storage import delete_owned_media, owned_refs
+from app.services.sustainability.optional_image import resolve_optional_image
 
 SECTION_SLUG = "sustainability"
 _MEDIA = "sustainability"
@@ -41,6 +42,10 @@ def _image(row: SustainabilityDurability) -> DurabilityImageRead:
     return DurabilityImageRead(src=row.image_src, alt=row.image_alt)
 
 
+def _images(row: SustainabilityDurability) -> list[DurabilityImageRead]:
+    return [_image(row)] if row.image_src else []
+
+
 def _public(
     row: SustainabilityDurability, bullets: list[SustainabilityDurabilityBullet]
 ) -> DurabilityPublic:
@@ -48,6 +53,7 @@ def _public(
         title=row.title,
         body=row.body,
         image=_image(row),
+        images=_images(row),
         bullets=[
             DurabilityBulletPublic(id=bullet.id, text=bullet.text)
             for bullet in bullets
@@ -63,6 +69,7 @@ def _admin(
         title=row.title,
         body=row.body,
         image=_image(row),
+        images=_images(row),
         bullets=[
             DurabilityBulletRead(id=bullet.id, text=bullet.text, is_active=bullet.is_active)
             for bullet in bullets
@@ -129,17 +136,6 @@ def _check(payload: DurabilityWrite) -> None:
         raise UnprocessableError("Write each point, or remove the empty one.")
 
 
-def _reject_staged_path(src: str) -> None:
-    if src.startswith("/uploads/") or src.startswith("blob:"):
-        raise UnprocessableError("Send the image file with the durability")
-
-
-async def _take_image(upload: UploadFile | None) -> str | None:
-    if upload is None or not upload.filename:
-        return None
-    return store_image(await read_image(upload), folder=_MEDIA)
-
-
 async def update_durability(
     db: AsyncSession, payload: DurabilityWrite, upload: UploadFile | None
 ) -> DurabilityAdmin:
@@ -147,20 +143,16 @@ async def update_durability(
     row = await ensure_durability(db)
     stored: list[str] = []
     try:
-        taken = await _take_image(upload)
-        if taken is not None:
+        src, alt, taken = await resolve_optional_image(
+            payload.image, upload, "Send the image file with the durability"
+        )
+        if taken:
             stored.append(taken)
-            src = taken
-        else:
-            src = payload.image.src
-            if not src:
-                raise UnprocessableError("Cover photo is required.")
-            _reject_staged_path(src)
         previous = owned_refs(row.image_src, folder=_MEDIA)
         row.title = payload.title
         row.body = payload.body
         row.image_src = src
-        row.image_alt = payload.image.alt
+        row.image_alt = alt
         existing = await _bullets(db, row.id)
         for index, bullet in enumerate(payload.bullets):
             if index < len(existing):

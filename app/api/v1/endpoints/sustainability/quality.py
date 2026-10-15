@@ -41,7 +41,8 @@ async def update_sustainability_quality(
     request: Request,
     db: DbSession,
     payload: Annotated[str, Form()],
+    image: Annotated[UploadFile | None, File()] = None,
     image_0: Annotated[UploadFile | None, File()] = None,
 ) -> QualityAdmin:
     del request
-    return await quality_service.update_quality(db, _payload(payload), image_0)
+    return await quality_service.update_quality(db, _payload(payload), image or image_0)

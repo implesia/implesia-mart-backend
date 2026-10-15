@@ -41,7 +41,8 @@ async def update_sustainability_durability(
     request: Request,
     db: DbSession,
     payload: Annotated[str, Form()],
+    image: Annotated[UploadFile | None, File()] = None,
     image_0: Annotated[UploadFile | None, File()] = None,
 ) -> DurabilityAdmin:
     del request
-    return await durability_service.update_durability(db, _payload(payload), image_0)
+    return await durability_service.update_durability(db, _payload(payload), image or image_0)

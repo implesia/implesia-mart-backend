@@ -22,13 +22,15 @@ class SustainabilityOrigin(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class SustainabilityOriginImage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """One photo beside the point of view. At most twelve."""
+    """The optional point-of-view photo. At most one per section (unique ``origin_id``);
+    extra legacy photos live in ``sustainability_image_archive`` (migration 0072)."""
 
     __tablename__ = "sustainability_origin_images"
 
     origin_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("sustainability_origins.id", ondelete="CASCADE"),
         index=True,
+        unique=True,
         nullable=False,
     )
     src: Mapped[str] = mapped_column(String(255), nullable=False)

@@ -25,13 +25,15 @@ class SustainabilityHero(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class SustainabilityHeroImage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """One photo on the right side of the sustainability hero. Exactly two."""
+    """The optional hero photo. At most one per hero (unique ``hero_id``); extra legacy
+    photos live in ``sustainability_image_archive`` (migration 0072)."""
 
     __tablename__ = "sustainability_hero_images"
 
     hero_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("sustainability_heroes.id", ondelete="CASCADE"),
         index=True,
+        unique=True,
         nullable=False,
     )
     src: Mapped[str] = mapped_column(String(255), nullable=False)
