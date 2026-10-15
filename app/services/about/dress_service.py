@@ -21,12 +21,13 @@ from app.schemas.about.dress import (
     DressReorder,
     DressWrite,
 )
+from app.schemas.about.single_image import MISSING_ALT, MISSING_PHOTO
 from app.services.image_storage import delete_owned_media, owned_refs, read_image, store_image
 
 SECTION_SLUG = "about"
 MAX_DRESSES = 12
 MAX_FEATURES = 8
-MAX_IMAGES = 12
+MAX_IMAGES = 1  # the storefront shows a single photo per block
 _MEDIA = "about"
 _ORDER_MESSAGE = "হ্যালো, আমি একটি কাস্টম ডিজাইনের ড্রেস অর্ডার করতে চাই।"
 DEFAULT_KICKER = "নতুন সংযোজন"
@@ -102,7 +103,8 @@ def _read(
         secondary_label=block.secondary_label,
         secondary_href=block.secondary_href,
         is_active=block.is_active,
-        images=_images(images),
+        image=_images(images[:1])[0] if images else None,
+        images=_images(images[:1]),
     )
 
 
@@ -121,7 +123,8 @@ def _public(
         primary_href=block.primary_href,
         secondary_label=block.secondary_label,
         secondary_href=block.secondary_href,
-        images=_images(images),
+        image=_images(images[:1])[0] if images else None,
+        images=_images(images[:1]),
     )
 
 
@@ -189,7 +192,7 @@ async def ensure_section(db: AsyncSession) -> AboutDressSection:
                 sort_order=index,
             )
         )
-    for index, (src, alt) in enumerate(DEFAULT_IMAGES):
+    for index, (src, alt) in enumerate(DEFAULT_IMAGES[:MAX_IMAGES]):
         db.add(AboutDressImage(dress_id=block.id, src=src, alt=alt, sort_order=index))
     await db.commit()
     await db.refresh(row)
@@ -221,8 +224,6 @@ async def get_dress(db: AsyncSession, dress_id: uuid.UUID) -> AboutDressBlock:
 def _check(payload: DressWrite) -> None:
     if len(payload.features) > MAX_FEATURES:
         raise UnprocessableError("You can add up to 8 highlights")
-    if len(payload.images) > MAX_IMAGES:
-        raise UnprocessableError("You can add up to 12 photos")
     if not payload.title and not payload.subtitle and not payload.features:
         raise UnprocessableError("Add a title or some text.")
     missing_link = (payload.primary_label and not payload.primary_href) or (
@@ -246,24 +247,26 @@ async def _take_image(upload: UploadFile | None) -> str | None:
 async def _resolve_images(
     payload: DressWrite, uploads: dict[int, UploadFile]
 ) -> tuple[list[tuple[str, str]], list[str]]:
+    """Resolve the section's one photo: a fresh upload wins, else the kept ``src``."""
     stored: list[str] = []
-    resolved: list[tuple[str, str]] = []
+    image = payload.image
     try:
-        for index, image in enumerate(payload.images):
-            taken = await _take_image(uploads.get(index))
-            if taken is not None:
-                stored.append(taken)
-                src = taken
-            else:
-                src = image.src
-                if not src:
-                    raise UnprocessableError("Add an image, or remove the empty photo.")
-                _reject_staged_path(src)
-            resolved.append((src, image.alt))
+        taken = await _take_image(uploads.get(0))
+        if taken is not None:
+            stored.append(taken)
+            src = taken
+        else:
+            src = image.src if image is not None else ""
+            if not src:
+                raise UnprocessableError(MISSING_PHOTO)
+            _reject_staged_path(src)
+        alt = image.alt if image is not None else ""
+        if not alt:
+            raise UnprocessableError(MISSING_ALT)
     except Exception:
         delete_owned_media(set(stored), folder=_MEDIA)
         raise
-    return resolved, stored
+    return [(src, alt)], stored
 
 
 async def _write_children(

@@ -13,6 +13,7 @@ from app.schemas.about.hero import (
     AboutHeroPublic,
     AboutHeroWrite,
 )
+from app.schemas.about.single_image import MISSING_ALT, MISSING_PHOTO
 from app.services.image_storage import delete_owned_media, owned_refs, read_image, store_image
 
 HERO_SLUG = "about"
@@ -60,7 +61,8 @@ def _public(row: AboutHero, images: list[AboutHeroImage]) -> AboutHeroPublic:
         primary_href=row.primary_href,
         secondary_label=row.secondary_label,
         secondary_href=row.secondary_href,
-        images=[_public_image(image) for image in images],
+        image=_public_image(images[0]) if images else None,
+        images=[_public_image(image) for image in images[:1]],
     )
 
 
@@ -73,7 +75,8 @@ def _admin(row: AboutHero, images: list[AboutHeroImage]) -> AboutHeroAdmin:
         primary_href=row.primary_href,
         secondary_label=row.secondary_label,
         secondary_href=row.secondary_href,
-        images=[_admin_image(image) for image in images],
+        image=_admin_image(images[0]) if images else None,
+        images=[_admin_image(image) for image in images[:1]],
     )
 
 
@@ -102,7 +105,7 @@ async def ensure_hero(db: AsyncSession) -> AboutHero:
     )
     db.add(row)
     await db.flush()
-    for raw in DEFAULT_IMAGES:
+    for raw in DEFAULT_IMAGES[:1]:
         db.add(AboutHeroImage(hero_id=row.id, **raw))
     await db.commit()
     await db.refresh(row)
@@ -134,24 +137,25 @@ async def update_hero(
     db: AsyncSession,
     payload: AboutHeroWrite,
     image_0: UploadFile | None = None,
-    image_1: UploadFile | None = None,
 ) -> AboutHeroAdmin:
+    """Save the hero copy and its single photo (upload replaces, ``src`` keeps)."""
     row = await ensure_hero(db)
-    uploads = (image_0, image_1)
     stored: list[str] = []
     try:
-        resolved: list[tuple[str, str]] = []
-        for index, image in enumerate(payload.images):
-            taken = await _take_image(uploads[index] if index < len(uploads) else None)
-            if taken is not None:
-                stored.append(taken)
-                src = taken
-            else:
-                src = image.src
-                if not src:
-                    raise UnprocessableError("Add an image, or remove the empty photo.")
-                _reject_staged_path(src)
-            resolved.append((src, image.alt))
+        image = payload.image
+        taken = await _take_image(image_0)
+        if taken is not None:
+            stored.append(taken)
+            src = taken
+        else:
+            src = image.src if image is not None else ""
+            if not src:
+                raise UnprocessableError(MISSING_PHOTO)
+            _reject_staged_path(src)
+        alt = image.alt if image is not None else ""
+        if not alt:
+            raise UnprocessableError(MISSING_ALT)
+        resolved = [(src, alt)]
         existing = await _images(db, row.id)
         previous = owned_refs(*(item.src for item in existing), folder=_MEDIA)
         for index, (src, alt) in enumerate(resolved):

@@ -2,6 +2,7 @@ import uuid
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.about.single_image import SingleImageMixin, SingleImageWrite
 from app.schemas.common import WriteModel
 
 
@@ -35,6 +36,8 @@ class StoryRead(BaseModel):
     cta_label: str
     cta_href: str
     is_active: bool
+    image: StoryImageRead | None = None
+    # Deprecated mirror of `image` (0 or 1 item).
     images: list[StoryImageRead]
 
 
@@ -45,6 +48,8 @@ class StoryPublic(BaseModel):
     paragraphs: list[StoryParagraphRead]
     cta_label: str
     cta_href: str
+    image: StoryImageRead | None = None
+    # Deprecated mirror of `image` (0 or 1 item).
     images: list[StoryImageRead]
 
 
@@ -61,24 +66,16 @@ class StoryParagraphWrite(WriteModel):
         return value.strip()
 
 
-class StoryImageWrite(WriteModel):
-    alt: str = Field(default="", max_length=200)
-    src: str = Field(default="", max_length=255)
-
-    @field_validator("alt", "src")
-    @classmethod
-    def _strip(cls, value: str) -> str:
-        return value.strip()
+StoryImageWrite = SingleImageWrite
 
 
-class StoryWrite(WriteModel):
+class StoryWrite(SingleImageMixin):
     kicker: str = Field(default="", max_length=80)
     title: str = Field(default="", max_length=200)
     paragraphs: list[StoryParagraphWrite] = Field(default_factory=list)
     cta_label: str = Field(default="", max_length=80)
     cta_href: str = Field(default="", max_length=500)
     is_active: bool = True
-    images: list[StoryImageWrite] = Field(default_factory=list)
 
     @field_validator("kicker", "title", "cta_label")
     @classmethod

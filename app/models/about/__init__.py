@@ -6,6 +6,7 @@ from app.models.about.dress import (
     AboutDressSection,
 )
 from app.models.about.hero import AboutHero, AboutHeroImage
+from app.models.about.image_archive import AboutImageArchive
 from app.models.about.mission import AboutMissionCard, AboutMissionSection
 from app.models.about.stats import AboutStatItem, AboutStats
 from app.models.about.steps import AboutStepItem, AboutSteps
@@ -25,6 +26,7 @@ __all__ = [
     "AboutDressSection",
     "AboutHero",
     "AboutHeroImage",
+    "AboutImageArchive",
     "AboutMissionCard",
     "AboutMissionSection",
     "AboutStatItem",

@@ -25,13 +25,15 @@ class AboutHero(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class AboutHeroImage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """One photo on the right side of the about hero. At most two."""
+    """The about hero photo. One per hero (unique ``hero_id``); extra legacy photos live in
+    ``about_image_archive`` (migration 0071)."""
 
     __tablename__ = "about_hero_images"
 
     hero_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("about_heroes.id", ondelete="CASCADE"),
         index=True,
+        unique=True,
         nullable=False,
     )
     src: Mapped[str] = mapped_column(String(255), nullable=False)

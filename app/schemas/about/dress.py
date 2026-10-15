@@ -2,6 +2,7 @@ import uuid
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.about.single_image import SingleImageMixin, SingleImageWrite
 from app.schemas.common import WriteModel
 
 
@@ -40,6 +41,8 @@ class DressRead(BaseModel):
     secondary_label: str
     secondary_href: str
     is_active: bool
+    image: DressImageRead | None = None
+    # Deprecated mirror of `image` (0 or 1 item).
     images: list[DressImageRead]
 
 
@@ -53,6 +56,8 @@ class DressPublic(BaseModel):
     primary_href: str
     secondary_label: str
     secondary_href: str
+    image: DressImageRead | None = None
+    # Deprecated mirror of `image` (0 or 1 item).
     images: list[DressImageRead]
 
 
@@ -76,17 +81,10 @@ class DressFeatureWrite(WriteModel):
         return value or "design_services"
 
 
-class DressImageWrite(WriteModel):
-    alt: str = Field(default="", max_length=200)
-    src: str = Field(default="", max_length=255)
-
-    @field_validator("alt", "src")
-    @classmethod
-    def _strip(cls, value: str) -> str:
-        return value.strip()
+DressImageWrite = SingleImageWrite
 
 
-class DressWrite(WriteModel):
+class DressWrite(SingleImageMixin):
     kicker: str = Field(default="", max_length=80)
     title: str = Field(default="", max_length=200)
     subtitle: str = Field(default="", max_length=800)
@@ -96,7 +94,6 @@ class DressWrite(WriteModel):
     secondary_label: str = Field(default="", max_length=80)
     secondary_href: str = Field(default="", max_length=800)
     is_active: bool = True
-    images: list[DressImageWrite] = Field(default_factory=list)
 
     @field_validator("kicker", "title", "subtitle", "primary_label", "secondary_label")
     @classmethod

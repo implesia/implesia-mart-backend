@@ -41,9 +41,11 @@ async def update_about_hero(
     request: Request,
     db: DbSession,
     payload: Annotated[str, Form()],
+    image: Annotated[UploadFile | None, File()] = None,
     image_0: Annotated[UploadFile | None, File()] = None,
-    image_1: Annotated[UploadFile | None, File()] = None,
 ) -> AboutHeroAdmin:
+    """`image` is the single hero photo; `image_0` is accepted from older admin builds."""
     del request
     data = _payload(payload)
-    return await hero_service.update_hero(db, data, image_0, image_1)
+    upload = image if image is not None and image.filename else image_0
+    return await hero_service.update_hero(db, data, upload)

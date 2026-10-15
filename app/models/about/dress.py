@@ -61,13 +61,15 @@ class AboutDressFeature(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class AboutDressImage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """One photo on a custom-dress block. At most twelve."""
+    """The photo on a custom-dress block. One per block (unique ``dress_id``); extra legacy
+    photos live in ``about_image_archive`` (migration 0071)."""
 
     __tablename__ = "about_dress_images"
 
     dress_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("about_dress_blocks.id", ondelete="CASCADE"),
         index=True,
+        unique=True,
         nullable=False,
     )
     src: Mapped[str] = mapped_column(String(255), nullable=False)

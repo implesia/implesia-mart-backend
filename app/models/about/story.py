@@ -56,13 +56,15 @@ class AboutStoryParagraph(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class AboutStoryImage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """One photo beside a story. At most six."""
+    """The photo beside a story. One per story (unique ``story_id``); extra legacy photos
+    live in ``about_image_archive`` (migration 0071)."""
 
     __tablename__ = "about_story_images"
 
     story_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("about_story_blocks.id", ondelete="CASCADE"),
         index=True,
+        unique=True,
         nullable=False,
     )
     src: Mapped[str] = mapped_column(String(255), nullable=False)

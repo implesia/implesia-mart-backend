@@ -31,6 +31,10 @@ def _payload(raw: str) -> StoryWrite:
 def _uploads(form_items: list[tuple[str, object]]) -> dict[int, UploadFile]:
     uploads: dict[int, UploadFile] = {}
     for key, value in form_items:
+        # "image" is the single photo; "image_0" is what older admin builds send.
+        if key == "image" and isinstance(value, StarletteUpload):
+            uploads[0] = cast(UploadFile, value)
+            continue
         if not key.startswith("image_"):
             continue
         suffix = key.removeprefix("image_")

@@ -11,6 +11,7 @@ from app.models.about.story import (
     AboutStoryParagraph,
     AboutStorySection,
 )
+from app.schemas.about.single_image import MISSING_ALT, MISSING_PHOTO
 from app.schemas.about.story import (
     StoriesPublic,
     StoryImageRead,
@@ -25,7 +26,7 @@ from app.services.image_storage import delete_owned_media, owned_refs, read_imag
 SECTION_SLUG = "about"
 MAX_STORIES = 12
 MAX_PARAGRAPHS = 8
-MAX_IMAGES = 6
+MAX_IMAGES = 1  # the storefront shows a single photo per block
 _MEDIA = "about"
 DEFAULT_KICKER = "আমাদের যাত্রা"
 DEFAULT_TITLE = "কেন ইমপ্লেসিয়া মার্ট শুরু হলো"
@@ -68,7 +69,8 @@ def _read(
         cta_label=block.cta_label,
         cta_href=block.cta_href,
         is_active=block.is_active,
-        images=_images(images),
+        image=_images(images[:1])[0] if images else None,
+        images=_images(images[:1]),
     )
 
 
@@ -84,7 +86,8 @@ def _public(
         paragraphs=_paragraphs(paragraphs),
         cta_label=block.cta_label,
         cta_href=block.cta_href,
-        images=_images(images),
+        image=_images(images[:1])[0] if images else None,
+        images=_images(images[:1]),
     )
 
 
@@ -145,7 +148,7 @@ async def ensure_section(db: AsyncSession) -> AboutStorySection:
     await db.flush()
     for index, text in enumerate(DEFAULT_PARAGRAPHS):
         db.add(AboutStoryParagraph(story_id=block.id, body=text, sort_order=index))
-    for index, (src, alt) in enumerate(DEFAULT_IMAGES):
+    for index, (src, alt) in enumerate(DEFAULT_IMAGES[:MAX_IMAGES]):
         db.add(AboutStoryImage(story_id=block.id, src=src, alt=alt, sort_order=index))
     await db.commit()
     await db.refresh(row)
@@ -183,8 +186,6 @@ async def get_story(db: AsyncSession, story_id: uuid.UUID) -> AboutStoryBlock:
 def _check(payload: StoryWrite) -> None:
     if len(payload.paragraphs) > MAX_PARAGRAPHS:
         raise UnprocessableError("You can add up to 8 paragraphs")
-    if len(payload.images) > MAX_IMAGES:
-        raise UnprocessableError("You can add up to 6 photos")
     if not payload.title and not payload.paragraphs:
         raise UnprocessableError("Add a title or some story text.")
     if payload.cta_label and not payload.cta_href:
@@ -205,24 +206,26 @@ async def _take_image(upload: UploadFile | None) -> str | None:
 async def _resolve_images(
     payload: StoryWrite, uploads: dict[int, UploadFile]
 ) -> tuple[list[tuple[str, str]], list[str]]:
+    """Resolve the section's one photo: a fresh upload wins, else the kept ``src``."""
     stored: list[str] = []
-    resolved: list[tuple[str, str]] = []
+    image = payload.image
     try:
-        for index, image in enumerate(payload.images):
-            taken = await _take_image(uploads.get(index))
-            if taken is not None:
-                stored.append(taken)
-                src = taken
-            else:
-                src = image.src
-                if not src:
-                    raise UnprocessableError("Add an image, or remove the empty photo.")
-                _reject_staged_path(src)
-            resolved.append((src, image.alt))
+        taken = await _take_image(uploads.get(0))
+        if taken is not None:
+            stored.append(taken)
+            src = taken
+        else:
+            src = image.src if image is not None else ""
+            if not src:
+                raise UnprocessableError(MISSING_PHOTO)
+            _reject_staged_path(src)
+        alt = image.alt if image is not None else ""
+        if not alt:
+            raise UnprocessableError(MISSING_ALT)
     except Exception:
         delete_owned_media(set(stored), folder=_MEDIA)
         raise
-    return resolved, stored
+    return [(src, alt)], stored
 
 
 async def _write_children(

@@ -2,7 +2,7 @@ import uuid
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.schemas.common import WriteModel
+from app.schemas.about.single_image import SingleImageMixin, SingleImageWrite
 
 
 class AboutHeroImagePublic(BaseModel):
@@ -23,6 +23,8 @@ class AboutHeroPublic(BaseModel):
     primary_href: str
     secondary_label: str
     secondary_href: str
+    image: AboutHeroImagePublic | None = None
+    # Deprecated mirror of `image` (0 or 1 item) for storefront builds that read `images`.
     images: list[AboutHeroImagePublic]
 
 
@@ -34,20 +36,14 @@ class AboutHeroAdmin(BaseModel):
     primary_href: str
     secondary_label: str
     secondary_href: str
+    image: AboutHeroImageAdmin | None = None
     images: list[AboutHeroImageAdmin]
 
 
-class AboutHeroImageWrite(WriteModel):
-    alt: str = Field(default="", max_length=200)
-    src: str = Field(default="", max_length=255)
-
-    @field_validator("alt", "src")
-    @classmethod
-    def _strip(cls, value: str) -> str:
-        return value.strip()
+AboutHeroImageWrite = SingleImageWrite
 
 
-class AboutHeroWrite(WriteModel):
+class AboutHeroWrite(SingleImageMixin):
     eyebrow: str = Field(default="", max_length=80)
     title: str = Field(min_length=1, max_length=200)
     subtitle: str = Field(default="", max_length=500)
@@ -55,7 +51,6 @@ class AboutHeroWrite(WriteModel):
     primary_href: str = Field(default="", max_length=255)
     secondary_label: str = Field(default="", max_length=80)
     secondary_href: str = Field(default="", max_length=255)
-    images: list[AboutHeroImageWrite] = Field(default_factory=list, max_length=2)
 
     @field_validator(
         "eyebrow",
