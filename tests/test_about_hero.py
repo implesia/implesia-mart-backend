@@ -8,7 +8,7 @@ JPEG = (
     b"\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xd9"
 )
 LEFT = "/images/products/lamp/lamp-1.jpg"
-RIGHT = "/images/products/baby-products/wedding-dress.jpeg"
+RIGHT = "/images/products/baby-products/wedding-dress.jpeg"  # second seed photo, no longer kept
 
 
 def _parts(
@@ -34,10 +34,7 @@ def _seed_body(**overrides: object) -> dict:
         "primary_href": "/products",
         "secondary_label": "যোগাযোগ",
         "secondary_href": "/contact-us",
-        "images": [
-            {"alt": "সানসেট ল্যাম্প — ইমপ্লেসিয়া মার্টের ট্রেন্ডিং গ্যাজেট", "src": LEFT},
-            {"alt": "হাতে তৈরি গর্জিয়াস উইমেন্স গাউন", "src": RIGHT},
-        ],
+        "image": {"alt": "সানসেট ল্যাম্প — ইমপ্লেসিয়া মার্টের ট্রেন্ডিং গ্যাজেট", "src": LEFT},
     }
     body.update(overrides)
     return body
@@ -51,8 +48,9 @@ async def test_public_about_hero_seeds_the_banner(client: AsyncClient) -> None:
     assert body["title"] == "আপনার নিশ্চিন্ত অনলাইন শপিং পার্টনার।"
     assert body["primary_label"] == "সব প্রোডাক্ট"
     assert body["primary_href"] == "/products"
-    assert [image["src"] for image in body["images"]] == [LEFT, RIGHT]
-    assert "sort_order" not in body["images"][0]
+    assert body["image"]["src"] == LEFT
+    assert [image["src"] for image in body["images"]] == [LEFT]
+    assert "sort_order" not in body["image"]
 
 
 async def test_about_hero_admin_requires_an_editor(
@@ -93,14 +91,12 @@ async def test_editor_saves_copy_and_a_photo_together(
     monkeypatch.setattr(settings, "media_root", tmp_path)
     seeded = await client.get("/api/v1/admin/pages/about/hero", headers=auth_headers)
     assert seeded.status_code == 200, seeded.text
-    original_ids = [image["id"] for image in seeded.json()["images"]]
+    original_id = seeded.json()["image"]["id"]
 
     staged = await client.put(
         "/api/v1/admin/pages/about/hero",
         headers=auth_headers,
-        files=_parts(
-            _seed_body(images=[{"alt": "Left", "src": "blob:hero"}, {"alt": "Right", "src": RIGHT}])
-        ),
+        files=_parts(_seed_body(image={"alt": "Left", "src": "blob:hero"})),
     )
     assert staged.status_code == 422
     assert staged.json()["error"]["message"] == "Send the image file with the hero"
@@ -118,7 +114,7 @@ async def test_editor_saves_copy_and_a_photo_together(
         files=_parts(
             _seed_body(
                 title="  Checked title  ",
-                images=[{"alt": "  Uploaded  ", "src": ""}, {"alt": "Right", "src": RIGHT}],
+                image={"alt": "  Uploaded  ", "src": ""},
             ),
             ("hero.jpg", JPEG, "image/jpeg"),
         ),
@@ -126,16 +122,16 @@ async def test_editor_saves_copy_and_a_photo_together(
     assert saved.status_code == 200, saved.text
     body = saved.json()
     assert body["title"] == "Checked title"
-    assert body["images"][0]["alt"] == "Uploaded"
-    assert body["images"][0]["src"].startswith("/media/about/")
-    assert body["images"][0]["id"] == original_ids[0]
-    assert body["images"][1]["src"] == RIGHT
-    stored = tmp_path / "about" / body["images"][0]["src"].removeprefix("/media/about/")
+    assert body["image"]["alt"] == "Uploaded"
+    assert body["image"]["src"].startswith("/media/about/")
+    assert body["image"]["id"] == original_id
+    assert body["images"] == [body["image"]]
+    stored = tmp_path / "about" / body["image"]["src"].removeprefix("/media/about/")
     assert stored.is_file()
 
     public = await client.get("/api/v1/pages/about/hero")
     assert public.json()["title"] == "Checked title"
-    assert public.json()["images"][0]["src"] == body["images"][0]["src"]
+    assert public.json()["image"]["src"] == body["image"]["src"]
 
     restored = await client.put(
         "/api/v1/admin/pages/about/hero",
@@ -144,5 +140,5 @@ async def test_editor_saves_copy_and_a_photo_together(
     )
     assert restored.status_code == 200, restored.text
     assert restored.json()["title"] == "আপনার নিশ্চিন্ত অনলাইন শপিং পার্টনার।"
-    assert [image["src"] for image in restored.json()["images"]] == [LEFT, RIGHT]
+    assert restored.json()["image"]["src"] == LEFT
     assert not stored.exists()

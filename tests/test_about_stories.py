@@ -49,7 +49,10 @@ async def test_public_about_stories_seed_the_block(client: AsyncClient) -> None:
     assert len(story["paragraphs"]) == 3
     assert story["paragraphs"][0]["text"].startswith("অনলাইনে অর্ডার করা")
     assert story["paragraphs"][2]["text"].endswith("আসল লক্ষ্য।")
-    assert [image["src"] for image in story["images"]] == [LAMP, FROCK]
+    # Single photo per story: the first seeded image; `images` mirrors it for old clients.
+    assert story["image"]["src"] == LAMP
+    assert [image["src"] for image in story["images"]] == [LAMP]
+    assert FROCK not in {image["src"] for image in story["images"]}
     assert "is_active" not in story
 
 

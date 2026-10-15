@@ -64,7 +64,8 @@ async def test_public_about_dresses_seed_the_block(client: AsyncClient) -> None:
         "প্রিমিয়াম কোয়ালিটি",
     ]
     assert dress["features"][0]["icon"] == "design_services"
-    assert [image["src"] for image in dress["images"]] == GALLERY
+    assert dress["image"]["src"] == GALLERY[0]
+    assert [image["src"] for image in dress["images"]] == GALLERY[:1]
     assert "is_active" not in dress
 
 
