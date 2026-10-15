@@ -115,8 +115,10 @@ async def test_editor_can_hide_upload_and_restore_quality(
         headers=auth_headers,
         files=_parts(_seed_body(image={"src": "", "alt": ""})),
     )
-    assert missing_photo.status_code == 422
-    assert missing_photo.json()["error"]["message"] == "Cover photo is required."
+    # The photo is optional now: an empty image saves the section without one.
+    assert missing_photo.status_code == 200, missing_photo.text
+    assert missing_photo.json()["image"]["src"] == ""
+    assert missing_photo.json()["images"] == []
 
     staged = await client.put(
         "/api/v1/admin/pages/sustainability/quality",

@@ -34,10 +34,7 @@ def _seed_body(**overrides: object) -> dict:
         "primary_href": "/products",
         "secondary_label": "আমাদের সম্পর্কে",
         "secondary_href": "/about-us",
-        "images": [
-            {"alt": "সানসেট ল্যাম্প — কোয়ালিটি চেক করা গ্যাজেট", "src": LEFT},
-            {"alt": "হাতে তৈরি গর্জিয়াস উইমেন্স গাউন", "src": RIGHT},
-        ],
+        "image": {"alt": "সানসেট ল্যাম্প — কোয়ালিটি চেক করা গ্যাজেট", "src": LEFT},
     }
     body.update(overrides)
     return body
@@ -51,7 +48,8 @@ async def test_public_sustainability_hero_seeds_the_banner(client: AsyncClient) 
     assert body["title"] == "দায়িত্বশীল শপিং, দীর্ঘস্থায়ী প্রোডাক্ট"
     assert body["primary_label"] == "সব প্রোডাক্ট"
     assert body["secondary_href"] == "/about-us"
-    assert [image["src"] for image in body["images"]] == [LEFT, RIGHT]
+    assert body["image"]["src"] == LEFT
+    assert [image["src"] for image in body["images"]] == [LEFT]
     assert "sort_order" not in body["images"][0]
 
 
@@ -93,14 +91,12 @@ async def test_editor_saves_copy_and_a_photo_together(
     monkeypatch.setattr(settings, "media_root", tmp_path)
     seeded = await client.get("/api/v1/admin/pages/sustainability/hero", headers=auth_headers)
     assert seeded.status_code == 200, seeded.text
-    original_ids = [image["id"] for image in seeded.json()["images"]]
+    original_id = seeded.json()["image"]["id"]
 
     staged = await client.put(
         "/api/v1/admin/pages/sustainability/hero",
         headers=auth_headers,
-        files=_parts(
-            _seed_body(images=[{"alt": "Left", "src": "blob:hero"}, {"alt": "Right", "src": RIGHT}])
-        ),
+        files=_parts(_seed_body(image={"alt": "Left", "src": "blob:hero"})),
     )
     assert staged.status_code == 422
     assert staged.json()["error"]["message"] == "Send the image file with the hero"
@@ -112,44 +108,37 @@ async def test_editor_saves_copy_and_a_photo_together(
     )
     assert blank.status_code == 422
 
-    empty_photo = await client.put(
+    no_alt = await client.put(
         "/api/v1/admin/pages/sustainability/hero",
         headers=auth_headers,
-        files=_parts(
-            _seed_body(images=[{"alt": "Left", "src": ""}, {"alt": "Right", "src": RIGHT}])
-        ),
+        files=_parts(_seed_body(image={"alt": " ", "src": RIGHT})),
     )
-    assert empty_photo.status_code == 422
-    assert empty_photo.json()["error"]["message"] == "Both banner photos are required."
+    assert no_alt.status_code == 422
+    assert no_alt.json()["error"]["message"] == ("Add a short description of the photo (alt text).")
 
     saved = await client.put(
         "/api/v1/admin/pages/sustainability/hero",
         headers=auth_headers,
         files=_parts(
-            _seed_body(
-                title="  Checked title  ",
-                images=[{"alt": "  Uploaded  ", "src": ""}, {"alt": "Right", "src": RIGHT}],
-            ),
+            _seed_body(title="  Checked title  ", image={"alt": "  Uploaded  ", "src": ""}),
             ("hero.jpg", JPEG, "image/jpeg"),
         ),
     )
     assert saved.status_code == 200, saved.text
     body = saved.json()
     assert body["title"] == "Checked title"
-    assert body["images"][0]["alt"] == "Uploaded"
-    assert body["images"][0]["src"].startswith("/media/sustainability/")
-    assert body["images"][0]["id"] == original_ids[0]
-    assert body["images"][1]["src"] == RIGHT
+    assert body["image"]["alt"] == "Uploaded"
+    assert body["image"]["src"].startswith("/media/sustainability/")
+    assert body["image"]["id"] == original_id
+    assert body["images"] == [body["image"]]
     stored = (
-        tmp_path
-        / "sustainability"
-        / body["images"][0]["src"].removeprefix("/media/sustainability/")
+        tmp_path / "sustainability" / body["image"]["src"].removeprefix("/media/sustainability/")
     )
     assert stored.is_file()
 
     public = await client.get("/api/v1/pages/sustainability/hero")
     assert public.json()["title"] == "Checked title"
-    assert public.json()["images"][0]["src"] == body["images"][0]["src"]
+    assert public.json()["image"]["src"] == body["image"]["src"]
 
     restored = await client.put(
         "/api/v1/admin/pages/sustainability/hero",
@@ -158,5 +147,5 @@ async def test_editor_saves_copy_and_a_photo_together(
     )
     assert restored.status_code == 200, restored.text
     assert restored.json()["title"] == "দায়িত্বশীল শপিং, দীর্ঘস্থায়ী প্রোডাক্ট"
-    assert [image["src"] for image in restored.json()["images"]] == [LEFT, RIGHT]
+    assert restored.json()["image"]["src"] == LEFT
     assert not stored.exists()

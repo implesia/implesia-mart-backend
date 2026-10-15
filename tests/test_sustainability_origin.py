@@ -29,10 +29,7 @@ def _seed_body(**overrides: object) -> dict:
         "title": TITLE,
         "body": "Seed body",
         "quote": "কোয়ালিটি একটি অভ্যাস, একবারের কাজ নয়।",
-        "images": [
-            {"alt": "সানসেট ল্যাম্প — কোয়ালিটি চেক করা প্রোডাক্ট", "src": LAMP, "is_active": True},
-            {"alt": "হাতে তৈরি বেবি পার্টি ফ্রক", "src": FROCK, "is_active": True},
-        ],
+        "image": {"alt": "সানসেট ল্যাম্প — কোয়ালিটি চেক করা প্রোডাক্ট", "src": LAMP},
     }
     body.update(overrides)
     return body
@@ -45,7 +42,8 @@ async def test_public_sustainability_origin_seeds_the_block(client: AsyncClient)
     assert body["eyebrow"] == "আমাদের দৃষ্টিভঙ্গি"
     assert body["title"] == TITLE
     assert body["quote"] == "কোয়ালিটি একটি অভ্যাস, একবারের কাজ নয়।"
-    assert [image["src"] for image in body["images"]] == [LAMP, FROCK]
+    assert body["image"]["src"] == LAMP
+    assert [image["src"] for image in body["images"]] == [LAMP]
     assert "is_active" not in body["images"][0]
 
 
@@ -83,27 +81,8 @@ async def test_editor_can_hide_upload_and_restore_photos(
     client: AsyncClient, auth_headers: dict[str, str], tmp_path, monkeypatch
 ) -> None:
     from app.core.config import settings
-    from app.services.sustainability import origin_service
 
     monkeypatch.setattr(settings, "media_root", tmp_path)
-    monkeypatch.setattr(origin_service, "MAX_PHOTOS", 2)
-    blocked = await client.put(
-        "/api/v1/admin/pages/sustainability/origin",
-        headers=auth_headers,
-        files=_parts(
-            _seed_body(
-                images=[
-                    {"alt": "One", "src": LAMP},
-                    {"alt": "Two", "src": FROCK},
-                    {"alt": "Three", "src": LAMP},
-                ]
-            )
-        ),
-    )
-    assert blocked.status_code == 422
-    assert blocked.json()["error"]["message"] == "You can add up to 12 photos"
-    monkeypatch.setattr(origin_service, "MAX_PHOTOS", 12)
-
     blank = await client.put(
         "/api/v1/admin/pages/sustainability/origin",
         headers=auth_headers,
@@ -115,48 +94,52 @@ async def test_editor_can_hide_upload_and_restore_photos(
     staged = await client.put(
         "/api/v1/admin/pages/sustainability/origin",
         headers=auth_headers,
-        files=_parts(_seed_body(images=[{"alt": "Left", "src": "blob:origin"}])),
+        files=_parts(_seed_body(image={"alt": "Left", "src": "blob:origin"})),
     )
     assert staged.status_code == 422
     assert staged.json()["error"]["message"] == "Send the image file with the point of view"
 
-    empty = await client.put(
-        "/api/v1/admin/pages/sustainability/origin",
-        headers=auth_headers,
-        files=_parts(_seed_body(images=[{"alt": "Left", "src": ""}])),
-    )
-    assert empty.status_code == 422
-    assert empty.json()["error"]["message"] == "Add an image, or remove the empty photo."
-
-    hidden = await client.put(
+    # Legacy list from an old admin: first *active* photo wins, hidden ones are dropped.
+    legacy = await client.put(
         "/api/v1/admin/pages/sustainability/origin",
         headers=auth_headers,
         files=_parts(
-            _seed_body(
-                images=[
-                    {"alt": "Lamp", "src": LAMP, "is_active": True},
-                    {"alt": "Frock", "src": FROCK, "is_active": False},
-                ]
-            )
+            {
+                **{k: v for k, v in _seed_body().items() if k != "image"},
+                "images": [
+                    {"alt": "Lamp", "src": LAMP, "is_active": False},
+                    {"alt": "Frock", "src": FROCK, "is_active": True},
+                ],
+            }
         ),
     )
-    assert hidden.status_code == 200, hidden.text
-    assert hidden.json()["images"][1]["is_active"] is False
-    public = await client.get("/api/v1/pages/sustainability/origin")
-    assert [image["src"] for image in public.json()["images"]] == [LAMP]
+    assert legacy.status_code == 200, legacy.text
+    assert legacy.json()["image"]["src"] == FROCK
+    assert len(legacy.json()["images"]) == 1
 
     uploaded = await client.put(
         "/api/v1/admin/pages/sustainability/origin",
         headers=auth_headers,
         files=_parts(
-            _seed_body(images=[{"alt": "Upload", "src": ""}, {"alt": "Frock", "src": FROCK}]),
-            ("origin.jpg", JPEG, "image/jpeg"),
+            _seed_body(image={"alt": "Upload", "src": ""}), ("origin.jpg", JPEG, "image/jpeg")
         ),
     )
     assert uploaded.status_code == 200, uploaded.text
-    stored = uploaded.json()["images"][0]["src"]
+    stored = uploaded.json()["image"]["src"]
     assert stored.startswith("/media/sustainability/")
     assert (tmp_path / stored.removeprefix("/media/")).is_file()
+
+    removed = await client.put(
+        "/api/v1/admin/pages/sustainability/origin",
+        headers=auth_headers,
+        files=_parts(_seed_body(image=None)),
+    )
+    assert removed.status_code == 200, removed.text
+    assert removed.json()["image"] is None
+    assert removed.json()["images"] == []
+    assert not (tmp_path / stored.removeprefix("/media/")).exists()
+    public = await client.get("/api/v1/pages/sustainability/origin")
+    assert public.json()["image"] is None
 
     restored = await client.put(
         "/api/v1/admin/pages/sustainability/origin",
@@ -164,9 +147,6 @@ async def test_editor_can_hide_upload_and_restore_photos(
         files=_parts(_seed_body()),
     )
     assert restored.status_code == 200, restored.text
-    assert [image["src"] for image in restored.json()["images"]] == [LAMP, FROCK]
-    assert not (tmp_path / stored.removeprefix("/media/")).exists()
-
     public = await client.get("/api/v1/pages/sustainability/origin")
     assert public.json()["title"] == TITLE
-    assert [image["src"] for image in public.json()["images"]] == [LAMP, FROCK]
+    assert [image["src"] for image in public.json()["images"]] == [LAMP]
