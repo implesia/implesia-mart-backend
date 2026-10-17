@@ -20,6 +20,7 @@ class CategoryTileRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
+    parent_id: uuid.UUID | None = None
     label: str
     href: str
     image_src: str
@@ -29,6 +30,7 @@ class CategoryTileRead(BaseModel):
 
 class CategoryTilePublic(BaseModel):
     id: uuid.UUID
+    parent_id: uuid.UUID | None = None
     label: str
     href: str
     image_src: str
@@ -54,6 +56,7 @@ class CategoryHeadingUpdate(WriteModel):
 
 
 class CategoryTileWrite(WriteModel):
+    parent_id: uuid.UUID | None = None
     label: str = Field(min_length=1, max_length=120)
     href: str = Field("", max_length=255)
     image_src: str = Field("", max_length=255)
@@ -74,6 +77,8 @@ class CategoryTileWrite(WriteModel):
 
 
 class CategoryTileUpdate(WriteModel):
+    # Omit to keep the current parent; send null to move the category to the top level.
+    parent_id: uuid.UUID | None = None
     label: str | None = Field(None, min_length=1, max_length=120)
     href: str | None = Field(None, max_length=255)
     image_src: str | None = Field(None, max_length=255)
@@ -98,4 +103,4 @@ class CategoryTileUpdate(WriteModel):
 
 
 class CategoryReorder(WriteModel):
-    ids: list[uuid.UUID] = Field(max_length=24)
+    ids: list[uuid.UUID] = Field(max_length=200)

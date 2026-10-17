@@ -19,7 +19,7 @@ from app.schemas.home.category import (
 from app.services.image_storage import delete_owned_media, owned_refs, read_image, store_image
 
 CATEGORY_SLUG = "home"
-MAX_TILES = 24
+MAX_TILES = 200
 _MEDIA = "categories"
 DEFAULT_HEADING = "ক্যাটাগরি"
 DEFAULTS: tuple[dict[str, object], ...] = (
@@ -78,18 +78,82 @@ async def admin_view(db: AsyncSession) -> CategoryAdmin:
     return CategoryAdmin(heading=row.heading, tiles=[present(tile) for tile in tiles])
 
 
+def visible_tiles(tiles: list[HomeCategoryTile]) -> list[HomeCategoryTile]:
+    """Active tiles whose every ancestor is active too.
+
+    Hiding a parent hides its whole subtree, so a hidden branch never leaks to the
+    storefront as top-level orphans. A parent that no longer exists counts as top
+    level, and a cycle (which validation prevents) is treated as hidden.
+    """
+    by_id = {tile.id: tile for tile in tiles}
+    memo: dict[uuid.UUID, bool] = {}
+
+    def shown(tile: HomeCategoryTile) -> bool:
+        path: list[uuid.UUID] = []
+        seen: set[uuid.UUID] = set()
+        current: HomeCategoryTile | None = tile
+        result = True
+        while current is not None:
+            if current.id in memo:
+                result = memo[current.id]
+                break
+            if current.id in seen or not current.is_active:
+                result = False
+                break
+            seen.add(current.id)
+            path.append(current.id)
+            current = by_id.get(current.parent_id) if current.parent_id else None
+        for tile_id in path:
+            memo[tile_id] = result
+        return result
+
+    return [tile for tile in tiles if shown(tile)]
+
+
 async def public_view(db: AsyncSession) -> CategoryPublic:
     row = await ensure_categories(db)
-    tiles = await _tiles(db, row.id, active_only=True)
+    tiles = visible_tiles(await _tiles(db, row.id, active_only=False))
     return CategoryPublic(
         heading=row.heading,
         tiles=[
             CategoryTilePublic(
-                id=tile.id, label=tile.label, href=tile.href, image_src=tile.image_src
+                id=tile.id,
+                parent_id=tile.parent_id,
+                label=tile.label,
+                href=tile.href,
+                image_src=tile.image_src,
             )
             for tile in tiles
         ],
     )
+
+
+async def _check_parent(
+    db: AsyncSession, category_id: uuid.UUID, tile_id: uuid.UUID | None, parent_id: uuid.UUID
+) -> None:
+    """Reject a parent that is missing, the tile itself, or one of its descendants."""
+    if tile_id is not None and parent_id == tile_id:
+        raise UnprocessableError("A category cannot be its own parent")
+    parent = await db.get(HomeCategoryTile, parent_id)
+    if parent is None or parent.category_id != category_id:
+        raise UnprocessableError("Parent category not found")
+    if tile_id is None:
+        return
+    rows = await db.execute(
+        select(HomeCategoryTile.id, HomeCategoryTile.parent_id).where(
+            HomeCategoryTile.category_id == category_id
+        )
+    )
+    parents: dict[uuid.UUID, uuid.UUID | None] = {}
+    for row_id, row_parent in rows.all():
+        parents[row_id] = row_parent
+    seen: set[uuid.UUID] = set()
+    current: uuid.UUID | None = parent_id
+    while current is not None and current not in seen:
+        if current == tile_id:
+            raise UnprocessableError("A category cannot move under its own subcategory")
+        seen.add(current)
+        current = parents.get(current)
 
 
 async def update_heading(db: AsyncSession, payload: CategoryHeadingUpdate) -> CategoryAdmin:
@@ -132,12 +196,14 @@ async def create_tile(
             .where(HomeCategoryTile.category_id == row.id)
         )
         if int(count or 0) >= MAX_TILES:
-            raise UnprocessableError("You can show up to 24 categories")
+            raise UnprocessableError(f"You can add up to {MAX_TILES} categories")
         current = await db.scalar(
             select(func.max(HomeCategoryTile.sort_order)).where(
                 HomeCategoryTile.category_id == row.id
             )
         )
+        if payload.parent_id is not None:
+            await _check_parent(db, row.id, None, payload.parent_id)
         tile = HomeCategoryTile(
             category_id=row.id,
             sort_order=0 if current is None else int(current) + 1,
@@ -164,7 +230,10 @@ async def update_tile(
         if stored is not None:
             payload = payload.model_copy(update={"image_src": stored})
         _reject_staged_path(payload.image_src)
-        for field, value in payload.model_dump(exclude_unset=True).items():
+        changes = payload.model_dump(exclude_unset=True)
+        if changes.get("parent_id") is not None:
+            await _check_parent(db, tile.category_id, tile.id, changes["parent_id"])
+        for field, value in changes.items():
             setattr(tile, field, value)
         await db.commit()
     except Exception:
@@ -179,6 +248,13 @@ async def update_tile(
 
 async def delete_tile(db: AsyncSession, tile: HomeCategoryTile) -> None:
     owned = owned_refs(tile.image_src, folder=_MEDIA)
+    # Children move up one level instead of disappearing with their parent.
+    children = await db.execute(
+        select(HomeCategoryTile).where(HomeCategoryTile.parent_id == tile.id)
+    )
+    for child in children.scalars().all():
+        child.parent_id = tile.parent_id
+    await db.flush()
     await db.delete(tile)
     await db.commit()
     delete_owned_media(owned, folder=_MEDIA)
