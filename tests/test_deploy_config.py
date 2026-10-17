@@ -111,3 +111,12 @@ def test_render_boots_gunicorn_without_reload() -> None:
     assert "--reload" not in blueprint
     assert "gunicorn" in start
     assert "--reload" not in start
+
+
+def test_production_compose_keeps_media_on_a_named_volume() -> None:
+    text = (ROOT / "docker-compose.prod.yml").read_text()
+    assert "media:/srv/media" in text
+    assert "implesia-mart-media" in text
+    assert "127.0.0.1:" in text
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    assert "chown appuser:appuser /srv/media" in dockerfile

@@ -1,0 +1,27 @@
+# Production API on the VPS (Caddy in front, terminating TLS for the sslip.io hostname).
+# Local development keeps using docker-compose.yml.
+#
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+#
+# Uploads live on the named volume `media`, so rebuilding or recreating the
+# container keeps them. See docs/deploy-media-persistence.md.
+name: implesia-mart-prod
+
+services:
+  api:
+    build: .
+    image: implesia-mart-backend:prod
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"
+    # Bind to loopback only; Caddy on the host proxies to it.
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
+    volumes:
+      - media:/srv/media
+
+volumes:
+  media:
+    name: implesia-mart-media
