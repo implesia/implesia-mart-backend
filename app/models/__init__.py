@@ -46,6 +46,7 @@ from app.models.home.newsletter import HomeNewsletter, HomeNewsletterPerk
 from app.models.home.review import HomeReview, HomeReviewItem
 from app.models.home.showcase import HomeShowcase, HomeShowcaseItem, HomeShowcaseRow
 from app.models.home.trust import HomeTrust, HomeTrustItem
+from app.models.inquiry import Inquiry, InquiryStatus, InquiryType
 from app.models.order import Order, OrderIdempotency, OrderItem
 from app.models.privacy.collection import PrivacyCollection, PrivacyCollectionCard
 from app.models.privacy.contents import PrivacyContents
@@ -91,6 +92,9 @@ from app.models.sustainability.quality import (
 from app.models.user import User, UserRole
 
 __all__ = [
+    "Inquiry",
+    "InquiryStatus",
+    "InquiryType",
     "AboutCta",
     "AboutDressBlock",
     "AboutDressFeature",
