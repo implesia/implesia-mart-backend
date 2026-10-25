@@ -13,7 +13,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.exceptions import NotFoundError, UnprocessableError
 from app.models.cart import Cart, CartItem
-from app.models.product import Product, StockStatus
+from app.models.product import Product, ProductVariant, StockStatus
 from app.models.user import User
 from app.schemas.cart import (
     AdminCartItemRead,
@@ -27,7 +27,7 @@ from app.schemas.cart import (
     cart_page_count,
 )
 from app.schemas.product import OptionChoice
-from app.services import delivery_service
+from app.services import delivery_service, variant_service
 from app.services.product_options import resolve_selection, selection_of
 from app.services.product_service import content_of
 
@@ -35,6 +35,7 @@ MAX_QTY = 5
 _TOKEN = re.compile(r"^[A-Za-z0-9_-]{20,128}$")
 _CART_LOAD = (
     selectinload(Cart.items).selectinload(CartItem.product),
+    selectinload(Cart.items).selectinload(CartItem.variant),
     selectinload(Cart.user),
 )
 
@@ -45,15 +46,20 @@ class Shopper:
     guest_token: str | None = None
 
 
-def _cap(product: Product) -> int:
-    if product.quantity is None:
-        return MAX_QTY
-    return min(MAX_QTY, product.quantity)
+def _cap(product: Product, variant: ProductVariant | None = None) -> int:
+    return variant_service.stock_cap(product, variant)
 
 
-def _purchasable(product: Product) -> bool:
+def _purchasable(product: Product, variant: ProductVariant | None = None) -> bool:
+    if variant is not None and not variant.is_active:
+        return False
+    if variant is None and product.has_variants:
+        return False  # a variant product is only sold through one of its variants
+    minimum = variant_service.order_limits(product)[0]
     return bool(
-        product.published and product.status == StockStatus.AVAILABLE and _cap(product) >= 1
+        product.published
+        and product.status == StockStatus.AVAILABLE
+        and _cap(product, variant) >= max(1, minimum)
     )
 
 
@@ -110,8 +116,10 @@ def _lines(cart: Cart) -> tuple[list[CartItemRead], int, int]:
     count = 0
     for item in cart.items:
         product = item.product
-        available = _purchasable(product)
-        unit_price = product.price
+        variant = item.variant
+        available = _purchasable(product, variant)
+        unit_price = variant.price if variant is not None else product.price
+        minimum, maximum = variant_service.order_limits(product)
         line_total = unit_price * item.quantity if available else 0
         if available:
             subtotal += line_total
@@ -120,6 +128,10 @@ def _lines(cart: Cart) -> tuple[list[CartItemRead], int, int]:
             CartItemRead(
                 id=item.id,
                 product_id=product.id,
+                variant_id=variant.id if variant is not None else None,
+                sku=variant.sku if variant is not None else "",
+                min_quantity=minimum,
+                max_quantity=maximum,
                 title=product.title,
                 slug=product.slug,
                 image_src=product.image_src,
@@ -226,16 +238,27 @@ def _touch(cart: Cart) -> None:
 async def _merge(db: AsyncSession, user_cart: Cart, guest: Cart) -> None:
     for item in list(guest.items):
         existing = next(
-            (row for row in user_cart.items if row.product_id == item.product_id),
+            (
+                row
+                for row in user_cart.items
+                if row.product_id == item.product_id and row.variant_id == item.variant_id
+            ),
             None,
         )
         product = item.product
-        room = _cap(product) if _purchasable(product) else item.quantity
+        room = _cap(product, item.variant) if _purchasable(product, item.variant) else item.quantity
         combined = item.quantity + (existing.quantity if existing else 0)
         quantity = min(room, combined)
         quantity = max(1, min(MAX_QTY, quantity))
         if existing is None:
-            user_cart.items.append(CartItem(product_id=product.id, quantity=quantity))
+            user_cart.items.append(
+                CartItem(
+                    product_id=product.id,
+                    variant_id=item.variant_id,
+                    quantity=quantity,
+                    selection=item.selection,
+                )
+            )
         else:
             existing.quantity = quantity
     _touch(user_cart)
@@ -299,16 +322,20 @@ async def _product(db: AsyncSession, product_id: uuid.UUID) -> Product:
     return product
 
 
-def _ensure_room(product: Product, next_quantity: int) -> None:
-    if not _purchasable(product):
+def _ensure_room(product: Product, variant: ProductVariant | None, next_quantity: int) -> None:
+    if not _purchasable(product, variant):
         raise UnprocessableError("This product cannot be added to the cart")
-    cap = _cap(product)
+    minimum, maximum = variant_service.order_limits(product)
+    if next_quantity < minimum:
+        raise UnprocessableError(f"The minimum order for this product is {minimum}")
+    cap = _cap(product, variant)
     if next_quantity > cap:
-        if product.quantity is not None and product.quantity < MAX_QTY:
+        stock = variant.quantity if variant is not None else product.quantity
+        if stock is not None and stock < maximum:
             raise UnprocessableError(
                 "There is not enough stock for that quantity. Please choose fewer."
             )
-        raise UnprocessableError("A product can have at most 5 in the cart")
+        raise UnprocessableError(f"A product can have at most {maximum} in the cart")
 
 
 async def add_item(
@@ -317,17 +344,40 @@ async def add_item(
     product_id: uuid.UUID,
     quantity: int,
     choices: list[OptionChoice],
+    variant_id: uuid.UUID | None = None,
 ) -> CartRead:
     cart, token = await _open(db, shopper, create=True)
     if cart is None:
         raise NotFoundError("Cart item not found")
     product = await _product(db, product_id)
-    chosen = [item.model_dump() for item in resolve_selection(content_of(product), choices)]
-    existing = next((item for item in cart.items if item.product_id == product.id), None)
+    variant = await variant_service.resolve_for_purchase(db, product, variant_id)
+    if variant is not None:
+        chosen = [
+            item.model_dump()
+            for item in variant_service.selection_of_variant(content_of(product), variant.options)
+        ]
+    else:
+        chosen = [item.model_dump() for item in resolve_selection(content_of(product), choices)]
+    existing = next(
+        (
+            item
+            for item in cart.items
+            if item.product_id == product.id
+            and item.variant_id == (variant.id if variant is not None else None)
+        ),
+        None,
+    )
     next_quantity = quantity + (existing.quantity if existing else 0)
-    _ensure_room(product, next_quantity)
+    _ensure_room(product, variant, next_quantity)
     if existing is None:
-        cart.items.append(CartItem(product_id=product.id, quantity=next_quantity, selection=chosen))
+        cart.items.append(
+            CartItem(
+                product_id=product.id,
+                variant_id=variant.id if variant is not None else None,
+                quantity=next_quantity,
+                selection=chosen,
+            )
+        )
     else:
         existing.quantity = next_quantity
         if chosen:
@@ -352,7 +402,7 @@ async def set_quantity(
     item = next((row for row in cart.items if row.id == item_id), None)
     if item is None:
         raise NotFoundError("Cart item not found")
-    _ensure_room(item.product, quantity)
+    _ensure_room(item.product, item.variant, quantity)
     item.quantity = quantity
     _touch(cart)
     await db.commit()

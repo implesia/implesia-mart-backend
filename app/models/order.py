@@ -118,6 +118,12 @@ class OrderItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     product_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("products.id", ondelete="SET NULL"), nullable=True
     )
+    # Variant sold on this line. SET NULL if the variant is later deleted; `sku`, `selection`
+    # and `unit_price` below stay as the snapshot.
+    variant_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("product_variants.id", ondelete="SET NULL"), nullable=True
+    )
+    sku: Mapped[str] = mapped_column(String(64), nullable=False, default="", server_default="")
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     slug: Mapped[str] = mapped_column(String(160), nullable=False)
     image_src: Mapped[str] = mapped_column(String(2048), nullable=False, default="")

@@ -57,7 +57,7 @@ from app.models.privacy.rights import PrivacyRightItem, PrivacyRights
 from app.models.privacy.sharing import PrivacySharing, PrivacySharingChip
 from app.models.privacy.support import PrivacySupport
 from app.models.privacy.usage import PrivacyUsage, PrivacyUsageBadge, PrivacyUsageItem
-from app.models.product import Product
+from app.models.product import Product, ProductVariant
 from app.models.refresh_token import RefreshToken
 from app.models.shipping.block import (
     ShippingBlock,
@@ -183,6 +183,7 @@ __all__ = [
     "PrivacyUsageBadge",
     "PrivacyUsageItem",
     "Product",
+    "ProductVariant",
     "RefreshToken",
     "ShippingBlock",
     "ShippingBlockCard",

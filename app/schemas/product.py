@@ -350,6 +350,68 @@ class ProductContent(BaseModel):
         return kept
 
 
+MAX_VARIANTS = 100
+
+
+class VariantInput(BaseModel):
+    """One variant as the dashboard sends it. `id` is set when editing an existing variant."""
+
+    model_config = ConfigDict(extra="forbid", validate_default=True)
+
+    id: uuid.UUID | None = None
+    options: dict[str, str] = Field(min_length=1, max_length=6)
+    sku: str = ""
+    price: int = Field(ge=0, le=MAX_PRICE)
+    compare_at_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
+    quantity: int | None = Field(default=None, ge=0, le=MAX_QUANTITY)
+    is_active: bool = True
+
+    @field_validator("options")
+    @classmethod
+    def _options(cls, value: dict[str, str]) -> dict[str, str]:
+        for group_id, value_id in value.items():
+            if not _ROW_ID.fullmatch(group_id) or not _ROW_ID.fullmatch(value_id):
+                raise ValueError("Option ids are not valid")
+        return value
+
+    @field_validator("sku")
+    @classmethod
+    def _sku(cls, value: str) -> str:
+        text = clean_line(value, 64)
+        if any(ch in text for ch in "|="):
+            raise ValueError("SKU cannot contain | or =")
+        return text
+
+    @model_validator(mode="after")
+    def _prices(self) -> Self:
+        if self.compare_at_price is not None and self.compare_at_price < self.price:
+            raise ValueError("Compare-at price must be at least the selling price")
+        return self
+
+
+class VariantRead(BaseModel):
+    id: uuid.UUID
+    options: dict[str, str]
+    label: str
+    sku: str
+    price: int
+    compare_at_price: int | None
+    quantity: int | None
+    is_active: bool
+    sort_order: int
+
+
+class PublicVariant(BaseModel):
+    """What a shopper may see. No stock count: only whether it can be bought now."""
+
+    id: uuid.UUID
+    options: dict[str, str]
+    label: str
+    price: int
+    compare_at_price: int | None
+    available: bool
+
+
 class ProductCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_default=True)
 
@@ -368,6 +430,9 @@ class ProductCreate(BaseModel):
     published: bool = False
     slug: str | None = None
     content: ProductContent = Field(default_factory=ProductContent)
+    min_order_quantity: int = Field(1, ge=1, le=5)
+    max_order_quantity: int | None = Field(default=None, ge=1, le=5)
+    variants: list[VariantInput] = Field(default_factory=list, max_length=MAX_VARIANTS)
 
     @field_validator("title")
     @classmethod
@@ -408,6 +473,11 @@ class ProductCreate(BaseModel):
             raise ValueError("Compare-at price must be at least the selling price")
         if self.category_id is None and self.category is None:
             raise ValueError("Choose a category")
+        if (
+            self.max_order_quantity is not None
+            and self.max_order_quantity < self.min_order_quantity
+        ):
+            raise ValueError("Maximum order quantity must be at least the minimum")
         return self
 
 
@@ -427,6 +497,11 @@ class ProductUpdate(BaseModel):
     featured: bool | None = None
     published: bool | None = None
     content: ProductContent | None = None
+    min_order_quantity: int | None = Field(default=None, ge=1, le=5)
+    max_order_quantity: int | None = Field(default=None, ge=1, le=5)
+    # Omitted = leave variants as they are. [] = remove them all (price and stock go back
+    # to the product row).
+    variants: list[VariantInput] | None = Field(default=None, max_length=MAX_VARIANTS)
 
     @field_validator("title")
     @classmethod
@@ -478,11 +553,15 @@ class AdminProductCard(BaseModel):
     image_src: str
     featured: bool
     published: bool
+    has_variants: bool = False
     created_at: datetime
 
 
 class AdminProductRead(AdminProductCard):
     content: ProductContent
+    min_order_quantity: int = 1
+    max_order_quantity: int | None = None
+    variants: list[VariantRead] = Field(default_factory=list)
     updated_at: datetime
 
 
@@ -557,6 +636,8 @@ class PublicProductCard(BaseModel):
     badge: ProductBadge | None
     status: StockStatus
     featured: bool
+    # True when the price shown is the lowest of several variants ("From ...").
+    has_variants: bool = False
 
 
 class PublicProductDetail(PublicProductCard):
@@ -579,6 +660,9 @@ class PublicProductDetail(PublicProductCard):
     specs: list[PublicSpec]
     faqs: list[PublicFaq]
     options: list[PublicOptionGroup]
+    variants: list[PublicVariant] = Field(default_factory=list)
+    min_per_order: int = 1
+    max_per_order: int = 5
     related: list[PublicProductCard]
 
 

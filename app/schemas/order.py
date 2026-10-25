@@ -19,6 +19,7 @@ class OrderLineInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     product_id: uuid.UUID
+    variant_id: uuid.UUID | None = None
     quantity: int = Field(ge=1, le=5)
     selection: list[OptionChoice] = Field(default_factory=list, max_length=6)
 
@@ -75,6 +76,8 @@ class OrderCreate(OrderQuoteRequest):
 
 class QuoteLineRead(BaseModel):
     product_id: uuid.UUID
+    variant_id: uuid.UUID | None = None
+    sku: str = ""
     cart_item_id: uuid.UUID | None = None
     title: str
     slug: str
@@ -100,6 +103,8 @@ class QuoteRead(BaseModel):
 class OrderItemRead(BaseModel):
     id: uuid.UUID
     product_id: uuid.UUID | None
+    variant_id: uuid.UUID | None = None
+    sku: str = ""
     title: str
     slug: str
     image_src: str

@@ -12,6 +12,8 @@ class CartItemCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     product_id: uuid.UUID
+    # Required for a product that has variants, rejected for one that does not.
+    variant_id: uuid.UUID | None = None
     quantity: int = Field(1, ge=1, le=5)
     selection: list[OptionChoice] = Field(default_factory=list, max_length=6)
 
@@ -25,6 +27,10 @@ class CartItemUpdate(BaseModel):
 class CartItemRead(BaseModel):
     id: uuid.UUID
     product_id: uuid.UUID
+    variant_id: uuid.UUID | None = None
+    sku: str = ""
+    min_quantity: int = 1
+    max_quantity: int = 5
     title: str
     slug: str
     image_src: str

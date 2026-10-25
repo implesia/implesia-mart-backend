@@ -15,7 +15,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from app.core.exceptions import ConflictError, NotFoundError, UnprocessableError
 from app.models.audit_event import AuditAction
 from app.models.category import Category
-from app.models.product import Product, ProductBadge, StockStatus
+from app.models.product import Product, ProductBadge, ProductVariant, StockStatus
 from app.models.user import User
 from app.schemas.common import page_count
 from app.schemas.product import (
@@ -42,7 +42,7 @@ from app.schemas.product import (
     PublicProductList,
     PublicSpec,
 )
-from app.services import audit_service, category_service
+from app.services import audit_service, category_service, variant_service
 from app.services.category_service import CategoryIndex
 from app.services.image_storage import (
     delete_owned_media,
@@ -229,13 +229,23 @@ async def _insert_product(db: AsyncSession, payload: ProductCreate) -> Product:
         published=payload.published,
         sort_order=sort_order,
         content=stored,
+        min_order_quantity=payload.min_order_quantity,
+        max_order_quantity=payload.max_order_quantity,
     )
     db.add(product)
     try:
+        if payload.variants:
+            await db.flush()
+            await variant_service.save_variants(
+                db, product, payload.content, payload.variants, explicit_status=True
+            )
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
         raise ConflictError("A product with this slug already exists") from exc
+    except Exception:
+        await db.rollback()
+        raise
     await db.refresh(product)
     return product
 
@@ -287,7 +297,15 @@ async def _apply_update(
         "quantity": product.quantity,
         "status": product.status,
     }
-    fields = payload.model_dump(exclude_unset=True, exclude={"content", "category", "category_id"})
+    fields = payload.model_dump(
+        exclude_unset=True, exclude={"content", "category", "category_id", "variants"}
+    )
+    if fields.get("min_order_quantity", 0) is None:
+        fields.pop("min_order_quantity")
+    new_min = int(fields.get("min_order_quantity", product.min_order_quantity))
+    new_max = fields.get("max_order_quantity", product.max_order_quantity)
+    if new_max is not None and int(new_max) < new_min:
+        raise UnprocessableError("Maximum order quantity must be at least the minimum")
     if payload.category_id is not None or payload.category is not None:
         target = await category_service.resolve_for_product(
             db, category_id=payload.category_id, legacy_slug=payload.category
@@ -326,6 +344,17 @@ async def _apply_update(
         product.content = stored
         if not product.image_src and gallery:
             product.image_src = gallery[0].src
+
+    if payload.variants is not None:
+        await variant_service.save_variants(
+            db,
+            product,
+            content_of(product),
+            payload.variants,
+            explicit_status="status" in payload.model_fields_set,
+        )
+    elif has_content:
+        await variant_service.ensure_still_valid(db, product, content_of(product))
 
     await _audit_catalog_changes(db, product, actor, before)
     await db.commit()
@@ -572,6 +601,7 @@ def admin_card(product: Product, index: CategoryIndex) -> AdminProductCard:
         image_src=product.image_src,
         featured=product.featured,
         published=product.published,
+        has_variants=product.has_variants,
         created_at=product.created_at,
     )
 
@@ -583,12 +613,24 @@ def content_of(product: Product) -> ProductContent:
     return ProductContent.model_validate(raw)
 
 
-def admin_read(product: Product, index: CategoryIndex) -> AdminProductRead:
+def admin_read(
+    product: Product, index: CategoryIndex, variants: list[ProductVariant] | None = None
+) -> AdminProductRead:
+    content = content_of(product)
     return AdminProductRead(
         **admin_card(product, index).model_dump(),
-        content=content_of(product),
+        content=content,
+        min_order_quantity=product.min_order_quantity,
+        max_order_quantity=product.max_order_quantity,
+        variants=variant_service.admin_read(content, variants or []),
         updated_at=product.updated_at,
     )
+
+
+async def admin_read_full(
+    db: AsyncSession, product: Product, index: CategoryIndex
+) -> AdminProductRead:
+    return admin_read(product, index, await variant_service.list_variants(db, product.id))
 
 
 def public_card(product: Product, index: CategoryIndex) -> PublicProductCard:
@@ -606,11 +648,15 @@ def public_card(product: Product, index: CategoryIndex) -> PublicProductCard:
         badge=ProductBadge(product.badge) if product.badge else None,
         status=StockStatus(product.status),
         featured=product.featured,
+        has_variants=product.has_variants,
     )
 
 
 def public_detail(
-    product: Product, related: list[Product], index: CategoryIndex
+    product: Product,
+    related: list[Product],
+    index: CategoryIndex,
+    variants: list[ProductVariant] | None = None,
 ) -> PublicProductDetail:
     content = content_of(product)
     gallery = [
@@ -655,6 +701,9 @@ def public_detail(
             )
             for group in content.options
         ],
+        variants=variant_service.public_read(product, content, variants or []),
+        min_per_order=variant_service.order_limits(product)[0],
+        max_per_order=variant_service.order_limits(product)[1],
         related=[public_card(item, index) for item in related],
     )
 
@@ -761,4 +810,5 @@ async def _public_detail(db: AsyncSession, match: Any) -> PublicProductDetail:
         .scalars()
         .all()
     )
-    return public_detail(product, related, index)
+    variants = await variant_service.list_variants(db, product.id) if product.has_variants else []
+    return public_detail(product, related, index, variants)
