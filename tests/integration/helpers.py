@@ -2,10 +2,18 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from app.models.audit_event import AuditAction, AuditEvent
+from app.models.category import Category
 from app.models.order import Order
 from app.models.product import Product, StockStatus
 from app.models.refresh_token import RefreshToken
 from app.models.user import User, UserRole
+
+SEED_CATEGORY_ID = uuid.UUID("00000000-0000-0000-0000-00000000fa51")
+
+
+def seed_category() -> Category:
+    """The legacy `fashion` root every integration product belongs to (re-seeded per test)."""
+    return Category(id=SEED_CATEGORY_ID, slug="fashion", name="Fashion", sort_order=0)
 
 
 def product(
@@ -18,6 +26,7 @@ def product(
         slug=f"pg-{uuid.uuid4().hex[:12]}",
         title="Integration product",
         category="fashion",
+        category_id=SEED_CATEGORY_ID,
         price=price,
         quantity=quantity,
         status=status,

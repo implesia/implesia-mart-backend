@@ -42,7 +42,7 @@ from app.services.image_storage import delete_owned_media, owned_refs, read_imag
 _MEDIA = "categories"
 _SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 MAX_CATEGORIES = 1000
-LEGACY_DEFAULTS: dict[str, str] = {"gadgets": "Trending Gadgets", "fashion": "Gorgeous Dresses"}
+LEGACY_DEFAULTS: dict[str, str] = {"gadgets": "ট্রেন্ডিং গ্যাজেট", "fashion": "গর্জিয়াস ড্রেস"}
 
 
 def _sort_key(row: Category) -> tuple[int, str, str]:

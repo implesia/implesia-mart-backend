@@ -1,6 +1,17 @@
 import uuid
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, Integer, String, Text, true
+from sqlalchemy import (
+    DDL,
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    event,
+    true,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql.elements import conv
 
@@ -48,3 +59,39 @@ class Category(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     def __repr__(self) -> str:
         return f"<Category {self.slug}>"
+
+
+# The same guard migration 0075 installs, attached to the table so `create_all` (the
+# integration test database) gets it too. Migration SQL is kept separately on purpose.
+_CYCLE_FUNCTION = DDL(
+    """
+CREATE OR REPLACE FUNCTION categories_prevent_cycle() RETURNS trigger AS $$
+BEGIN
+    IF NEW.parent_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+    PERFORM pg_advisory_xact_lock(7507501);
+    IF EXISTS (
+        WITH RECURSIVE up(id, parent_id, n) AS (
+            SELECT id, parent_id, 1 FROM categories WHERE id = NEW.parent_id
+            UNION ALL
+            SELECT c.id, c.parent_id, up.n + 1
+            FROM categories c JOIN up ON c.id = up.parent_id
+            WHERE up.n < 64
+        )
+        SELECT 1 FROM up WHERE id = NEW.id
+    ) THEN
+        RAISE EXCEPTION 'category cycle: %% cannot sit under its own descendant', NEW.id
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+).execute_if(dialect="postgresql")
+_CYCLE_TRIGGER = DDL(
+    "CREATE TRIGGER categories_no_cycle BEFORE INSERT OR UPDATE OF parent_id "
+    "ON categories FOR EACH ROW EXECUTE FUNCTION categories_prevent_cycle()"
+).execute_if(dialect="postgresql")
+event.listen(Category.__table__, "after_create", _CYCLE_FUNCTION)
+event.listen(Category.__table__, "after_create", _CYCLE_TRIGGER)

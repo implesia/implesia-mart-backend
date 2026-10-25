@@ -19,7 +19,7 @@ pytestmark = pytest.mark.postgres
 _STOCK_REJECTION = "This product cannot be ordered"
 
 
-def _order(product_id: uuid.UUID) -> OrderCreate:
+def _order(product_id: uuid.UUID, quantity: int = 1) -> OrderCreate:
     return OrderCreate(
         source="direct",
         customer_name="Race Buyer",
@@ -27,7 +27,7 @@ def _order(product_id: uuid.UUID) -> OrderCreate:
         district="ঢাকা",
         area="গুলশান",
         address="House 12, Road 4, Gulshan",
-        items=[OrderLineInput(product_id=product_id, quantity=1)],
+        items=[OrderLineInput(product_id=product_id, quantity=quantity)],
     )
 
 
@@ -81,3 +81,38 @@ async def test_one_unit_can_be_bought_only_once(
         assert left.status == StockStatus.SOLD_OUT.value
         orders = await db.scalar(select(func.count()).select_from(Order))
         assert orders == 1
+
+
+async def test_two_orders_for_more_than_the_stock_never_oversell(
+    pg: async_sessionmaker[AsyncSession],
+) -> None:
+    """Stock 3, two buyers want 2 each: one order, one safe refusal, stock never negative."""
+    async with pg() as db:
+        row = product(quantity=3)
+        db.add(row)
+        await db.commit()
+        product_id = row.id
+
+    async def buy(token: str) -> str:
+        async with pg() as db:
+            try:
+                placed = await order_service.create_order(
+                    db, Shopper(guest_token=token), _order(product_id, 2), uuid.uuid4().hex
+                )
+            except UnprocessableError as exc:
+                await db.rollback()
+                return exc.message
+        return placed.number
+
+    results = await asyncio.wait_for(
+        asyncio.gather(buy("guest-token-buyer-a-0001"), buy("guest-token-buyer-b-0002")),
+        timeout=15,
+    )
+    assert sum(item.startswith("IM-") for item in results) == 1
+    refusal = next(item for item in results if not item.startswith("IM-"))
+    assert "not enough stock" in refusal
+    assert not any(ch.isdigit() for ch in refusal)  # the remaining count is never revealed
+    async with pg() as db:
+        left = await db.get(Product, product_id)
+        assert left is not None and left.quantity == 1
+        assert await db.scalar(select(func.count()).select_from(Order)) == 1
