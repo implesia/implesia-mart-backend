@@ -90,7 +90,6 @@ tests/                   SQLite unit tests
 | Cart        | `GET /api/v1/cart`, plus item create, update, and delete                              | `GET /api/v1/admin/carts`                            | editor for the inbox            |
 | Delivery    | `GET /api/v1/delivery`                                                                | `GET` `PATCH /api/v1/admin/delivery`                 | editor                          |
 | Orders      | `POST /api/v1/orders/quote`, `POST /orders/lookup`, `POST /orders`                    | `GET` `PATCH /api/v1/admin/orders`                   | editor                          |
-
 | Dashboard   | —                                                                                     | `GET /api/v1/admin/dashboard`                        | editor                          |
 | Audit       | —                                                                                     | `GET /api/v1/admin/audit-events`                     | superadmin                      |
 | Users       | —                                                                                     | `GET` `POST` `PATCH` `DELETE /api/v1/users`          | superadmin                      |
