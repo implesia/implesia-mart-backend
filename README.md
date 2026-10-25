@@ -92,6 +92,7 @@ tests/                   SQLite unit tests
 | Orders      | `POST /api/v1/orders/quote`, `POST /orders/lookup`, `POST /orders`                    | `GET` `PATCH /api/v1/admin/orders`                   | editor                          |
 
 Variants: a product may carry `variants` (one per option combination, each with its own price, compare-at price, SKU, stock and active flag). Cart lines, quotes and orders take `variant_id`; the server prices and checks stock from the variant row and ignores any client price. Migration `0076` is additive; see its docstring for rollback limits.
+
 | Dashboard   | —                                                                                     | `GET /api/v1/admin/dashboard`                        | editor                          |
 | Audit       | —                                                                                     | `GET /api/v1/admin/audit-events`                     | superadmin                      |
 | Users       | —                                                                                     | `GET` `POST` `PATCH` `DELETE /api/v1/users`          | superadmin                      |
