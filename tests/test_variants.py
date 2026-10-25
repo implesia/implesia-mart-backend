@@ -2,8 +2,9 @@
 
 import json
 import uuid
+from typing import Any
 
-from httpx import AsyncClient
+from httpx import AsyncClient, Response
 
 from tests.test_orders import SHIPPING, _key
 from tests.test_product_options import OPTIONS
@@ -22,12 +23,12 @@ def _content(options: list[dict] | None = None) -> dict:
     }
 
 
-def _combos(**per: dict) -> list[dict]:
+def _combos(per: dict[str, dict[str, Any]] | None = None) -> list[dict]:
     """Two groups (color red/navy, size m/l) give four combinations."""
     rows = []
     for color in ("red", "navy"):
         for size in ("m", "l"):
-            extra = per.get(f"{color}-{size}", {})
+            extra = (per or {}).get(f"{color}-{size}", {})
             rows.append(
                 {
                     "options": {"color-main": color, "size-main": size},
@@ -49,7 +50,7 @@ async def _make(
     **overrides: object,
 ) -> dict:
     body = _product(
-        title=overrides.pop("title", "Variant tee"),  # type: ignore[arg-type]
+        title=str(overrides.pop("title", "Variant tee")),
         category="fashion",
         content=_content(),
         variants=_combos() if variants is None else variants,
@@ -60,12 +61,14 @@ async def _make(
     return response.json()
 
 
-async def _post(client: AsyncClient, headers: dict[str, str], **overrides: object):
+async def _post(client: AsyncClient, headers: dict[str, str], **overrides: object) -> Response:
     body = _product(**{"content": _content(), **overrides})
     return await client.post(ADMIN, headers=headers, files=_parts(body))
 
 
-async def _patch(client: AsyncClient, headers: dict[str, str], product_id: str, body: dict):
+async def _patch(
+    client: AsyncClient, headers: dict[str, str], product_id: str, body: dict
+) -> Response:
     return await client.patch(
         f"{ADMIN}/{product_id}", headers=headers, files=[("payload", (None, json.dumps(body)))]
     )
@@ -92,8 +95,8 @@ def _variant(product: dict, color: str, size: str) -> dict:
 
 
 async def _cart_add(
-    client: AsyncClient, product_id: str, variant_id: str | None, qty: int = 1, **kw
-):
+    client: AsyncClient, product_id: str, variant_id: str | None, qty: int = 1, **kw: Any
+) -> Response:
     body: dict = {"product_id": product_id, "quantity": qty}
     if variant_id is not None:
         body["variant_id"] = variant_id
@@ -124,7 +127,7 @@ async def test_create_with_variants_rolls_up_price_and_stock(
 async def test_made_to_order_variant_makes_the_product_unlimited(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
-    rows = _combos(**{"red-m": {"quantity": None}})
+    rows = _combos({"red-m": {"quantity": None}})
     product = await _make(client, auth_headers, variants=rows)
     assert product["quantity"] is None
 
@@ -132,7 +135,7 @@ async def test_made_to_order_variant_makes_the_product_unlimited(
 async def test_public_detail_lists_variants_without_stock_counts(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
-    rows = _combos(**{"red-m": {"quantity": 0}, "navy-l": {"is_active": False}})
+    rows = _combos({"red-m": {"quantity": 0}, "navy-l": {"is_active": False}})
     product = await _make(client, auth_headers, variants=rows)
     detail = (await client.get(f"/api/v1/products/by-slug/{product['slug']}")).json()
     assert len(detail["variants"]) == 3  # the inactive one is hidden
@@ -322,7 +325,7 @@ async def test_cart_prices_come_from_the_variant_and_lines_are_per_variant(
 async def test_cart_refuses_missing_foreign_inactive_and_sold_out_variants(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
-    rows = _combos(**{"red-l": {"quantity": 0}, "navy-m": {"is_active": False}})
+    rows = _combos({"red-l": {"quantity": 0}, "navy-m": {"is_active": False}})
     product = await _make(client, auth_headers, variants=rows)
     other = await _make(
         client,
@@ -386,7 +389,7 @@ async def test_a_deactivated_variant_shows_unavailable_in_the_cart(
 # ------------------------------------------------------------------ order
 
 
-async def _order(client: AsyncClient, items: list[dict], **extra: object):
+async def _order(client: AsyncClient, items: list[dict], **extra: object) -> Response:
     return await client.post(
         "/api/v1/orders",
         headers={"Idempotency-Key": _key()},
