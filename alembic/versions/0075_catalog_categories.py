@@ -37,7 +37,8 @@ down_revision: str | None = "0074"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-LEGACY = {"gadgets": "Trending Gadgets", "fashion": "Gorgeous Dresses"}
+# Names match the labels the storefront seeded before categories became real entities.
+LEGACY = {"gadgets": "ট্রেন্ডিং গ্যাজেট", "fashion": "গর্জিয়াস ড্রেস"}
 
 CYCLE_FUNCTION = """
 CREATE OR REPLACE FUNCTION categories_prevent_cycle() RETURNS trigger AS $$
@@ -150,7 +151,7 @@ def upgrade() -> None:
         "products",
         ["category_id", "published", "status", "price"],
     )
-    op.drop_constraint("ck_products_category_known", "products", type_="check")
+    op.drop_constraint(op.f("ck_products_category_known"), "products", type_="check")
     op.alter_column("products", "category", existing_type=sa.String(length=32), nullable=True)
 
 
@@ -240,9 +241,7 @@ def downgrade() -> None:
     )
     op.execute("UPDATE products SET category = 'gadgets' WHERE category IS NULL")
     op.alter_column("products", "category", existing_type=sa.String(length=32), nullable=False)
-    op.create_check_constraint(
-        "ck_products_category_known", "products", "category IN ('gadgets', 'fashion')"
-    )
+    op.create_check_constraint("category_known", "products", "category IN ('gadgets', 'fashion')")
     op.drop_index("ix_products_category_storefront", table_name="products")
     op.drop_constraint(op.f("fk_products_category_id_categories"), "products", type_="foreignkey")
     op.drop_column("products", "category_id")
