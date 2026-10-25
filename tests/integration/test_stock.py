@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.exceptions import UnprocessableError
 from app.models.order import Order
-from app.models.product import Product, StockStatus
+from app.models.product import Product, ProductVariant, StockStatus
 from app.schemas.order import OrderCreate, OrderLineInput
 from app.services import order_service
 from app.services.cart_service import Shopper
@@ -44,9 +44,11 @@ async def test_one_unit_can_be_bought_only_once(
     started = asyncio.Barrier(2)
     real_claim = order_service._claim
 
-    async def gated(db: AsyncSession, item: Product, quantity: int) -> tuple[int, str, str, str]:
+    async def gated(
+        db: AsyncSession, item: Product, variant: ProductVariant | None, quantity: int
+    ) -> tuple[int, str, str, str, str]:
         await started.wait()
-        return await real_claim(db, item, quantity)
+        return await real_claim(db, item, variant, quantity)
 
     monkeypatch.setattr(order_service, "_claim", gated)
 

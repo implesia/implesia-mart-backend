@@ -31,5 +31,7 @@ docs {
 
   To add as a logged-in shopper, set auth to Bearer `{{ACCESS_TOKEN}}`.
 
-  `quantity` is 1 to 5. Adding the same product again increases the line, up to 5 and up to the product's stock. Stock is not reduced until an order exists.
+  For a product that has variants (`has_variants` is true in the product detail), send `variant_id` too: the cart line is per variant and its price, SKU and stock come from that variant on the server. A plain product refuses `variant_id`; a variant product refuses a missing one (422). `GET` product detail lists the sellable variants in `variants`.
+
+  `quantity` is 1 to 5, and between the product's `min_per_order` and `max_per_order`. Adding the same product again increases the line, up to 5 and up to the product's stock. Stock is not reduced until an order exists.
 }
