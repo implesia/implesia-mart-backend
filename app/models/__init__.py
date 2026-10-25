@@ -26,6 +26,7 @@ from app.models.blogs.listing import BlogListing
 from app.models.blogs.posts import BlogPost, BlogPostBlock
 from app.models.blogs.related import BlogRelated
 from app.models.cart import Cart, CartItem
+from app.models.category import Category
 from app.models.contact.details import ContactDetailChannel, ContactDetails
 from app.models.contact.faq import ContactFaq, ContactFaqItem
 from app.models.contact.form import ContactForm
@@ -120,6 +121,7 @@ __all__ = [
     "Base",
     "BlogCategories",
     "BlogCategoryItem",
+    "Category",
     "BlogCta",
     "BlogHero",
     "BlogListing",

@@ -1,9 +1,11 @@
+import uuid
 from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    ForeignKey,
     Index,
     Integer,
     String,
@@ -15,11 +17,6 @@ from sqlalchemy.sql.elements import conv
 from sqlalchemy.types import JSON
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-
-
-class ProductCategory(StrEnum):
-    GADGETS = "gadgets"
-    FASHION = "fashion"
 
 
 class StockStatus(StrEnum):
@@ -64,7 +61,6 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="compare_at_gte_price",
         ),
         CheckConstraint("quantity IS NULL OR quantity >= 0", name="quantity_non_negative"),
-        CheckConstraint("category IN ('gadgets', 'fashion')", name="category_known"),
         CheckConstraint(
             "status IN ('available', 'sold-out', 'coming-soon')",
             name="status_known",
@@ -74,6 +70,9 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="badge_known",
         ),
         Index(conv("ix_products_storefront"), "published", "category", "status", "price"),
+        Index(
+            conv("ix_products_category_storefront"), "category_id", "published", "status", "price"
+        ),
         Index(conv("ix_products_featured"), "published", "featured"),
         Index(conv("ix_products_sort_order"), "sort_order"),
         Index(conv("ix_products_created_at"), "created_at"),
@@ -84,7 +83,14 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     subtitle: Mapped[str] = mapped_column(
         String(300), nullable=False, default="", server_default=""
     )
-    category: Mapped[str] = mapped_column(String(32), nullable=False)
+    # Primary category. Every product sits in exactly one node of the tree (any level).
+    # RESTRICT: a category that still holds products cannot be deleted.
+    category_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("categories.id", ondelete="RESTRICT"), nullable=False
+    )
+    # Deprecated: the pre-0075 enum column. Kept (nullable, no CHECK) for one release so a
+    # rollback or a reader of the raw table still works; nothing writes it any more.
+    category: Mapped[str | None] = mapped_column(String(32), nullable=True)
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     compare_at_price: Mapped[int | None] = mapped_column(Integer)
     # Null means made to order. Never returned on the public API.
