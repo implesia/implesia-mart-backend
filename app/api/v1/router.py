@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     admin_products,
     auth,
     cart,
+    categories,
     dashboard,
     delivery,
     inquiries,
@@ -80,6 +81,13 @@ _AUDITED = [Depends(audit_admin_write)]
 
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(products.router, prefix="/products", tags=["products"])
+api_router.include_router(categories.public_router, prefix="/categories", tags=["categories"])
+api_router.include_router(
+    categories.admin_router,
+    prefix="/admin/categories",
+    tags=["admin:categories"],
+    dependencies=_AUDITED,
+)
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(dashboard.router, prefix="/admin/dashboard", tags=["admin:dashboard"])
 api_router.include_router(admin_audit.router, prefix="/admin/audit-events", tags=["admin:audit"])
