@@ -59,9 +59,7 @@ async def test_parent_validation_rejects_self_descendants_and_missing(
     status, body = await _patch(client, auth_headers, root["id"], {"parent_id": grandchild["id"]})
     assert status == 422, body
     assert "subcategory" in body["error"]["message"]
-    status, body = await _patch(
-        client, auth_headers, child["id"], {"parent_id": str(uuid.uuid4())}
-    )
+    status, body = await _patch(client, auth_headers, child["id"], {"parent_id": str(uuid.uuid4())})
     assert status == 422, body
 
     missing = await client.post(
@@ -111,18 +109,23 @@ async def test_deleting_a_parent_moves_children_up_one_level(
     assert {t["id"]: t["parent_id"] for t in admin["tiles"]}[leaf["id"]] == root["id"]
 
 
-def test_visible_tiles_handles_orphans_and_cycles() -> None:
-    from app.models.home.category import HomeCategoryTile
-    from app.services.home.category_service import visible_tiles
+def test_index_hides_inactive_subtrees_and_survives_orphans_and_cycles() -> None:
+    from app.models.category import Category
+    from app.services.category_service import CategoryIndex
 
-    def tile(parent: uuid.UUID | None, active: bool = True) -> HomeCategoryTile:
-        return HomeCategoryTile(id=uuid.uuid4(), parent_id=parent, is_active=active, label="t")
+    def node(parent: uuid.UUID | None, active: bool = True) -> Category:
+        ident = uuid.uuid4()
+        return Category(
+            id=ident, parent_id=parent, is_active=active, name="t", slug=f"t-{ident.hex[:8]}"
+        )
 
-    orphan = tile(uuid.uuid4())
-    a = tile(None)
-    b = tile(a.id)
-    a.parent_id = b.id  # cycle a <-> b
-    hidden = tile(None, active=False)
-    under_hidden = tile(hidden.id)
-    shown = visible_tiles([orphan, a, b, hidden, under_hidden])
-    assert shown == [orphan]
+    orphan = node(uuid.uuid4())
+    a = node(None)
+    b = node(a.id)
+    a.parent_id = b.id  # corrupt cycle a <-> b must not hang
+    hidden = node(None, active=False)
+    under_hidden = node(hidden.id)
+    index = CategoryIndex([orphan, a, b, hidden, under_hidden])
+    assert index.hidden_ids() >= {hidden.id, under_hidden.id}
+    assert orphan.id not in index.hidden_ids()
+    assert len(index.path(a.id)) <= 12

@@ -259,7 +259,7 @@ async def test_admin_filters_match_the_products_table(
     search = await client.get(
         "/api/v1/admin/products",
         headers=auth_headers,
-        params={"q": "gorgeous dresses"},
+        params={"q": "গর্জিয়াস"},
     )
     assert [item["title"] for item in search.json()["items"]] == ["Hidden Dress"]
     assert search.json()["total"] == 1

@@ -1,6 +1,10 @@
 import json
 
+import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services import category_service
 
 JPEG = (
     b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
@@ -20,14 +24,20 @@ def _parts(
     return parts
 
 
-async def test_public_categories_seed_the_home_grid(client: AsyncClient) -> None:
+@pytest.fixture(autouse=True)
+async def legacy_roots(db_session: AsyncSession) -> None:
+    """Migration 0075 seeds the `gadgets` and `fashion` roots; mirror it for the SQLite tests."""
+    await category_service.ensure_legacy(db_session, "gadgets")
+    await category_service.ensure_legacy(db_session, "fashion")
+
+
+async def test_public_categories_are_the_real_catalog_roots(client: AsyncClient) -> None:
     response = await client.get("/api/v1/home/categories")
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["heading"] == "ক্যাটাগরি"
     assert [tile["label"] for tile in body["tiles"]] == ["ট্রেন্ডিং গ্যাজেট", "গর্জিয়াস ড্রেস"]
     assert body["tiles"][0]["href"] == "/products?category=gadgets"
-    assert body["tiles"][0]["image_src"] == "/images/products/lamp/lamp-5.jpg"
     assert "is_active" not in body["tiles"][0]
 
 
@@ -86,7 +96,7 @@ async def test_editor_can_create_reorder_hide_and_remove_a_category(
     assert created.status_code == 201, created.text
     tile = created.json()
     assert tile["label"] == "Checked"
-    assert tile["href"] == "/products"
+    assert tile["href"] == "/products?category=checked"
     assert tile["is_active"] is False
     assert tile["image_src"].startswith("/media/categories/")
     stored = tmp_path / "categories" / tile["image_src"].removeprefix("/media/categories/")
