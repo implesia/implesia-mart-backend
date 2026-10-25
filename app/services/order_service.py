@@ -566,6 +566,7 @@ def _public(order: Order) -> PublicOrderRead:
             PublicOrderItemRead(
                 title=item.title,
                 slug=item.slug,
+                product_id=item.product_id,
                 image_src=item.image_src,
                 unit_price=item.unit_price,
                 quantity=item.quantity,

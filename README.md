@@ -86,7 +86,7 @@ tests/                   SQLite unit tests
 | Health      | `GET /health/live`, `GET /health/ready`                                               | —                                                    | —                               |
 | Metrics     | `GET /metrics` (Bearer `METRICS_TOKEN`; 404 whenever it is unset)                 | —                                                    | —                               |
 | Auth        | `POST /api/v1/auth/login`, `refresh`, `logout`                                        | `GET /auth/me`, `POST /auth/change-password`         | viewer for the signed-in routes |
-| Catalog     | `GET /api/v1/products`, `GET /api/v1/products/{id}`                                   | `GET` `POST` `PATCH` `DELETE /api/v1/admin/products` | editor                          |
+| Catalog     | `GET /api/v1/products`, `GET /api/v1/products/{id}` (canonical), `/by-slug/{slug}` (legacy)    | `GET` `POST` `PATCH` `DELETE /api/v1/admin/products` | editor                          |
 | Cart        | `GET /api/v1/cart`, plus item create, update, and delete                              | `GET /api/v1/admin/carts`                            | editor for the inbox            |
 | Delivery    | `GET /api/v1/delivery`                                                                | `GET` `PATCH /api/v1/admin/delivery`                 | editor                          |
 | Orders      | `POST /api/v1/orders/quote`, `POST /orders/lookup`, `POST /orders`                    | `GET` `PATCH /api/v1/admin/orders`                   | editor                          |

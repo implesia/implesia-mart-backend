@@ -144,6 +144,8 @@ class OrderLookup(BaseModel):
 class PublicOrderItemRead(BaseModel):
     title: str
     slug: str
+    # Lets the tracking page link to the canonical /products/{id}. None once the product is deleted.
+    product_id: uuid.UUID | None = None
     image_src: str
     unit_price: int
     quantity: int
