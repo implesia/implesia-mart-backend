@@ -30,13 +30,13 @@ from app.schemas.dashboard import (
     DashboardStatusSlice,
     DashboardTrend,
 )
+from app.services.category_service import CategoryIndex, load_index
 
 SHOP = ZoneInfo("Asia/Dhaka")
 STATUSES = ("new", "confirmed", "shipped", "delivered", "cancelled", "returned")
 EXCLUDED = {"cancelled", "returned"}
 MAX_DAYS = 366
 _GRAIN_LABEL = {"hour": "Hourly", "day": "Daily", "week": "Weekly", "month": "Monthly"}
-CATEGORY_LABEL = {"gadgets": "Trending gadgets", "fashion": "Gorgeous dresses"}
 DISTRICTS = (
     ("Dhaka", ("ঢাকা", "dhaka")),
     ("Chattogram", ("চট্টগ্রাম", "chattogram", "chittagong")),
@@ -70,6 +70,7 @@ async def overview(
     current = _window(span, start, end, moment)
     previous = _previous(current, span, moment)
     grain = _grain(current)
+    index = await load_index(db)
     orders = await _load(db, previous.start, previous.end, current.start, current.end)
     current_orders = [order for order in orders if _inside(order, current)]
     previous_orders = [order for order in orders if _inside(order, previous)]
@@ -108,10 +109,10 @@ async def overview(
         series=series,
         statuses=_statuses(current_orders),
         order_count=len(current_orders),
-        best_sellers=_sellers(sales),
+        best_sellers=_sellers(sales, index),
         recent=_recent(current_orders),
         areas=_areas(current_orders),
-        categories=_categories(sales),
+        categories=_categories(sales, index),
     )
 
 
@@ -224,7 +225,7 @@ def _buckets(start: datetime, end: datetime, grain: DashboardGrain) -> list[_Win
     return buckets or [_Window(start, end)]
 
 
-def _sellers(orders: list[Order]) -> list[DashboardSeller]:
+def _sellers(orders: list[Order], index: CategoryIndex) -> list[DashboardSeller]:
     rows: dict[str, DashboardSeller] = {}
     for order in orders:
         for item in order.items:
@@ -240,7 +241,7 @@ def _sellers(orders: list[Order]) -> list[DashboardSeller]:
                     slug=product.slug if product else item.slug,
                     title=product.title if product else item.title,
                     image_src=image,
-                    category=_category_label(product),
+                    category=_category_label(product, index),
                     units=0,
                     revenue=0,
                     stock_label=_stock(product),
@@ -287,20 +288,22 @@ def _areas(orders: list[Order]) -> list[DashboardArea]:
     return areas[:6]
 
 
-def _categories(orders: list[Order]) -> list[DashboardCategory]:
+def _categories(orders: list[Order], index: CategoryIndex) -> list[DashboardCategory]:
+    """Sales per top-level category, the same grouping the storefront navigation uses."""
     rows: dict[str, list[int]] = {}
     for order in orders:
         for item in order.items:
             product = item.product
-            if product is None or product.category not in CATEGORY_LABEL:
+            root = index.root_of(product.category_id) if product is not None else None
+            if root is None:
                 continue
-            units, revenue = rows.get(product.category, [0, 0])
-            rows[product.category] = [units + item.quantity, revenue + item.line_total]
+            units, revenue = rows.get(root.slug, [0, 0])
+            rows[root.slug] = [units + item.quantity, revenue + item.line_total]
     total = sum(revenue for _, revenue in rows.values())
     categories = [
         DashboardCategory(
             id=category,
-            label=CATEGORY_LABEL[category],
+            label=index.by_slug[category].name,
             revenue=revenue,
             units=units,
             share=_share(revenue, total),
@@ -359,10 +362,9 @@ def _stock(product: Product | None) -> str:
     return "Coming soon"
 
 
-def _category_label(product: Product | None) -> str:
-    if product is None:
-        return "Uncategorized"
-    return CATEGORY_LABEL.get(product.category, "Uncategorized")
+def _category_label(product: Product | None, index: CategoryIndex) -> str:
+    row = index.by_id.get(product.category_id) if product is not None else None
+    return row.name if row is not None else "Uncategorized"
 
 
 def _district_name(district: str, area: str, address: str) -> str:

@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import UploadFile
 from pydantic import ValidationError
 from slugify import slugify
-from sqlalchemy import case, func, literal, select
+from sqlalchemy import case, func, literal, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
@@ -14,7 +14,8 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.exceptions import ConflictError, NotFoundError, UnprocessableError
 from app.models.audit_event import AuditAction
-from app.models.product import Product, ProductBadge, ProductCategory, StockStatus
+from app.models.category import Category
+from app.models.product import Product, ProductBadge, StockStatus
 from app.models.user import User
 from app.schemas.common import page_count
 from app.schemas.product import (
@@ -41,7 +42,8 @@ from app.schemas.product import (
     PublicProductList,
     PublicSpec,
 )
-from app.services import audit_service
+from app.services import audit_service, category_service
+from app.services.category_service import CategoryIndex
 from app.services.image_storage import (
     delete_owned_media,
     owned_refs,
@@ -84,20 +86,13 @@ def _split_content(content: ProductContent, *, title: str) -> tuple[str, str, di
 def _search(term: str) -> _Expr:
     # Escape LIKE wildcards so a search for "%" cannot scan the whole catalog.
     escaped = term.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    label = case(
-        (Product.category == ProductCategory.GADGETS.value, literal("trending gadgets")),
-        else_=literal("gorgeous dresses"),
-    )
     haystack = func.lower(
-        Product.title
-        + literal(" ")
-        + Product.subtitle
-        + literal(" ")
-        + Product.slug
-        + literal(" ")
-        + label
+        Product.title + literal(" ") + Product.subtitle + literal(" ") + Product.slug
     )
-    return haystack.like(f"%{escaped}%", escape="\\")
+    in_category = Product.category_id.in_(
+        select(Category.id).where(func.lower(Category.name).like(f"%{escaped}%", escape="\\"))
+    )
+    return or_(haystack.like(f"%{escaped}%", escape="\\"), in_category)
 
 
 def _apply(stmt: Any, conditions: list[_Expr]) -> Any:
@@ -212,13 +207,16 @@ async def _insert_product(db: AsyncSession, payload: ProductCreate) -> Product:
     else:
         slug = await allocate_slug(db, payload.title)
 
+    category = await category_service.resolve_for_product(
+        db, category_id=payload.category_id, legacy_slug=payload.category
+    )
     unit_label, image_alt, stored = _split_content(payload.content, title=payload.title)
     sort_order = int(await db.scalar(select(func.max(Product.sort_order))) or 0) + 1
     product = Product(
         slug=slug,
         title=payload.title,
         subtitle=payload.subtitle,
-        category=payload.category.value,
+        category_id=category.id,
         price=payload.price,
         compare_at_price=payload.compare_at_price,
         quantity=payload.quantity,
@@ -289,7 +287,12 @@ async def _apply_update(
         "quantity": product.quantity,
         "status": product.status,
     }
-    fields = payload.model_dump(exclude_unset=True, exclude={"content"})
+    fields = payload.model_dump(exclude_unset=True, exclude={"content", "category", "category_id"})
+    if payload.category_id is not None or payload.category is not None:
+        target = await category_service.resolve_for_product(
+            db, category_id=payload.category_id, legacy_slug=payload.category
+        )
+        product.category_id = target.id
     price = fields.get("price", product.price)
     if "compare_at_price" in fields:
         compare_at_price = fields["compare_at_price"]
@@ -299,7 +302,7 @@ async def _apply_update(
 
     title = str(fields.get("title", product.title))
     for field, value in fields.items():
-        if isinstance(value, ProductCategory | StockStatus | ProductBadge):
+        if isinstance(value, StockStatus | ProductBadge):
             value = value.value
         setattr(product, field, value)
 
@@ -423,10 +426,26 @@ def _public_order(sort: str) -> tuple[Any, ...]:
     return (rank.asc(), *stable)
 
 
-def _admin_filters(query: AdminProductQuery, *, category: bool, search: bool) -> list[_Expr]:
+def _admin_scope(index: CategoryIndex, query: AdminProductQuery) -> list[uuid.UUID] | None:
+    """Category ids an admin list is limited to. The admin sees hidden categories too."""
+    if query.category_id is None and query.category is None:
+        return None
+    row = (
+        index.by_id.get(query.category_id)
+        if query.category_id is not None
+        else index.by_slug.get(query.category or "")
+    )
+    if row is None:
+        return []
+    return index.descendants(row.id) if query.include_descendants else [row.id]
+
+
+def _admin_filters(
+    query: AdminProductQuery, *, scope: list[uuid.UUID] | None, search: bool
+) -> list[_Expr]:
     conditions: list[_Expr] = []
-    if category and query.category is not None:
-        conditions.append(Product.category == query.category.value)
+    if scope is not None:
+        conditions.append(Product.category_id.in_(scope))
     if query.status is not None:
         conditions.append(Product.status == query.status.value)
     if query.visibility == "live":
@@ -442,10 +461,26 @@ def _admin_filters(query: AdminProductQuery, *, category: bool, search: bool) ->
     return conditions
 
 
-def _public_filters(query: CatalogQuery, *, ignore: frozenset[str] = frozenset()) -> list[_Expr]:
+def _public_filters(
+    query: CatalogQuery,
+    *,
+    index: CategoryIndex,
+    ignore: frozenset[str] = frozenset(),
+) -> list[_Expr]:
     conditions: list[_Expr] = [Product.published.is_(True)]
-    if "category" not in ignore and query.category is not None:
-        conditions.append(Product.category == query.category.value)
+    # Products of a hidden (inactive, or under an inactive ancestor) category are not public.
+    hidden = index.hidden_ids()
+    if hidden:
+        conditions.append(Product.category_id.notin_(hidden))
+    if "category" not in ignore:
+        scope = category_service.listing_scope(
+            index,
+            slug=query.category,
+            category_id=query.category_id,
+            descendants=query.include_descendants,
+        )
+        if scope is not None:
+            conditions.append(Product.category_id.in_(scope))
     if "status" not in ignore and query.statuses:
         conditions.append(Product.status.in_(query.statuses))
     if "price" not in ignore and query.min_price is not None:
@@ -461,10 +496,10 @@ def _public_filters(query: CatalogQuery, *, ignore: frozenset[str] = frozenset()
     return conditions
 
 
-async def _metrics(db: AsyncSession, query: AdminProductQuery) -> AdminProductMetrics:
+async def _metrics(db: AsyncSession, scope: list[uuid.UUID] | None) -> AdminProductMetrics:
     conditions: list[_Expr] = []
-    if query.category is not None:
-        conditions.append(Product.category == query.category.value)
+    if scope is not None:
+        conditions.append(Product.category_id.in_(scope))
     stmt = _apply(
         select(
             func.count(),
@@ -486,22 +521,49 @@ async def _metrics(db: AsyncSession, query: AdminProductQuery) -> AdminProductMe
     )
 
 
-async def _category_counts(db: AsyncSession, conditions: list[_Expr]) -> dict[str, int]:
-    stmt = _apply(select(Product.category, func.count()).group_by(Product.category), conditions)
-    counts = {"gadgets": 0, "fashion": 0}
-    for category, total in (await db.execute(stmt)).all():
-        if category in counts:
-            counts[str(category)] = int(total)
+async def _category_counts(
+    db: AsyncSession, conditions: list[_Expr], index: CategoryIndex
+) -> dict[str, int]:
+    """Products per legacy top-level category (`gadgets`, `fashion`) plus `all`.
+
+    A top-level count includes everything below it, so the old two-tab filter keeps its meaning.
+    """
+    stmt = _apply(
+        select(Product.category_id, func.count()).group_by(Product.category_id), conditions
+    )
+    direct = {cid: int(total) for cid, total in (await db.execute(stmt)).all()}
+    rolled = category_service.rollup(index, direct)
+    counts = {"all": sum(direct.values()), "gadgets": 0, "fashion": 0}
+    for slug in ("gadgets", "fashion"):
+        row = index.by_slug.get(slug)
+        if row is not None:
+            counts[slug] = rolled.get(row.id, 0)
     return counts
 
 
-def admin_card(product: Product) -> AdminProductCard:
+def _root_slug(index: CategoryIndex, category_id: uuid.UUID) -> str:
+    root = index.root_of(category_id)
+    return root.slug if root is not None else ""
+
+
+def _category_fields(index: CategoryIndex, product: Product) -> dict[str, Any]:
+    row = index.by_id.get(product.category_id)
+    return {
+        "category": _root_slug(index, product.category_id),
+        "category_id": product.category_id,
+        "category_slug": row.slug if row is not None else "",
+        "category_name": row.name if row is not None else "",
+    }
+
+
+def admin_card(product: Product, index: CategoryIndex) -> AdminProductCard:
     return AdminProductCard(
         id=product.id,
         slug=product.slug,
         title=product.title,
         subtitle=product.subtitle,
-        category=ProductCategory(product.category),
+        **_category_fields(index, product),
+        category_path=category_service.refs(index, product.category_id),
         price=product.price,
         compare_at_price=product.compare_at_price,
         quantity=product.quantity,
@@ -521,21 +583,21 @@ def content_of(product: Product) -> ProductContent:
     return ProductContent.model_validate(raw)
 
 
-def admin_read(product: Product) -> AdminProductRead:
+def admin_read(product: Product, index: CategoryIndex) -> AdminProductRead:
     return AdminProductRead(
-        **admin_card(product).model_dump(),
+        **admin_card(product, index).model_dump(),
         content=content_of(product),
         updated_at=product.updated_at,
     )
 
 
-def public_card(product: Product) -> PublicProductCard:
+def public_card(product: Product, index: CategoryIndex) -> PublicProductCard:
     return PublicProductCard(
         id=product.id,
         slug=product.slug,
         title=product.title,
         subtitle=product.subtitle,
-        category=ProductCategory(product.category),
+        **_category_fields(index, product),
         price=product.price,
         compare_at_price=product.compare_at_price,
         unit_label=product.unit_label,
@@ -547,7 +609,9 @@ def public_card(product: Product) -> PublicProductCard:
     )
 
 
-def public_detail(product: Product, related: list[Product]) -> PublicProductDetail:
+def public_detail(
+    product: Product, related: list[Product], index: CategoryIndex
+) -> PublicProductDetail:
     content = content_of(product)
     gallery = [
         PublicGalleryImage(src=item.src, alt=item.alt or product.title) for item in content.gallery
@@ -557,7 +621,8 @@ def public_detail(product: Product, related: list[Product]) -> PublicProductDeta
             PublicGalleryImage(src=product.image_src, alt=product.image_alt or product.title)
         ]
     return PublicProductDetail(
-        **public_card(product).model_dump(),
+        **public_card(product, index).model_dump(),
+        category_path=category_service.refs(index, product.category_id),
         tagline=content.tagline,
         description=content.description,
         stock_label=content.stock_label,
@@ -590,12 +655,14 @@ def public_detail(product: Product, related: list[Product]) -> PublicProductDeta
             )
             for group in content.options
         ],
-        related=[public_card(item) for item in related],
+        related=[public_card(item, index) for item in related],
     )
 
 
 async def list_admin(db: AsyncSession, query: AdminProductQuery) -> AdminProductList:
-    conditions = _admin_filters(query, category=True, search=True)
+    index = await category_service.load_index(db)
+    scope = _admin_scope(index, query)
+    conditions = _admin_filters(query, scope=scope, search=True)
     total = await _count(db, conditions)
     stmt = (
         _apply(select(Product), conditions)
@@ -605,16 +672,16 @@ async def list_admin(db: AsyncSession, query: AdminProductQuery) -> AdminProduct
         .limit(query.page_size)
     )
     rows: list[Product] = list((await db.execute(stmt)).scalars().all())
-    counts = await _category_counts(db, _admin_filters(query, category=False, search=False))
+    counts = await _category_counts(db, _admin_filters(query, scope=None, search=False), index)
     return AdminProductList(
-        items=[admin_card(product) for product in rows],
+        items=[admin_card(product, index) for product in rows],
         total=total,
         page=query.page,
         page_size=query.page_size,
         pages=page_count(total, query.page_size),
-        metrics=await _metrics(db, query),
+        metrics=await _metrics(db, scope),
         category_counts=CategoryCounts(
-            all=counts["gadgets"] + counts["fashion"],
+            all=counts["all"],
             gadgets=counts["gadgets"],
             fashion=counts["fashion"],
         ),
@@ -622,7 +689,8 @@ async def list_admin(db: AsyncSession, query: AdminProductQuery) -> AdminProduct
 
 
 async def list_public(db: AsyncSession, query: CatalogQuery) -> PublicProductList:
-    conditions = _public_filters(query)
+    index = await category_service.load_index(db)
+    conditions = _public_filters(query, index=index)
     total = await _count(db, conditions)
     stmt = (
         _apply(select(Product), conditions)
@@ -632,17 +700,19 @@ async def list_public(db: AsyncSession, query: CatalogQuery) -> PublicProductLis
         .limit(query.page_size)
     )
     rows: list[Product] = list((await db.execute(stmt)).scalars().all())
-    categories = await _category_counts(db, _public_filters(query, ignore=frozenset({"category"})))
+    categories = await _category_counts(
+        db, _public_filters(query, index=index, ignore=frozenset({"category"})), index
+    )
     availability = {"available": 0, "sold-out": 0, "coming-soon": 0}
     status_stmt = _apply(
         select(Product.status, func.count()).group_by(Product.status),
-        _public_filters(query, ignore=frozenset({"status"})),
+        _public_filters(query, index=index, ignore=frozenset({"status"})),
     )
     for status, count in (await db.execute(status_stmt)).all():
         if status in availability:
             availability[str(status)] = int(count)
     return PublicProductList(
-        items=[public_card(product) for product in rows],
+        items=[public_card(product, index) for product in rows],
         total=total,
         page=query.page,
         page_size=query.page_size,
@@ -669,9 +739,10 @@ async def read_public_by_slug(db: AsyncSession, slug: str) -> PublicProductDetai
 
 async def _public_detail(db: AsyncSession, match: Any) -> PublicProductDetail:
     # Missing and unpublished share one response so a hidden product is not confirmed.
+    index = await category_service.load_index(db)
     result = await db.execute(select(Product).where(match, Product.published.is_(True)))
     product = result.scalar_one_or_none()
-    if product is None:
+    if product is None or not index.visible(product.category_id):
         raise NotFoundError("Product not found")
     related = list(
         (
@@ -679,7 +750,7 @@ async def _public_detail(db: AsyncSession, match: Any) -> PublicProductDetail:
                 select(Product)
                 .where(
                     Product.published.is_(True),
-                    Product.category == product.category,
+                    Product.category_id == product.category_id,
                     Product.id != product.id,
                 )
                 .options(defer(Product.content))
@@ -690,4 +761,4 @@ async def _public_detail(db: AsyncSession, match: Any) -> PublicProductDetail:
         .scalars()
         .all()
     )
-    return public_detail(product, related)
+    return public_detail(product, related, index)

@@ -6,7 +6,8 @@ from urllib.parse import unquote, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
-from app.models.product import ProductBadge, ProductCategory, SpecGroup, StockStatus
+from app.models.product import ProductBadge, SpecGroup, StockStatus
+from app.schemas.category import CategoryRef
 
 _ROW_ID = re.compile(r"[a-z0-9-]{1,40}")
 _SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
@@ -34,6 +35,15 @@ AdminSort = Literal[
 CatalogSort = Literal["popularity", "price-asc", "price-desc", "newest"]
 CatalogView = Literal["featured", "latest", "new"]
 Visibility = Literal["live", "hidden"]
+
+
+def _category_slug(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = value.strip().lower()
+    if not _SLUG.fullmatch(text) or len(text) > 80:
+        raise ValueError("Category must be a slug such as gadgets")
+    return text
 
 
 def clean_line(value: str, max_length: int) -> str:
@@ -345,7 +355,9 @@ class ProductCreate(BaseModel):
 
     title: str
     subtitle: str = ""
-    category: ProductCategory
+    # Assign by id (preferred) or by slug. The slug form keeps `gadgets` / `fashion` working.
+    category_id: uuid.UUID | None = None
+    category: str | None = Field(default=None, max_length=80)
     price: int = Field(ge=0, le=MAX_PRICE)
     compare_at_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     quantity: int | None = Field(default=None, ge=0, le=MAX_QUANTITY)
@@ -385,10 +397,17 @@ class ProductCreate(BaseModel):
             raise ValueError("Slug must use lowercase letters, numbers, and hyphens")
         return text
 
+    @field_validator("category")
+    @classmethod
+    def _category(cls, value: str | None) -> str | None:
+        return _category_slug(value)
+
     @model_validator(mode="after")
     def _prices(self) -> Self:
         if self.compare_at_price is not None and self.compare_at_price < self.price:
             raise ValueError("Compare-at price must be at least the selling price")
+        if self.category_id is None and self.category is None:
+            raise ValueError("Choose a category")
         return self
 
 
@@ -397,7 +416,8 @@ class ProductUpdate(BaseModel):
 
     title: str | None = None
     subtitle: str | None = None
-    category: ProductCategory | None = None
+    category_id: uuid.UUID | None = None
+    category: str | None = Field(default=None, max_length=80)
     price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     compare_at_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     quantity: int | None = Field(default=None, ge=0, le=MAX_QUANTITY)
@@ -432,13 +452,24 @@ class ProductUpdate(BaseModel):
             return None
         return clean_media_ref(value)
 
+    @field_validator("category")
+    @classmethod
+    def _category(cls, value: str | None) -> str | None:
+        return _category_slug(value)
+
 
 class AdminProductCard(BaseModel):
     id: uuid.UUID
     slug: str
     title: str
     subtitle: str
-    category: ProductCategory
+    # `category` is the top-level ancestor's slug (the legacy gadgets/fashion value);
+    # `category_*` describe the node the product is assigned to.
+    category: str
+    category_id: uuid.UUID
+    category_slug: str
+    category_name: str
+    category_path: list[CategoryRef]
     price: int
     compare_at_price: int | None
     quantity: int | None
@@ -514,7 +545,10 @@ class PublicProductCard(BaseModel):
     slug: str
     title: str
     subtitle: str
-    category: ProductCategory
+    category: str
+    category_id: uuid.UUID
+    category_slug: str
+    category_name: str
     price: int
     compare_at_price: int | None
     unit_label: str
@@ -526,6 +560,7 @@ class PublicProductCard(BaseModel):
 
 
 class PublicProductDetail(PublicProductCard):
+    category_path: list[CategoryRef]
     tagline: str
     description: str
     stock_label: str
@@ -570,7 +605,9 @@ class PublicProductList(BaseModel):
 
 class AdminProductQuery(BaseModel):
     q: str | None = Field(default=None, max_length=80)
-    category: ProductCategory | None = None
+    category: str | None = Field(default=None, max_length=80)
+    category_id: uuid.UUID | None = None
+    include_descendants: bool = True
     status: StockStatus | None = None
     visibility: Visibility | None = None
     min_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
@@ -603,7 +640,10 @@ class AdminProductQuery(BaseModel):
 
 
 class CatalogQuery(BaseModel):
-    category: ProductCategory | None = None
+    # Any category slug (or id). Products of its subcategories are included by default.
+    category: str | None = Field(default=None, max_length=80)
+    category_id: uuid.UUID | None = None
+    include_descendants: bool = True
     status: str | None = Field(default=None, max_length=80)
     badge: ProductBadge | None = None
     view: CatalogView | None = None

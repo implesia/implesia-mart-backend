@@ -16,7 +16,7 @@ from app.schemas.product import (
     ProductCreate,
     ProductUpdate,
 )
-from app.services import product_service
+from app.services import category_service, product_service
 
 router = APIRouter(dependencies=[Depends(require_editor), Depends(no_store)])
 
@@ -78,13 +78,13 @@ async def create_product(
         quality_image,
         quality_image_alt,
     )
-    return product_service.admin_read(product)
+    return product_service.admin_read(product, await category_service.load_index(db))
 
 
 @router.get("/{product_id}", response_model=AdminProductRead)
 async def read_product(db: DbSession, product_id: uuid.UUID) -> AdminProductRead:
     product = await product_service.get_by_id(db, product_id)
-    return product_service.admin_read(product)
+    return product_service.admin_read(product, await category_service.load_index(db))
 
 
 @router.patch("/{product_id}", response_model=AdminProductRead)
@@ -114,7 +114,7 @@ async def update_product(
         quality_image_alt,
         actor=actor,
     )
-    return product_service.admin_read(updated)
+    return product_service.admin_read(updated, await category_service.load_index(db))
 
 
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
