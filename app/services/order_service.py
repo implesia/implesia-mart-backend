@@ -241,9 +241,10 @@ async def _claim(db: AsyncSession, product: Product, quantity: int) -> tuple[int
         )
     ).one_or_none()
     if row is None:
-        cap = _cap(product)
         if product.quantity is not None and 0 < product.quantity < quantity:
-            raise UnprocessableError(f"Only {cap} are available")
+            raise UnprocessableError(
+                "There is not enough stock for that quantity. Please choose fewer."
+            )
         raise UnprocessableError("This product cannot be ordered")
     price, title, slug, image_src, left = row
     if left == 0:

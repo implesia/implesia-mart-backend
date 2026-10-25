@@ -305,7 +305,9 @@ def _ensure_room(product: Product, next_quantity: int) -> None:
     cap = _cap(product)
     if next_quantity > cap:
         if product.quantity is not None and product.quantity < MAX_QTY:
-            raise UnprocessableError(f"Only {cap} are available")
+            raise UnprocessableError(
+                "There is not enough stock for that quantity. Please choose fewer."
+            )
         raise UnprocessableError("A product can have at most 5 in the cart")
 
 
