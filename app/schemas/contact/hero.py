@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.common import WriteModel
@@ -21,6 +23,7 @@ class HeroAdmin(HeroPublic):
 
 
 class HeroLinkWrite(WriteModel):
+    href_checked_by_service: ClassVar[bool] = True
     label: str = Field(default="", max_length=80)
     href: str = Field(default="", max_length=800)
 

@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.common import WriteModel
@@ -21,6 +23,7 @@ class SupportAdmin(SupportPublic):
 
 
 class SupportWrite(WriteModel):
+    href_checked_by_service: ClassVar[bool] = True
     is_active: bool = True
     icon: str = Field(default="", max_length=40)
     nav_label: str = Field(default="", max_length=80)

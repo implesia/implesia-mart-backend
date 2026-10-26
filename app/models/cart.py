@@ -74,10 +74,10 @@ class CartItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("carts.id", ondelete="CASCADE"), nullable=False, index=True
     )
     product_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("products.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True
     )
     variant_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("product_variants.id", ondelete="CASCADE"), nullable=True
+        ForeignKey("product_variants.id", ondelete="CASCADE"), nullable=True, index=True
     )
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     selection: Mapped[list[Any]] = mapped_column(

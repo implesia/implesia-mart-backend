@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.common import WriteModel
@@ -42,6 +44,7 @@ class ItemWrite(WriteModel):
 
 
 class FaqWrite(WriteModel):
+    href_checked_by_service: ClassVar[bool] = True
     is_active: bool = True
     title: str = Field(default="", max_length=200)
     items: list[ItemWrite] = Field(default_factory=list, max_length=12)
