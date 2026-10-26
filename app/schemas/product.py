@@ -731,6 +731,8 @@ class CatalogQuery(BaseModel):
     status: str | None = Field(default=None, max_length=80)
     badge: ProductBadge | None = None
     view: CatalogView | None = None
+    # Free-text search over title, subtitle, slug and category name (every word must match).
+    q: str | None = Field(default=None, max_length=100)
     min_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     max_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     sort: CatalogSort = "popularity"

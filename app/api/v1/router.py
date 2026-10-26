@@ -15,6 +15,7 @@ from app.api.v1.endpoints import (
     inquiries,
     orders,
     products,
+    search,
     users,
 )
 from app.api.v1.endpoints.about import cta as about_cta
@@ -81,6 +82,7 @@ _AUDITED = [Depends(audit_admin_write)]
 
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(products.router, prefix="/products", tags=["products"])
+api_router.include_router(search.router, prefix="/search", tags=["search"])
 api_router.include_router(categories.public_router, prefix="/categories", tags=["categories"])
 api_router.include_router(
     categories.admin_router,

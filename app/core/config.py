@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     rate_limit_refresh_account: str = "10/minute"
     rate_limit_orders: str = "5/hour"
     rate_limit_order_lookup: str = "30/minute"
+    rate_limit_search: str = "120/minute"
     rate_limit_product_writes: str = "30/minute"
     rate_limit_cart_writes: str = "60/minute"
     rate_limit_inquiries: str = "10/hour"

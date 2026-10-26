@@ -12,6 +12,7 @@ get {
 
 params:query {
   category: fashion
+  ~q: lamp
   sort: popularity
   page: 1
   page_size: 8
@@ -26,7 +27,7 @@ docs {
 
   Published catalog for `/products`. No token. Hidden products are omitted.
 
-  Filters match the storefront: `category` (`gadgets` or `fashion`), `status` (comma separated `available`, `sold-out`, `coming-soon`), `badge` (`New`, `Best Seller`, `Limited`), `view` (`featured`, `latest`, `new`), `min_price`, `max_price`, `sort` (`popularity`, `price-asc`, `price-desc`, `newest`).
+  Filters match the storefront: `category` (`gadgets` or `fashion`), `status` (comma separated `available`, `sold-out`, `coming-soon`), `badge` (`New`, `Best Seller`, `Limited`), `view` (`featured`, `latest`, `new`), `min_price`, `max_price`, `sort` (`popularity`, `price-asc`, `price-desc`, `newest`), `q` (up to 100 characters: case-insensitive; every word must match the title, subtitle, category, or slug; a blank `q` is ignored).
 
   `page` starts at 1 and cannot exceed 10000. `page_size` defaults to 8 and cannot exceed 48. The response includes `pages`, the number of pages for the current filters. Cards do not include `quantity` or the long product copy.
 

@@ -42,7 +42,7 @@ from app.schemas.product import (
     PublicProductList,
     PublicSpec,
 )
-from app.services import audit_service, category_service, variant_service
+from app.services import audit_service, category_service, search_text, variant_service
 from app.services.category_service import CategoryIndex
 from app.services.image_storage import (
     delete_owned_media,
@@ -522,6 +522,10 @@ def _public_filters(
         conditions.append(Product.badge == ProductBadge.NEW.value)
     if "badge" not in ignore and query.badge is not None:
         conditions.append(Product.badge == query.badge.value)
+    if "q" not in ignore:
+        tokens = search_text.tokenize(query.q)
+        if tokens:
+            conditions.append(search_text.product_condition(tokens))
     return conditions
 
 

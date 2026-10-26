@@ -1,0 +1,85 @@
+meta {
+  name: Global Search
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/search
+  body: none
+  auth: none
+}
+
+params:query {
+  q: lamp
+  type: all
+  page: 1
+  page_size: 8
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/search
+
+  Storefront search over published products and active blog posts. No token. Rate limited by `RATE_LIMIT_SEARCH` (default `120/minute`). Responses are `Cache-Control: no-store`.
+
+  - `q`: up to 100 characters. Words are case-insensitive and can match anywhere inside a word, in any order. Every word must match (title, subtitle, category name or slug for products; title, excerpt, author, tags or body text for blogs). Letters from any script work, Bangla included. `%`, `_` and quotes are plain characters.
+  - `type`: `all` (default), `products` or `blogs`. The unsearched group comes back empty.
+  - `page` (1 to 1000) and `page_size` (1 to 24, default 8) apply to each group.
+  - A blank `q` (or one with only punctuation) is not an error: both groups come back empty.
+  - Anything invalid answers `422` with the usual `{"error": {"code", "message", "details"}}` envelope.
+  - Unpublished products, products in hidden categories, inactive posts and inactive post blocks are never returned.
+  - Best matches first: title matches, then subtitle and other text, then featured, then newest.
+
+  ## Response `200`
+
+  ```json
+  {
+    "query": "lamp",
+    "type": "all",
+    "page_size": 8,
+    "products": { "items": [ /* same cards as GET /products */ ], "total": 1, "page": 1, "pages": 1 },
+    "blogs": {
+      "items": [
+        {
+          "id": "0c9a6c1e-7a55-4c0e-9f1b-5f6d8a2b3c4d",
+          "slug": "choosing-a-lamp",
+          "title": "Choosing a lamp",
+          "excerpt": "What to look for.",
+          "cover_image": "/uploads/cover.webp",
+          "cover_alt": "A desk lamp",
+          "author": "Mart team",
+          "published_at": "3 Oct 2026",
+          "read_time": "4 min",
+          "tags": ["guide"]
+        }
+      ],
+      "total": 1,
+      "page": 1,
+      "pages": 1
+    }
+  }
+  ```
+}
+
+tests {
+  test("returns both groups", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.products.items).to.be.an("array");
+    expect(body.blogs.items).to.be.an("array");
+    expect(body.page_size).to.equal(8);
+  });
+}
+
+assert {
+  res.status: eq 200
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
