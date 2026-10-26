@@ -74,6 +74,7 @@ from app.models.shipping.refund import ShippingRefund, ShippingRefundStep
 from app.models.shipping.returns import ShippingReturnNote, ShippingReturnRule, ShippingReturns
 from app.models.shipping.support import ShippingSupport
 from app.models.site_footer import SiteFooter
+from app.models.site_header import SiteHeader
 from app.models.sustainability.commitment import (
     SustainabilityCommitment,
     SustainabilityCommitmentItem,
@@ -219,6 +220,7 @@ __all__ = [
     "SustainabilityQuality",
     "SustainabilityQualityBadge",
     "SiteFooter",
+    "SiteHeader",
     "SustainabilityQualityStep",
     "User",
     "UserRole",
