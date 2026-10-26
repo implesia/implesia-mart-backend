@@ -16,7 +16,7 @@ from app.core.exceptions import UnprocessableError
 _MAX_FILES = 12
 _READ = 64 * 1024
 _FOLDERS = frozenset(
-    {"products", "banners", "categories", "reviews", "about", "sustainability", "blogs"}
+    {"products", "banners", "categories", "reviews", "about", "sustainability", "blogs", "promo"}
 )
 
 # (signature, suffix). WebP is checked separately because the mark is not a prefix.

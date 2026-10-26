@@ -1,0 +1,51 @@
+meta {
+  name: Upload Promo Image
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/promo/image
+  body: multipartForm
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:multipart-form {
+  image: @file(fixtures/gown.jpg)
+}
+
+assert {
+  res.status: eq 201
+}
+
+script:post-response {
+  const body = res.getBody();
+  if (res.getStatus() === 201 && body.url) bru.setEnvVar("PROMO_IMAGE_URL", body.url);
+}
+
+tests {
+  test("returns a /media/promo path", function () {
+    expect(res.getBody().url).to.match(/^\/media\/promo\//);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # POST /api/v1/admin/home/promo/image
+
+  Editor only. Multipart field `image` (JPEG, PNG, GIF or WebP, up to 5 MB; type is checked from the
+  bytes, SVG is refused). Returns `{ "url": "/media/promo/<id>.<ext>" }` and stores `PROMO_IMAGE_URL`
+  for the next request. Rate limited like other write endpoints.
+}

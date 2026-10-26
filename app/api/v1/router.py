@@ -48,6 +48,7 @@ from app.api.v1.endpoints.home import category as home_category
 from app.api.v1.endpoints.home import faq as home_faq
 from app.api.v1.endpoints.home import featured as home_featured
 from app.api.v1.endpoints.home import newsletter as home_newsletter
+from app.api.v1.endpoints.home import promo as home_promo
 from app.api.v1.endpoints.home import review as home_review
 from app.api.v1.endpoints.home import showcase as home_showcase
 from app.api.v1.endpoints.home import trust as home_trust
@@ -164,6 +165,13 @@ api_router.include_router(
 api_router.include_router(home_faq.public_router, prefix="/home/faq", tags=["home:faq"])
 api_router.include_router(
     home_faq.admin_router, prefix="/admin/home/faq", tags=["admin:home:faq"], dependencies=_AUDITED
+)
+api_router.include_router(home_promo.public_router, prefix="/home/promo", tags=["home:promo"])
+api_router.include_router(
+    home_promo.admin_router,
+    prefix="/admin/home/promo",
+    tags=["admin:home:promo"],
+    dependencies=_AUDITED,
 )
 api_router.include_router(
     home_newsletter.public_router, prefix="/home/newsletter", tags=["home:newsletter"]

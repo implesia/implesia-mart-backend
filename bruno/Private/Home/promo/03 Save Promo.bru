@@ -1,0 +1,65 @@
+meta {
+  name: Save Promo
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/promo
+  body: json
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:json {
+  {
+    "is_active": false,
+    "eyebrow": "",
+    "heading": "Sample heading",
+    "body": "",
+    "cta_label": "Shop now",
+    "cta_href": "/products",
+    "image_src": "{{PROMO_IMAGE_URL}}",
+    "image_alt": "Describe the picture",
+    "focal_x": 50,
+    "focal_y": 50,
+    "tone": "dark"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("saves the banner", function () {
+    const body = res.getBody();
+    expect(body.heading).to.equal("Sample heading");
+    expect(body.is_active).to.equal(false);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # PUT /api/v1/admin/home/promo
+
+  Editor only. Replaces the single banner (created on first save). This sample keeps it hidden
+  (`is_active: false`); set it to true to publish.
+
+  Rules (422 with the usual error envelope otherwise): `image_src` and `cta_href` must be a `/media/...`
+  or `/...` site path or an http(s) address (`blob:`, `data:`, `javascript:` and `//` are refused);
+  `cta_label` and `cta_href` go together or are both empty; `focal_x`/`focal_y` are 0-100; `tone` is
+  `dark` or `light`; unknown fields are refused. Publishing needs `image_src` and `image_alt`; a hidden
+  draft may be incomplete. Replacing the image removes the previous `/media/promo/` file.
+}

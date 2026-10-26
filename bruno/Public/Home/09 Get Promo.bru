@@ -1,0 +1,43 @@
+meta {
+  name: Get Promo
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/home/promo
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("is null or a complete banner", function () {
+    const body = res.getBody();
+    if (body === null) return;
+    expect(body.image_src).to.be.a("string").and.not.equal("");
+    expect(body.image_alt).to.be.a("string").and.not.equal("");
+    expect(["dark", "light"]).to.include(body.tone);
+    expect(body).to.not.have.property("is_active");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/home/promo
+
+  Public. The promo banner under Featured Products, or `null` when none is published (the default),
+  when it is switched off, or when its image or description is missing or unusable. The button is
+  omitted from the text when its link is unusable.
+}
