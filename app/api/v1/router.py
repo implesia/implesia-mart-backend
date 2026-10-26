@@ -16,6 +16,7 @@ from app.api.v1.endpoints import (
     orders,
     products,
     search,
+    site_footer,
     users,
 )
 from app.api.v1.endpoints.about import cta as about_cta
@@ -171,6 +172,13 @@ api_router.include_router(
     home_promo.admin_router,
     prefix="/admin/home/promo",
     tags=["admin:home:promo"],
+    dependencies=_AUDITED,
+)
+api_router.include_router(site_footer.public_router, prefix="/site/footer", tags=["site:footer"])
+api_router.include_router(
+    site_footer.admin_router,
+    prefix="/admin/site/footer",
+    tags=["admin:site:footer"],
     dependencies=_AUDITED,
 )
 api_router.include_router(
