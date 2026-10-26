@@ -1,0 +1,53 @@
+meta {
+  name: Upload Cover
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/pages/blogs/posts/cover
+  body: multipartForm
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+body:multipart-form {
+  image: @file(cover.jpg)
+}
+
+assert {
+  res.status: eq 201
+}
+
+tests {
+  test("returns a /media/blogs path", function () {
+    const body = res.getBody();
+    expect(body.url).to.match(/^\/media\/blogs\//);
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # POST /api/v1/admin/pages/blogs/posts/cover
+
+  Editor only. Multipart field `image` (JPEG, PNG, GIF or WebP, up to 5 MB; type is checked
+  from the bytes, SVG is refused). Returns `{ "url": "/media/blogs/<id>.<ext>" }`.
+  Save the article (POST, or PATCH /{id}) with that value as `cover_image`.
+
+  `cover_image` must be a `/media/...` site path or an http(s) address. `blob:`, `data:`,
+  `javascript:` and similar are refused with 422. A cover is required to publish
+  (`is_active: true`) but not to save a hidden article.
+  New optional fields: `seo_title` (70) and `seo_description` (200). Admin responses add
+  `cover_needs_upload`, true for a legacy article whose stored cover cannot render.
+}

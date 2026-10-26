@@ -1,5 +1,6 @@
 import uuid
 
+from fastapi import UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -17,10 +18,15 @@ from app.schemas.blogs.posts import (
     PostsAdmin,
     PostsPublic,
     PostWrite,
+    cover_ref_ok,
+    owns_media,
+    safe_cover,
     slug_ok,
 )
+from app.services.image_storage import delete_owned_media, read_image, store_image
 
 MAX_POSTS = 50
+_MEDIA_FOLDER = "blogs"
 _BLOCK_TYPES = {"paragraph", "heading", "list", "callout"}
 
 
@@ -51,8 +57,10 @@ def _post_public(post: BlogPost) -> PostPublic:
         title=post.title,
         excerpt=post.excerpt,
         category_id=str(post.category_id) if post.category_id else None,
-        cover_image=post.cover_image,
+        cover_image=safe_cover(post.cover_image),
         cover_alt=post.cover_alt,
+        seo_title=post.seo_title,
+        seo_description=post.seo_description,
         author=post.author,
         author_role=post.author_role,
         published_at=post.published_at,
@@ -68,6 +76,7 @@ def _post_admin(post: BlogPost) -> PostAdmin:
     return PostAdmin(
         **data,
         is_active=post.is_active,
+        cover_needs_upload=not cover_ref_ok(post.cover_image),
         blocks=[_block_admin(block) for block in _sorted_blocks(post)],
     )
 
@@ -85,8 +94,8 @@ def _validate(payload: PostWrite) -> None:
         raise UnprocessableError("Title is required.")
     if not slug_ok(payload.slug):
         raise UnprocessableError("Slug needs lowercase English letters, numbers, and hyphens.")
-    if not payload.cover_image:
-        raise UnprocessableError("Cover photo is required.")
+    if payload.is_active and not payload.cover_image:
+        raise UnprocessableError("Add a cover photo before publishing, or save the article hidden.")
     for block in payload.blocks:
         bad_type = block.type not in _BLOCK_TYPES
         bad_variant = block.type == "callout" and block.variant not in {"tip", "note"}
@@ -104,6 +113,8 @@ def _apply(post: BlogPost, payload: PostWrite, category_id: uuid.UUID) -> None:
     post.category_id = category_id
     post.cover_image = payload.cover_image
     post.cover_alt = payload.cover_alt
+    post.seo_title = payload.seo_title
+    post.seo_description = payload.seo_description
     post.author = payload.author
     post.author_role = payload.author_role
     post.published_at = payload.published_at
@@ -204,14 +215,35 @@ async def update_post(db: AsyncSession, post: BlogPost, payload: PostWrite) -> P
     _validate(payload)
     category_id = await _category(db, payload.category_id)
     await _unique_slug(db, payload.slug, post.id)
+    previous = post.cover_image
     _apply(post, payload, category_id)
     await db.commit()
+    if previous != post.cover_image:
+        await _drop_cover(db, previous)
     return _post_admin(await get_post(db, post.id))
 
 
 async def delete_post(db: AsyncSession, post: BlogPost) -> None:
+    previous = post.cover_image
     await db.delete(post)
     await db.commit()
+    await _drop_cover(db, previous)
+
+
+async def _drop_cover(db: AsyncSession, ref: str) -> None:
+    """Remove an uploaded cover from disk once no article uses it."""
+    if not owns_media(ref):
+        return
+    still_used = await db.scalar(select(BlogPost.id).where(BlogPost.cover_image == ref).limit(1))
+    if still_used is None:
+        delete_owned_media({ref}, folder=_MEDIA_FOLDER)
+
+
+async def upload_cover(upload: UploadFile) -> str:
+    """Validate (type by bytes, size) and store one cover. Returns its `/media/blogs/` path."""
+    if not upload.filename:
+        raise UnprocessableError("Choose an image file.")
+    return store_image(await read_image(upload), folder=_MEDIA_FOLDER)
 
 
 async def reorder(db: AsyncSession, payload: PostReorder) -> PostsAdmin:

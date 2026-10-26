@@ -11,6 +11,7 @@ from sqlalchemy.orm import defer
 
 from app.models.blogs.posts import BlogPost
 from app.models.product import Product
+from app.schemas.blogs.posts import safe_cover
 from app.schemas.common import page_count
 from app.schemas.product import CatalogQuery
 from app.schemas.search import (
@@ -58,7 +59,7 @@ def _hit(post: BlogPost) -> BlogHit:
         slug=post.slug,
         title=post.title,
         excerpt=post.excerpt,
-        cover_image=post.cover_image,
+        cover_image=safe_cover(post.cover_image),
         cover_alt=post.cover_alt,
         author=post.author,
         published_at=post.published_at,

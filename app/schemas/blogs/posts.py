@@ -6,11 +6,42 @@ from pydantic import BaseModel, Field, field_validator
 from app.schemas.common import WriteModel
 
 _SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_MEDIA = "/media/blogs/"
+_HTTP = ("http://", "https://")
+
+
+def cover_ref_ok(value: str) -> bool:
+    """True for a cover the storefront can render: a site path or an http(s) URL.
+
+    blob:, data:, javascript:, file: and the like never work for another visitor, and the
+    first four can carry script. Empty is allowed here; the service decides when a cover is
+    required.
+    """
+    if not value:
+        return True
+    if len(value) > 800 or any(ch.isspace() or ord(ch) < 32 for ch in value):
+        return False
+    if ".." in value or "\\" in value:
+        return False
+    if value.startswith("/"):
+        return not value.startswith("//")
+    lowered = value.lower()
+    return lowered.startswith(_HTTP) and len(value) > 8
+
+
+def safe_cover(value: str) -> str:
+    """The stored cover, or "" when it is a legacy value that cannot render."""
+    return value if cover_ref_ok(value) else ""
+
+
+def owns_media(value: str) -> bool:
+    return value.startswith(_MEDIA) and cover_ref_ok(value)
 
 
 def _strip(value: object) -> object:
     if isinstance(value, str):
-        return value.strip()
+        return _CONTROL.sub("", value).strip()
     return value
 
 
@@ -56,6 +87,8 @@ class PostPublic(BaseModel):
     category_id: str | None
     cover_image: str
     cover_alt: str
+    seo_title: str
+    seo_description: str
     author: str
     author_role: str
     published_at: str
@@ -67,6 +100,8 @@ class PostPublic(BaseModel):
 
 class PostAdmin(PostPublic):
     is_active: bool
+    # True when the stored cover is a legacy value that cannot render (for example blob:).
+    cover_needs_upload: bool = False
     blocks: list[BlockAdmin]  # type: ignore[assignment]
 
 
@@ -86,6 +121,8 @@ class PostWrite(WriteModel):
     category_id: str = ""
     cover_image: str = Field(default="", max_length=800)
     cover_alt: str = Field(default="", max_length=200)
+    seo_title: str = Field(default="", max_length=70)
+    seo_description: str = Field(default="", max_length=200)
     author: str = Field(default="", max_length=80)
     author_role: str = Field(default="", max_length=80)
     published_at: str = Field(default="", max_length=40)
@@ -101,6 +138,8 @@ class PostWrite(WriteModel):
         "category_id",
         "cover_image",
         "cover_alt",
+        "seo_title",
+        "seo_description",
         "author",
         "author_role",
         "published_at",
@@ -112,6 +151,15 @@ class PostWrite(WriteModel):
         cleaned = _strip(value)
         if isinstance(cleaned, str):
             return cleaned
+        return value
+
+    @field_validator("cover_image", mode="after")
+    @classmethod
+    def _cover(cls, value: str) -> str:
+        if not cover_ref_ok(value):
+            raise ValueError(
+                "Cover photo must be uploaded, or be a site path or an http(s) address."
+            )
         return value
 
     @field_validator("slug", mode="after")
@@ -138,3 +186,7 @@ class PostReorder(WriteModel):
 
 def slug_ok(value: str) -> bool:
     return _SLUG.fullmatch(value) is not None
+
+
+class CoverUploaded(BaseModel):
+    url: str

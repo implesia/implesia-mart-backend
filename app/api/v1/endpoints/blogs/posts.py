@@ -1,9 +1,13 @@
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, File, Request, UploadFile, status
 
 from app.api.deps import DbSession, no_store, require_editor
+from app.core.config import settings
+from app.rate_limit import limiter
 from app.schemas.blogs.posts import (
+    CoverUploaded,
     PostAdmin,
     PostPublic,
     PostReorder,
@@ -36,6 +40,16 @@ async def list_admin_blog_posts(db: DbSession) -> PostsAdmin:
 @admin_router.post("", response_model=PostAdmin, status_code=status.HTTP_201_CREATED)
 async def create_blog_post(db: DbSession, payload: PostWrite) -> PostAdmin:
     return await posts_service.create_post(db, payload)
+
+
+@admin_router.post("/cover", response_model=CoverUploaded, status_code=status.HTTP_201_CREATED)
+@limiter.limit(settings.rate_limit_product_writes)
+async def upload_blog_cover(
+    request: Request, image: Annotated[UploadFile, File()]
+) -> CoverUploaded:
+    """Store one cover photo. Save the article with the returned `url` as `cover_image`."""
+    del request
+    return CoverUploaded(url=await posts_service.upload_cover(image))
 
 
 @admin_router.put("/order", response_model=PostsAdmin)
