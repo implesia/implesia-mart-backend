@@ -73,6 +73,7 @@ from app.models.shipping.payment import ShippingPayment, ShippingPaymentCard
 from app.models.shipping.refund import ShippingRefund, ShippingRefundStep
 from app.models.shipping.returns import ShippingReturnNote, ShippingReturnRule, ShippingReturns
 from app.models.shipping.support import ShippingSupport
+from app.models.site_contact import SiteContact
 from app.models.site_footer import SiteFooter
 from app.models.site_header import SiteHeader
 from app.models.sustainability.commitment import (
@@ -220,6 +221,7 @@ __all__ = [
     "SustainabilityQuality",
     "SustainabilityQualityBadge",
     "SiteFooter",
+    "SiteContact",
     "SiteHeader",
     "SustainabilityQualityStep",
     "User",

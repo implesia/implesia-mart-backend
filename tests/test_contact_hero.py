@@ -12,9 +12,9 @@ def _body(*, active: bool = True, title: str = TITLE, primary_href: str | None =
         "subtitle": ("কল বা হোয়াটসঅ্যাপে সরাসরি যোগাযোগ করুন। কর্মঘণ্টায় রিপ্লাই দেওয়ার চেষ্টা করি।"),
         "primary_cta": {
             "label": "হোয়াটসঅ্যাপ",
-            "href": primary_href or "https://wa.me/8801516527932",
+            "href": primary_href or "https://wa.me/8801580569129",
         },
-        "secondary_cta": {"label": "কল করুন", "href": "tel:+8801516527932"},
+        "secondary_cta": {"label": "কল করুন", "href": "tel:+8801580569129"},
     }
 
 
@@ -25,8 +25,8 @@ async def test_public_contact_hero_seeds_the_banner(client: AsyncClient) -> None
     assert body["eyebrow"] == EYEBROW
     assert body["title"] == TITLE
     assert body["primary_cta"]["label"] == "হোয়াটসঅ্যাপ"
-    assert body["primary_cta"]["href"].startswith("https://wa.me/8801516527932?text=")
-    assert body["secondary_cta"]["href"] == "tel:+8801516527932"
+    assert body["primary_cta"]["href"].startswith("https://wa.me/8801580569129?text=")
+    assert body["secondary_cta"]["href"] == "tel:+8801580569129"
     assert "is_active" not in body
 
 
@@ -99,7 +99,7 @@ async def test_editor_can_hide_and_restore_the_contact_hero(
     )
     assert restored.status_code == 200, restored.text
     assert restored.json()["is_active"] is True
-    assert restored.json()["secondary_cta"]["href"] == "tel:+8801516527932"
+    assert restored.json()["secondary_cta"]["href"] == "tel:+8801580569129"
 
     public = await client.get("/api/v1/pages/contact/hero")
     assert public.json()["title"] == TITLE

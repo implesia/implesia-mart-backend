@@ -54,7 +54,7 @@ async def test_public_about_dresses_seed_the_block(client: AsyncClient) -> None:
     assert dress["kicker"] == "নতুন সংযোজন"
     assert dress["title"] == "শুধু গ্যাজেট নয়, আমরা তৈরি করি গর্জিয়াস ড্রেসও"
     assert dress["primary_label"] == "কাস্টম অর্ডার"
-    assert dress["primary_href"].startswith("https://wa.me/8801516527932?text=")
+    assert dress["primary_href"].startswith("https://wa.me/8801580569129?text=")
     assert dress["secondary_label"] == "গর্জিয়াস ড্রেস"
     assert dress["secondary_href"] == "/products?category=fashion"
     assert [item["title"] for item in dress["features"]] == [

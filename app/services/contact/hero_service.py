@@ -6,17 +6,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import UnprocessableError
 from app.models.contact.hero import ContactHero
 from app.schemas.contact.hero import HeroAdmin, HeroLink, HeroPublic, HeroWrite
+from app.services import site_contact_service
 
 SECTION_SLUG = "contact"
 DEFAULT_EYEBROW = "যোগাযোগ"
 DEFAULT_TITLE = "অর্ডার বা প্রোডাক্ট নিয়ে সাহায্য লাগলে বলুন"
 DEFAULT_SUBTITLE = "কল বা হোয়াটসঅ্যাপে সরাসরি যোগাযোগ করুন। কর্মঘণ্টায় রিপ্লাই দেওয়ার চেষ্টা করি।"
 DEFAULT_PRIMARY_LABEL = "হোয়াটসঅ্যাপ"
-DEFAULT_PRIMARY_HREF = "https://wa.me/8801516527932?text=" + quote(
-    "হ্যালো, আমি ইমপ্লেসিয়া মার্ট সম্পর্কে জানতে চাই।"
+DEFAULT_PRIMARY_HREF = (
+    f"https://wa.me/{site_contact_service.international(site_contact_service.DEFAULT_WHATSAPP)}?text="
+    + quote("হ্যালো, আমি ইমপ্লেসিয়া মার্ট সম্পর্কে জানতে চাই।")
 )
 DEFAULT_SECONDARY_LABEL = "কল করুন"
-DEFAULT_SECONDARY_HREF = "tel:+8801516527932"
+DEFAULT_SECONDARY_HREF = (
+    f"tel:+{site_contact_service.international(site_contact_service.DEFAULT_PHONE)}"
+)
 _BLOCKED_SCHEMES = ("javascript:", "data:", "vbscript:", "file:", "blob:")
 EMPTY = HeroPublic(
     eyebrow="",
@@ -76,6 +80,14 @@ def _safe_href(href: str) -> None:
     raise UnprocessableError("Button link must be a site path, https, tel, or mailto link")
 
 
+async def _follow_contact[T: (HeroAdmin, HeroPublic)](db: AsyncSession, hero: T) -> T:
+    """The WhatsApp and call buttons follow the central contact settings."""
+    contact = await site_contact_service.public_view(db)
+    hero.primary_cta.href = site_contact_service.rewrite_href(hero.primary_cta.href, contact)
+    hero.secondary_cta.href = site_contact_service.rewrite_href(hero.secondary_cta.href, contact)
+    return hero
+
+
 async def ensure_hero(db: AsyncSession) -> ContactHero:
     row = await db.scalar(select(ContactHero).where(ContactHero.slug == SECTION_SLUG))
     if row is not None:
@@ -98,11 +110,11 @@ async def ensure_hero(db: AsyncSession) -> ContactHero:
 
 
 async def admin_view(db: AsyncSession) -> HeroAdmin:
-    return present(await ensure_hero(db))
+    return await _follow_contact(db, present(await ensure_hero(db)))
 
 
 async def public_view(db: AsyncSession) -> HeroPublic:
-    return present_public(await ensure_hero(db))
+    return await _follow_contact(db, present_public(await ensure_hero(db)))
 
 
 async def update_hero(db: AsyncSession, payload: HeroWrite) -> HeroAdmin:
@@ -121,4 +133,4 @@ async def update_hero(db: AsyncSession, payload: HeroWrite) -> HeroAdmin:
     row.secondary_href = payload.secondary_cta.href
     await db.commit()
     await db.refresh(row)
-    return present(row)
+    return await _follow_contact(db, present(row))

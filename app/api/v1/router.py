@@ -16,6 +16,7 @@ from app.api.v1.endpoints import (
     orders,
     products,
     search,
+    site_contact,
     site_footer,
     site_header,
     users,
@@ -180,6 +181,13 @@ api_router.include_router(
     site_footer.admin_router,
     prefix="/admin/site/footer",
     tags=["admin:site:footer"],
+    dependencies=_AUDITED,
+)
+api_router.include_router(site_contact.public_router, prefix="/site/contact", tags=["site:contact"])
+api_router.include_router(
+    site_contact.admin_router,
+    prefix="/admin/site/contact",
+    tags=["admin:site:contact"],
     dependencies=_AUDITED,
 )
 api_router.include_router(site_header.public_router, prefix="/site/header", tags=["site:header"])

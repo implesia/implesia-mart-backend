@@ -9,11 +9,11 @@ def _body(*, active: bool = True, title: str = "Still need help?") -> dict:
         "title": title,
         "subtitle": "Ask about an order, delivery, or a return.",
         "email": "hello@implesia.com",
-        "phone": "+880 1516-527932",
+        "phone": "01580569129",
         "primary_label": "Contact",
         "primary_href": "/contact-us",
         "secondary_label": "WhatsApp",
-        "secondary_href": "https://wa.me/8801516527932",
+        "secondary_href": "https://wa.me/8801580569129",
     }
 
 
