@@ -1,4 +1,5 @@
 import uuid
+from typing import Any, NoReturn
 
 from fastapi import UploadFile
 from sqlalchemy import func, select
@@ -89,20 +90,61 @@ def _filled(block: BlockWrite) -> bool:
     return bool(block.text)
 
 
-def _validate(payload: PostWrite) -> None:
+def _problem(loc: tuple[str | int, ...], message: str) -> dict[str, Any]:
+    """One field error, shaped like FastAPI's own body errors so the form can place it."""
+    return {"type": "value_error", "loc": ["body", *loc], "msg": message}
+
+
+def _reject(problems: list[dict[str, Any]]) -> NoReturn:
+    # The message stays the first problem's, so older callers keep reading one sentence.
+    raise UnprocessableError(problems[0]["msg"], problems)
+
+
+def _problems(payload: PostWrite) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = []
     if not payload.title:
-        raise UnprocessableError("Title is required.")
+        found.append(_problem(("title",), "Title is required."))
     if not slug_ok(payload.slug):
-        raise UnprocessableError("Slug needs lowercase English letters, numbers, and hyphens.")
+        found.append(
+            _problem(("slug",), "Slug needs lowercase English letters, numbers, and hyphens.")
+        )
     if payload.is_active and not payload.cover_image:
-        raise UnprocessableError("Add a cover photo before publishing, or save the article hidden.")
-    for block in payload.blocks:
+        found.append(
+            _problem(
+                ("cover_image",),
+                "Add a cover photo before publishing, or save the article hidden.",
+            )
+        )
+    for index, block in enumerate(payload.blocks):
         bad_type = block.type not in _BLOCK_TYPES
         bad_variant = block.type == "callout" and block.variant not in {"tip", "note"}
-        if bad_type or bad_variant or not _filled(block):
-            raise UnprocessableError("Fill in every block, or remove the empty ones.")
+        if bad_type:
+            found.append(_problem(("blocks", index, "type"), "Choose a valid block type."))
+        elif bad_variant:
+            found.append(_problem(("blocks", index, "variant"), "Choose Tip or Note."))
+        elif not _filled(block):
+            part = {"list": "items", "callout": "title"}.get(block.type, "text")
+            found.append(
+                _problem(("blocks", index, part), "Fill in every block, or remove the empty ones.")
+            )
     if any(not slug_ok(item) for item in payload.related_product_slugs):
-        raise UnprocessableError("Related product links need a valid slug.")
+        found.append(
+            _problem(("related_product_slugs",), "Related product links need a valid slug.")
+        )
+    return found
+
+
+async def _validate(db: AsyncSession, payload: PostWrite) -> uuid.UUID:
+    """Every field problem at once (so the form can mark them all), then the category."""
+    found = _problems(payload)
+    category_id: uuid.UUID | None = None
+    try:
+        category_id = await _category(db, payload.category_id)
+    except UnprocessableError as exc:
+        found.append(_problem(("category_id",), exc.message))
+    if found or category_id is None:
+        _reject(found)
+    return category_id
 
 
 def _apply(post: BlogPost, payload: PostWrite, category_id: uuid.UUID) -> None:
@@ -163,7 +205,10 @@ async def _unique_slug(db: AsyncSession, slug: str, ignore: uuid.UUID | None) ->
     if ignore is not None:
         stmt = stmt.where(BlogPost.id != ignore)
     if await db.scalar(stmt) is not None:
-        raise ConflictError("Another article already uses this slug.")
+        raise ConflictError(
+            "Another article already uses this slug.",
+            [_problem(("slug",), "Another article already uses this slug.")],
+        )
 
 
 async def public_list(db: AsyncSession) -> PostsPublic:
@@ -197,8 +242,7 @@ async def get_post(db: AsyncSession, post_id: uuid.UUID) -> BlogPost:
 
 
 async def create_post(db: AsyncSession, payload: PostWrite) -> PostAdmin:
-    _validate(payload)
-    category_id = await _category(db, payload.category_id)
+    category_id = await _validate(db, payload)
     await _unique_slug(db, payload.slug, None)
     total = await db.scalar(select(func.count()).select_from(BlogPost))
     if (total or 0) >= MAX_POSTS:
@@ -212,8 +256,7 @@ async def create_post(db: AsyncSession, payload: PostWrite) -> PostAdmin:
 
 
 async def update_post(db: AsyncSession, post: BlogPost, payload: PostWrite) -> PostAdmin:
-    _validate(payload)
-    category_id = await _category(db, payload.category_id)
+    category_id = await _validate(db, payload)
     await _unique_slug(db, payload.slug, post.id)
     previous = post.cover_image
     _apply(post, payload, category_id)
