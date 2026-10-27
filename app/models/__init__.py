@@ -26,6 +26,7 @@ from app.models.blogs.listing import BlogListing
 from app.models.blogs.posts import BlogPost, BlogPostBlock
 from app.models.blogs.related import BlogRelated
 from app.models.cart import Cart, CartItem
+from app.models.category import Category
 from app.models.contact.details import ContactDetailChannel, ContactDetails
 from app.models.contact.faq import ContactFaq, ContactFaqItem
 from app.models.contact.form import ContactForm
@@ -43,6 +44,7 @@ from app.models.home.category import HomeCategory, HomeCategoryTile
 from app.models.home.faq import HomeFaq, HomeFaqItem
 from app.models.home.featured import HomeFeatured, HomeFeaturedItem
 from app.models.home.newsletter import HomeNewsletter, HomeNewsletterPerk
+from app.models.home.promo import HomePromo
 from app.models.home.review import HomeReview, HomeReviewItem
 from app.models.home.showcase import HomeShowcase, HomeShowcaseItem, HomeShowcaseRow
 from app.models.home.trust import HomeTrust, HomeTrustItem
@@ -56,7 +58,7 @@ from app.models.privacy.rights import PrivacyRightItem, PrivacyRights
 from app.models.privacy.sharing import PrivacySharing, PrivacySharingChip
 from app.models.privacy.support import PrivacySupport
 from app.models.privacy.usage import PrivacyUsage, PrivacyUsageBadge, PrivacyUsageItem
-from app.models.product import Product
+from app.models.product import Product, ProductVariant
 from app.models.refresh_token import RefreshToken
 from app.models.shipping.block import (
     ShippingBlock,
@@ -71,6 +73,9 @@ from app.models.shipping.payment import ShippingPayment, ShippingPaymentCard
 from app.models.shipping.refund import ShippingRefund, ShippingRefundStep
 from app.models.shipping.returns import ShippingReturnNote, ShippingReturnRule, ShippingReturns
 from app.models.shipping.support import ShippingSupport
+from app.models.site_contact import SiteContact
+from app.models.site_footer import SiteFooter
+from app.models.site_header import SiteHeader
 from app.models.sustainability.commitment import (
     SustainabilityCommitment,
     SustainabilityCommitmentItem,
@@ -120,6 +125,7 @@ __all__ = [
     "Base",
     "BlogCategories",
     "BlogCategoryItem",
+    "Category",
     "BlogCta",
     "BlogHero",
     "BlogListing",
@@ -156,6 +162,7 @@ __all__ = [
     "HomeFeaturedItem",
     "HomeNewsletter",
     "HomeNewsletterPerk",
+    "HomePromo",
     "HomeReview",
     "HomeReviewItem",
     "HomeShowcase",
@@ -181,6 +188,7 @@ __all__ = [
     "PrivacyUsageBadge",
     "PrivacyUsageItem",
     "Product",
+    "ProductVariant",
     "RefreshToken",
     "ShippingBlock",
     "ShippingBlockCard",
@@ -212,6 +220,9 @@ __all__ = [
     "SustainabilityOriginImage",
     "SustainabilityQuality",
     "SustainabilityQualityBadge",
+    "SiteFooter",
+    "SiteContact",
+    "SiteHeader",
     "SustainabilityQualityStep",
     "User",
     "UserRole",

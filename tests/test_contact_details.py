@@ -123,7 +123,8 @@ async def test_editor_saves_hides_and_restores_contact_details(
     assert shown["title"] == "Contacts"
     assert len(shown["channels"]) == 1
     assert "is_active" not in shown
-    assert shown["channels"][0]["href"] == "tel:+8801000000000"
+    # Call channels follow the central site contact (01580569129 by default).
+    assert shown["channels"][0]["href"] == "tel:+8801580569129"
     assert shown["social"][0]["href"] == "https://example.com/facebook"
     assert len(shown["social"]) == 1
 

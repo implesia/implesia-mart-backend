@@ -1,11 +1,23 @@
+"""Home "categories" section: heading plus a compatibility view over the real catalog tree.
+
+Since migration 0075 the tiles are NOT stored separately any more. They are the catalog
+categories (`app.services.category_service`), so the hero navigation, the dashboard, the
+listing pages, and the product forms all read ONE tree. The legacy tile endpoints still
+work for an older admin build: they translate to category operations (the tile `href` is
+always `/products?category=<slug>` and is ignored on write). The old `home_category_tiles`
+table is left in place, unused, for one release (see migration 0075).
+"""
+
 import uuid
 
 from fastapi import UploadFile
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import NotFoundError, UnprocessableError
-from app.models.home.category import HomeCategory, HomeCategoryTile
+from app.core.exceptions import ConflictError, UnprocessableError
+from app.models.category import Category
+from app.models.home.category import HomeCategory
+from app.schemas.category import CategoryUpdate, CategoryWrite
 from app.schemas.home.category import (
     CategoryAdmin,
     CategoryHeadingUpdate,
@@ -16,46 +28,26 @@ from app.schemas.home.category import (
     CategoryTileUpdate,
     CategoryTileWrite,
 )
-from app.services.image_storage import delete_owned_media, owned_refs, read_image, store_image
+from app.services import category_service
 
 CATEGORY_SLUG = "home"
-MAX_TILES = 24
-_MEDIA = "categories"
 DEFAULT_HEADING = "ক্যাটাগরি"
-DEFAULTS: tuple[dict[str, object], ...] = (
-    {
-        "label": "ট্রেন্ডিং গ্যাজেট",
-        "href": "/products?category=gadgets",
-        "image_src": "/images/products/lamp/lamp-5.jpg",
-        "sort_order": 0,
-    },
-    {
-        "label": "গর্জিয়াস ড্রেস",
-        "href": "/products?category=fashion",
-        "image_src": "/images/products/baby-products/wedding-dress.jpeg",
-        "sort_order": 1,
-    },
-)
 
 
-def present(tile: HomeCategoryTile) -> CategoryTileRead:
-    return CategoryTileRead.model_validate(tile)
+def _href(category: Category) -> str:
+    return f"/products?category={category.slug}"
 
 
-def _reject_staged_path(src: str | None) -> None:
-    if src and (src.startswith("/uploads/") or src.startswith("blob:")):
-        raise UnprocessableError("Send the image file with the category")
-
-
-async def _tiles(
-    db: AsyncSession, category_id: uuid.UUID, *, active_only: bool
-) -> list[HomeCategoryTile]:
-    query = select(HomeCategoryTile).where(HomeCategoryTile.category_id == category_id)
-    if active_only:
-        query = query.where(HomeCategoryTile.is_active.is_(True))
-    query = query.order_by(HomeCategoryTile.sort_order, HomeCategoryTile.created_at)
-    result = await db.execute(query)
-    return list(result.scalars().all())
+def present(category: Category) -> CategoryTileRead:
+    return CategoryTileRead(
+        id=category.id,
+        parent_id=category.parent_id,
+        label=category.name,
+        href=_href(category),
+        image_src=category.image_src,
+        is_active=category.is_active,
+        sort_order=category.sort_order,
+    )
 
 
 async def ensure_categories(db: AsyncSession) -> HomeCategory:
@@ -64,30 +56,45 @@ async def ensure_categories(db: AsyncSession) -> HomeCategory:
         return row
     row = HomeCategory(slug=CATEGORY_SLUG, heading=DEFAULT_HEADING)
     db.add(row)
-    await db.flush()
-    for raw in DEFAULTS:
-        db.add(HomeCategoryTile(category_id=row.id, is_active=True, **raw))
     await db.commit()
     await db.refresh(row)
     return row
 
 
+def _flat(index: category_service.CategoryIndex) -> list[Category]:
+    out: list[Category] = []
+
+    def walk(parent: uuid.UUID | None) -> None:
+        for row in index.kids(parent):
+            out.append(row)
+            walk(row.id)
+
+    walk(None)
+    return out
+
+
 async def admin_view(db: AsyncSession) -> CategoryAdmin:
     row = await ensure_categories(db)
-    tiles = await _tiles(db, row.id, active_only=False)
-    return CategoryAdmin(heading=row.heading, tiles=[present(tile) for tile in tiles])
+    index = await category_service.load_index(db)
+    return CategoryAdmin(heading=row.heading, tiles=[present(item) for item in _flat(index)])
 
 
 async def public_view(db: AsyncSession) -> CategoryPublic:
     row = await ensure_categories(db)
-    tiles = await _tiles(db, row.id, active_only=True)
+    index = await category_service.load_index(db)
+    hidden = index.hidden_ids()
     return CategoryPublic(
         heading=row.heading,
         tiles=[
             CategoryTilePublic(
-                id=tile.id, label=tile.label, href=tile.href, image_src=tile.image_src
+                id=item.id,
+                parent_id=item.parent_id,
+                label=item.name,
+                href=_href(item),
+                image_src=item.image_src,
             )
-            for tile in tiles
+            for item in _flat(index)
+            if item.id not in hidden
         ],
     )
 
@@ -99,100 +106,67 @@ async def update_heading(db: AsyncSession, payload: CategoryHeadingUpdate) -> Ca
     return await admin_view(db)
 
 
-async def get_tile(db: AsyncSession, tile_id: uuid.UUID) -> HomeCategoryTile:
-    tile = await db.get(HomeCategoryTile, tile_id)
-    if tile is None:
-        raise NotFoundError("Category not found")
-    return tile
-
-
-async def _take_image(upload: UploadFile | None) -> str | None:
-    if upload is None or not upload.filename:
-        return None
-    return store_image(await read_image(upload), folder=_MEDIA)
-
-
-def _drop_image(stored: str | None) -> None:
-    if stored:
-        delete_owned_media({stored}, folder=_MEDIA)
+async def get_tile(db: AsyncSession, tile_id: uuid.UUID) -> Category:
+    return await category_service.get(db, tile_id)
 
 
 async def create_tile(
     db: AsyncSession, payload: CategoryTileWrite, image: UploadFile | None = None
 ) -> CategoryTileRead:
-    stored = await _take_image(image)
-    try:
-        if stored is not None:
-            payload = payload.model_copy(update={"image_src": stored})
-        _reject_staged_path(payload.image_src)
-        row = await ensure_categories(db)
-        count = await db.scalar(
-            select(func.count())
-            .select_from(HomeCategoryTile)
-            .where(HomeCategoryTile.category_id == row.id)
-        )
-        if int(count or 0) >= MAX_TILES:
-            raise UnprocessableError("You can show up to 24 categories")
-        current = await db.scalar(
-            select(func.max(HomeCategoryTile.sort_order)).where(
-                HomeCategoryTile.category_id == row.id
-            )
-        )
-        tile = HomeCategoryTile(
-            category_id=row.id,
-            sort_order=0 if current is None else int(current) + 1,
-            **payload.model_dump(),
-        )
-        db.add(tile)
-        await db.commit()
-    except Exception:
-        _drop_image(stored)
-        raise
-    await db.refresh(tile)
-    return present(tile)
+    created = await category_service.create(
+        db,
+        CategoryWrite(
+            parent_id=payload.parent_id,
+            name=payload.label,
+            image_src=payload.image_src,
+            is_active=payload.is_active,
+        ),
+        image,
+    )
+    return present(created)
 
 
 async def update_tile(
     db: AsyncSession,
-    tile: HomeCategoryTile,
+    tile: Category,
     payload: CategoryTileUpdate,
     image: UploadFile | None = None,
 ) -> CategoryTileRead:
-    stored = await _take_image(image)
-    previous = owned_refs(tile.image_src, folder=_MEDIA)
+    fields = payload.model_dump(exclude_unset=True)
+    mapped: dict[str, object] = {}
+    if "parent_id" in fields:
+        mapped["parent_id"] = fields["parent_id"]
+    if fields.get("label") is not None:
+        mapped["name"] = fields["label"]
+    if fields.get("image_src") is not None:
+        mapped["image_src"] = fields["image_src"]
+    if fields.get("is_active") is not None:
+        mapped["is_active"] = fields["is_active"]
+    updated = await category_service.update_category(
+        db, tile, CategoryUpdate.model_validate(mapped), image
+    )
+    return present(updated)
+
+
+async def delete_tile(db: AsyncSession, tile: Category) -> None:
+    """Old behaviour kept: subcategories move up one level. A category with products is
+    refused (409) by `category_service.delete_category`."""
+    index = await category_service.load_index(db)
+    for child in index.kids(tile.id):
+        child.parent_id = tile.parent_id
+    await db.flush()
     try:
-        if stored is not None:
-            payload = payload.model_copy(update={"image_src": stored})
-        _reject_staged_path(payload.image_src)
-        for field, value in payload.model_dump(exclude_unset=True).items():
-            setattr(tile, field, value)
-        await db.commit()
-    except Exception:
-        _drop_image(stored)
+        await category_service.delete_category(db, tile)
+    except ConflictError:
+        await db.rollback()
         raise
-    await db.refresh(tile)
-    if stored is not None:
-        replaced = previous - owned_refs(tile.image_src, folder=_MEDIA)
-        delete_owned_media(replaced, folder=_MEDIA)
-    return present(tile)
-
-
-async def delete_tile(db: AsyncSession, tile: HomeCategoryTile) -> None:
-    owned = owned_refs(tile.image_src, folder=_MEDIA)
-    await db.delete(tile)
-    await db.commit()
-    delete_owned_media(owned, folder=_MEDIA)
 
 
 async def reorder(db: AsyncSession, payload: CategoryReorder) -> CategoryAdmin:
-    row = await ensure_categories(db)
-    tiles = await _tiles(db, row.id, active_only=False)
-    current = {tile.id for tile in tiles}
-    incoming = payload.ids
-    if len(incoming) != len(set(incoming)) or set(incoming) != current:
+    index = await category_service.load_index(db)
+    if len(payload.ids) != len(set(payload.ids)) or set(payload.ids) != set(index.by_id):
         raise UnprocessableError("Send every category in the new order")
-    order = {tile_id: index for index, tile_id in enumerate(incoming)}
-    for tile in tiles:
-        tile.sort_order = order[tile.id]
+    for position, category_id in enumerate(payload.ids):
+        index.by_id[category_id].sort_order = position
     await db.commit()
     return await admin_view(db)

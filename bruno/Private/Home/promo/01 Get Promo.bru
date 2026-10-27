@@ -1,0 +1,48 @@
+meta {
+  name: Get Promo
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/home/promo
+  body: none
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+assert {
+  res.status: eq 200
+}
+
+tests {
+  test("returns the banner settings (hidden defaults when never saved)", function () {
+    const body = res.getBody();
+    expect(body.is_active).to.be.a("boolean");
+    expect(body.focal_x).to.be.within(0, 100);
+    expect(body.focal_y).to.be.within(0, 100);
+    expect(["dark", "light"]).to.include(body.tone);
+    expect(body.image_needs_upload).to.be.a("boolean");
+  });
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
+
+docs {
+  # GET /api/v1/admin/home/promo
+
+  Editor only. Returns the single promo banner shown under Featured Products, including when it is
+  hidden. Before anything is saved the answer is the hidden default (empty text, `is_active: false`).
+  `image_needs_upload` is true when the stored image can no longer be shown (for example a legacy
+  temporary link); upload it again.
+}

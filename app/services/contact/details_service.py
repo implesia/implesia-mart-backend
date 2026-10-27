@@ -13,6 +13,8 @@ from app.schemas.contact.details import (
     SocialRead,
     SocialWrite,
 )
+from app.schemas.site_contact import SiteContactPublic
+from app.services import site_contact_service
 from app.services.contact.hero_service import _safe_href
 
 SECTION_SLUG = "contact"
@@ -46,7 +48,14 @@ def _social_pair(row: ContactDetails) -> list[SocialRead]:
     ]
 
 
-def _admin(row: ContactDetails, channels: list[ContactDetailChannel]) -> DetailsAdmin:
+def _follow(channel: ContactDetailChannel, contact: SiteContactPublic) -> tuple[str, str]:
+    """Phone, WhatsApp and email channels show the central contact settings."""
+    return site_contact_service.channel_for_icon(channel.icon, channel.value, channel.href, contact)
+
+
+def _admin(
+    row: ContactDetails, channels: list[ContactDetailChannel], contact: SiteContactPublic
+) -> DetailsAdmin:
     return DetailsAdmin(
         is_active=row.is_active,
         title=row.title,
@@ -57,8 +66,8 @@ def _admin(row: ContactDetails, channels: list[ContactDetailChannel]) -> Details
                 id=str(channel.id),
                 icon=channel.icon,
                 title=channel.title,
-                value=channel.value,
-                href=channel.href,
+                value=_follow(channel, contact)[0],
+                href=_follow(channel, contact)[1],
                 is_active=channel.is_active,
             )
             for channel in channels
@@ -67,7 +76,9 @@ def _admin(row: ContactDetails, channels: list[ContactDetailChannel]) -> Details
     )
 
 
-def _public(row: ContactDetails, channels: list[ContactDetailChannel]) -> DetailsPublic:
+def _public(
+    row: ContactDetails, channels: list[ContactDetailChannel], contact: SiteContactPublic
+) -> DetailsPublic:
     if not row.is_active or not row.title:
         return EMPTY
     social = [
@@ -84,8 +95,8 @@ def _public(row: ContactDetails, channels: list[ContactDetailChannel]) -> Detail
                 id=str(channel.id),
                 icon=channel.icon,
                 title=channel.title,
-                value=channel.value,
-                href=channel.href,
+                value=_follow(channel, contact)[0],
+                href=_follow(channel, contact)[1],
             )
             for channel in channels
             if channel.is_active
@@ -116,12 +127,14 @@ async def ensure_details(db: AsyncSession) -> ContactDetails:
 
 async def admin_view(db: AsyncSession) -> DetailsAdmin:
     row = await ensure_details(db)
-    return _admin(row, await _channels(db, row.id))
+    contact = await site_contact_service.public_view(db)
+    return _admin(row, await _channels(db, row.id), contact)
 
 
 async def public_view(db: AsyncSession) -> DetailsPublic:
     row = await ensure_details(db)
-    return _public(row, await _channels(db, row.id))
+    contact = await site_contact_service.public_view(db)
+    return _public(row, await _channels(db, row.id), contact)
 
 
 def _check(payload: DetailsWrite) -> None:
@@ -186,4 +199,5 @@ async def update_details(db: AsyncSession, payload: DetailsWrite) -> DetailsAdmi
         await db.delete(extra)
     await db.commit()
     await db.refresh(row)
-    return _admin(row, await _channels(db, row.id))
+    contact = await site_contact_service.public_view(db)
+    return _admin(row, await _channels(db, row.id), contact)

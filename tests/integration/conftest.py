@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.db.base import Base
+from tests.integration.helpers import seed_category
 from tests.integration.postgres import create_schema, drop, ping, recreate, test_url
 
 
@@ -42,6 +43,7 @@ async def pg(
     names = ", ".join(f'"{table.name}"' for table in Base.metadata.sorted_tables)
     async with factory() as db:
         await db.execute(text(f"TRUNCATE TABLE {names} RESTART IDENTITY CASCADE"))
+        db.add(seed_category())
         await db.commit()
     try:
         yield factory

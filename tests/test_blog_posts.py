@@ -186,3 +186,73 @@ async def test_editor_creates_hides_reorders_and_deletes_a_post(
     assert removed_other.status_code == 200
     empty = await client.get("/api/v1/pages/blogs/posts")
     assert empty.json() == {"posts": []}
+
+
+def _locs(response) -> set[tuple]:
+    return {tuple(item["loc"]) for item in response.json()["error"]["details"]}
+
+
+async def test_blog_post_errors_name_their_fields(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    category_id = await _category_id(client, auth_headers)
+    many = await client.post(
+        "/api/v1/admin/pages/blogs/posts",
+        headers=auth_headers,
+        json={
+            **_post(category_id="not-a-category"),
+            "title": " ",
+            "slug": "Not A Slug",
+            "cover_image": "",
+            "blocks": [
+                {"type": "paragraph", "text": "Fine."},
+                {"type": "list", "items": []},
+                {"type": "callout", "title": "", "text": ""},
+            ],
+        },
+    )
+    assert many.status_code == 422, many.text
+    body = many.json()["error"]
+    assert body["code"] == "validation_error"
+    assert body["message"] == "Title is required."
+    assert _locs(many) == {
+        ("body", "title"),
+        ("body", "slug"),
+        ("body", "cover_image"),
+        ("body", "blocks", 1, "items"),
+        ("body", "blocks", 2, "title"),
+        ("body", "category_id"),
+    }
+    assert all(item["msg"] for item in body["details"])
+
+    hidden = await client.post(
+        "/api/v1/admin/pages/blogs/posts",
+        headers=auth_headers,
+        json={**_post(category_id=category_id), "cover_image": "", "is_active": False},
+    )
+    assert hidden.status_code == 201, hidden.text
+
+    one = await client.post(
+        "/api/v1/admin/pages/blogs/posts",
+        headers=auth_headers,
+        json={**_post(category_id=category_id, slug="second"), "cover_image": ""},
+    )
+    assert one.status_code == 422
+    assert _locs(one) == {("body", "cover_image")}
+
+    taken = await client.post(
+        "/api/v1/admin/pages/blogs/posts",
+        headers=auth_headers,
+        json=_post(category_id=category_id),
+    )
+    assert taken.status_code == 409
+    assert taken.json()["error"]["code"] == "conflict"
+    assert _locs(taken) == {("body", "slug")}
+
+    too_long = await client.post(
+        "/api/v1/admin/pages/blogs/posts",
+        headers=auth_headers,
+        json={**_post(category_id=category_id, slug="third"), "seo_title": "x" * 71},
+    )
+    assert too_long.status_code == 422
+    assert _locs(too_long) == {("body", "seo_title")}

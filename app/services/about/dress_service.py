@@ -22,6 +22,7 @@ from app.schemas.about.dress import (
     DressWrite,
 )
 from app.schemas.about.single_image import MISSING_ALT, MISSING_PHOTO
+from app.services import site_contact_service
 from app.services.image_storage import delete_owned_media, owned_refs, read_image, store_image
 
 SECTION_SLUG = "about"
@@ -38,7 +39,10 @@ DEFAULT_SUBTITLE = (
     "সেরা ফেব্রিক ও ফিনিশিং কোয়ালিটি বজায় রেখে।"
 )
 DEFAULT_PRIMARY_LABEL = "কাস্টম অর্ডার"
-DEFAULT_PRIMARY_HREF = f"https://wa.me/8801516527932?text={quote(_ORDER_MESSAGE, safe='')}"
+DEFAULT_PRIMARY_HREF = (
+    f"https://wa.me/{site_contact_service.international(site_contact_service.DEFAULT_WHATSAPP)}"
+    f"?text={quote(_ORDER_MESSAGE, safe='')}"
+)
 DEFAULT_SECONDARY_LABEL = "গর্জিয়াস ড্রেস"
 DEFAULT_SECONDARY_HREF = "/products?category=fashion"
 DEFAULT_FEATURES: tuple[tuple[str, str, str], ...] = (
@@ -201,16 +205,23 @@ async def ensure_section(db: AsyncSession) -> AboutDressSection:
 
 async def list_dresses(db: AsyncSession) -> list[DressRead]:
     row = await ensure_section(db)
-    return [await _present(db, block) for block in await _blocks(db, row.id, active_only=False)]
+    contact = await site_contact_service.public_view(db)
+    items = [await _present(db, block) for block in await _blocks(db, row.id, active_only=False)]
+    for item in items:
+        item.primary_href = site_contact_service.rewrite_href(item.primary_href, contact)
+        item.secondary_href = site_contact_service.rewrite_href(item.secondary_href, contact)
+    return items
 
 
 async def public_dresses(db: AsyncSession) -> DressesPublic:
     row = await ensure_section(db)
+    contact = await site_contact_service.public_view(db)
     items: list[DressPublic] = []
     for block in await _blocks(db, row.id, active_only=True):
-        items.append(
-            _public(block, await _feature_rows(db, block.id), await _image_rows(db, block.id))
-        )
+        item = _public(block, await _feature_rows(db, block.id), await _image_rows(db, block.id))
+        item.primary_href = site_contact_service.rewrite_href(item.primary_href, contact)
+        item.secondary_href = site_contact_service.rewrite_href(item.secondary_href, contact)
+        items.append(item)
     return DressesPublic(items=items)
 
 

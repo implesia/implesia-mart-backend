@@ -38,7 +38,7 @@ async def add_item(
 ) -> CartRead:
     del request
     return await cart_service.add_item(
-        db, actor, payload.product_id, payload.quantity, payload.selection
+        db, actor, payload.product_id, payload.quantity, payload.selection, payload.variant_id
     )
 
 

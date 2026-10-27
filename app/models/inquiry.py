@@ -55,7 +55,7 @@ class Inquiry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     admin_note: Mapped[str] = mapped_column(Text, nullable=False, default="")
     handled_by_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     idempotency_key: Mapped[str | None] = mapped_column(String(80), unique=True, nullable=True)
 

@@ -20,6 +20,7 @@ from app.schemas.home.showcase import (
     ShowcaseRowUpdate,
     clean_href,
 )
+from app.services import category_service
 
 SHOWCASE_SLUG = "home"
 MAX_ITEMS = 12
@@ -94,10 +95,17 @@ async def _products(db: AsyncSession, ids: set[uuid.UUID]) -> dict[uuid.UUID, Pr
     return {product.id: product for product in result.all()}
 
 
+async def _subtree(db: AsyncSession, slug: str) -> list[uuid.UUID]:
+    """Category ids of the row's top-level category and everything below it."""
+    index = await category_service.load_index(db)
+    row = index.by_slug.get(slug)
+    return index.descendants(row.id) if row is not None else []
+
+
 async def _choices(db: AsyncSession, category: str) -> list[FeaturedProductCard]:
     result = await db.scalars(
         select(Product)
-        .where(Product.category == category)
+        .where(Product.category_id.in_(await _subtree(db, category)))
         .options(defer(Product.content))
         .order_by(Product.title, Product.id)
     )
@@ -138,7 +146,10 @@ async def ensure_showcase(db: AsyncSession) -> HomeShowcase:
 async def _seed_products(db: AsyncSession, category: str) -> list[Product]:
     result = await db.scalars(
         select(Product)
-        .where(Product.published.is_(True), Product.category == category)
+        .where(
+            Product.published.is_(True),
+            Product.category_id.in_(await _subtree(db, category)),
+        )
         .options(defer(Product.content))
         .order_by(*_catalog_order())
         .limit(SEED_LIMIT)
@@ -229,7 +240,7 @@ async def _require_product(
     product = await db.get(Product, product_id)
     if product is None:
         raise UnprocessableError("Choose a product from the catalog")
-    if product.category != row.key:
+    if product.category_id not in await _subtree(db, row.key):
         raise UnprocessableError("Choose a product from this category")
     return product
 

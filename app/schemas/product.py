@@ -6,7 +6,8 @@ from urllib.parse import unquote, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
-from app.models.product import ProductBadge, ProductCategory, SpecGroup, StockStatus
+from app.models.product import ProductBadge, SpecGroup, StockStatus
+from app.schemas.category import CategoryRef
 
 _ROW_ID = re.compile(r"[a-z0-9-]{1,40}")
 _SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
@@ -34,6 +35,15 @@ AdminSort = Literal[
 CatalogSort = Literal["popularity", "price-asc", "price-desc", "newest"]
 CatalogView = Literal["featured", "latest", "new"]
 Visibility = Literal["live", "hidden"]
+
+
+def _category_slug(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = value.strip().lower()
+    if not _SLUG.fullmatch(text) or len(text) > 80:
+        raise ValueError("Category must be a slug such as gadgets")
+    return text
 
 
 def clean_line(value: str, max_length: int) -> str:
@@ -340,12 +350,76 @@ class ProductContent(BaseModel):
         return kept
 
 
+MAX_VARIANTS = 100
+
+
+class VariantInput(BaseModel):
+    """One variant as the dashboard sends it. `id` is set when editing an existing variant."""
+
+    model_config = ConfigDict(extra="forbid", validate_default=True)
+
+    id: uuid.UUID | None = None
+    options: dict[str, str] = Field(min_length=1, max_length=6)
+    sku: str = ""
+    price: int = Field(ge=0, le=MAX_PRICE)
+    compare_at_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
+    quantity: int | None = Field(default=None, ge=0, le=MAX_QUANTITY)
+    is_active: bool = True
+
+    @field_validator("options")
+    @classmethod
+    def _options(cls, value: dict[str, str]) -> dict[str, str]:
+        for group_id, value_id in value.items():
+            if not _ROW_ID.fullmatch(group_id) or not _ROW_ID.fullmatch(value_id):
+                raise ValueError("Option ids are not valid")
+        return value
+
+    @field_validator("sku")
+    @classmethod
+    def _sku(cls, value: str) -> str:
+        text = clean_line(value, 64)
+        if any(ch in text for ch in "|="):
+            raise ValueError("SKU cannot contain | or =")
+        return text
+
+    @model_validator(mode="after")
+    def _prices(self) -> Self:
+        if self.compare_at_price is not None and self.compare_at_price < self.price:
+            raise ValueError("Compare-at price must be at least the selling price")
+        return self
+
+
+class VariantRead(BaseModel):
+    id: uuid.UUID
+    options: dict[str, str]
+    label: str
+    sku: str
+    price: int
+    compare_at_price: int | None
+    quantity: int | None
+    is_active: bool
+    sort_order: int
+
+
+class PublicVariant(BaseModel):
+    """What a shopper may see. No stock count: only whether it can be bought now."""
+
+    id: uuid.UUID
+    options: dict[str, str]
+    label: str
+    price: int
+    compare_at_price: int | None
+    available: bool
+
+
 class ProductCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_default=True)
 
     title: str
     subtitle: str = ""
-    category: ProductCategory
+    # Assign by id (preferred) or by slug. The slug form keeps `gadgets` / `fashion` working.
+    category_id: uuid.UUID | None = None
+    category: str | None = Field(default=None, max_length=80)
     price: int = Field(ge=0, le=MAX_PRICE)
     compare_at_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     quantity: int | None = Field(default=None, ge=0, le=MAX_QUANTITY)
@@ -356,6 +430,9 @@ class ProductCreate(BaseModel):
     published: bool = False
     slug: str | None = None
     content: ProductContent = Field(default_factory=ProductContent)
+    min_order_quantity: int = Field(1, ge=1, le=5)
+    max_order_quantity: int | None = Field(default=None, ge=1, le=5)
+    variants: list[VariantInput] = Field(default_factory=list, max_length=MAX_VARIANTS)
 
     @field_validator("title")
     @classmethod
@@ -385,10 +462,22 @@ class ProductCreate(BaseModel):
             raise ValueError("Slug must use lowercase letters, numbers, and hyphens")
         return text
 
+    @field_validator("category")
+    @classmethod
+    def _category(cls, value: str | None) -> str | None:
+        return _category_slug(value)
+
     @model_validator(mode="after")
     def _prices(self) -> Self:
         if self.compare_at_price is not None and self.compare_at_price < self.price:
             raise ValueError("Compare-at price must be at least the selling price")
+        if self.category_id is None and self.category is None:
+            raise ValueError("Choose a category")
+        if (
+            self.max_order_quantity is not None
+            and self.max_order_quantity < self.min_order_quantity
+        ):
+            raise ValueError("Maximum order quantity must be at least the minimum")
         return self
 
 
@@ -397,7 +486,8 @@ class ProductUpdate(BaseModel):
 
     title: str | None = None
     subtitle: str | None = None
-    category: ProductCategory | None = None
+    category_id: uuid.UUID | None = None
+    category: str | None = Field(default=None, max_length=80)
     price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     compare_at_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     quantity: int | None = Field(default=None, ge=0, le=MAX_QUANTITY)
@@ -407,6 +497,11 @@ class ProductUpdate(BaseModel):
     featured: bool | None = None
     published: bool | None = None
     content: ProductContent | None = None
+    min_order_quantity: int | None = Field(default=None, ge=1, le=5)
+    max_order_quantity: int | None = Field(default=None, ge=1, le=5)
+    # Omitted = leave variants as they are. [] = remove them all (price and stock go back
+    # to the product row).
+    variants: list[VariantInput] | None = Field(default=None, max_length=MAX_VARIANTS)
 
     @field_validator("title")
     @classmethod
@@ -432,13 +527,24 @@ class ProductUpdate(BaseModel):
             return None
         return clean_media_ref(value)
 
+    @field_validator("category")
+    @classmethod
+    def _category(cls, value: str | None) -> str | None:
+        return _category_slug(value)
+
 
 class AdminProductCard(BaseModel):
     id: uuid.UUID
     slug: str
     title: str
     subtitle: str
-    category: ProductCategory
+    # `category` is the top-level ancestor's slug (the legacy gadgets/fashion value);
+    # `category_*` describe the node the product is assigned to.
+    category: str
+    category_id: uuid.UUID
+    category_slug: str
+    category_name: str
+    category_path: list[CategoryRef]
     price: int
     compare_at_price: int | None
     quantity: int | None
@@ -447,11 +553,15 @@ class AdminProductCard(BaseModel):
     image_src: str
     featured: bool
     published: bool
+    has_variants: bool = False
     created_at: datetime
 
 
 class AdminProductRead(AdminProductCard):
     content: ProductContent
+    min_order_quantity: int = 1
+    max_order_quantity: int | None = None
+    variants: list[VariantRead] = Field(default_factory=list)
     updated_at: datetime
 
 
@@ -514,7 +624,10 @@ class PublicProductCard(BaseModel):
     slug: str
     title: str
     subtitle: str
-    category: ProductCategory
+    category: str
+    category_id: uuid.UUID
+    category_slug: str
+    category_name: str
     price: int
     compare_at_price: int | None
     unit_label: str
@@ -523,9 +636,12 @@ class PublicProductCard(BaseModel):
     badge: ProductBadge | None
     status: StockStatus
     featured: bool
+    # True when the price shown is the lowest of several variants ("From ...").
+    has_variants: bool = False
 
 
 class PublicProductDetail(PublicProductCard):
+    category_path: list[CategoryRef]
     tagline: str
     description: str
     stock_label: str
@@ -544,6 +660,9 @@ class PublicProductDetail(PublicProductCard):
     specs: list[PublicSpec]
     faqs: list[PublicFaq]
     options: list[PublicOptionGroup]
+    variants: list[PublicVariant] = Field(default_factory=list)
+    min_per_order: int = 1
+    max_per_order: int = 5
     related: list[PublicProductCard]
 
 
@@ -570,7 +689,9 @@ class PublicProductList(BaseModel):
 
 class AdminProductQuery(BaseModel):
     q: str | None = Field(default=None, max_length=80)
-    category: ProductCategory | None = None
+    category: str | None = Field(default=None, max_length=80)
+    category_id: uuid.UUID | None = None
+    include_descendants: bool = True
     status: StockStatus | None = None
     visibility: Visibility | None = None
     min_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
@@ -603,10 +724,15 @@ class AdminProductQuery(BaseModel):
 
 
 class CatalogQuery(BaseModel):
-    category: ProductCategory | None = None
+    # Any category slug (or id). Products of its subcategories are included by default.
+    category: str | None = Field(default=None, max_length=80)
+    category_id: uuid.UUID | None = None
+    include_descendants: bool = True
     status: str | None = Field(default=None, max_length=80)
     badge: ProductBadge | None = None
     view: CatalogView | None = None
+    # Free-text search over title, subtitle, slug and category name (every word must match).
+    q: str | None = Field(default=None, max_length=100)
     min_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     max_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     sort: CatalogSort = "popularity"

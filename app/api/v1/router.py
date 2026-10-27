@@ -9,11 +9,16 @@ from app.api.v1.endpoints import (
     admin_products,
     auth,
     cart,
+    categories,
     dashboard,
     delivery,
     inquiries,
     orders,
     products,
+    search,
+    site_contact,
+    site_footer,
+    site_header,
     users,
 )
 from app.api.v1.endpoints.about import cta as about_cta
@@ -46,6 +51,7 @@ from app.api.v1.endpoints.home import category as home_category
 from app.api.v1.endpoints.home import faq as home_faq
 from app.api.v1.endpoints.home import featured as home_featured
 from app.api.v1.endpoints.home import newsletter as home_newsletter
+from app.api.v1.endpoints.home import promo as home_promo
 from app.api.v1.endpoints.home import review as home_review
 from app.api.v1.endpoints.home import showcase as home_showcase
 from app.api.v1.endpoints.home import trust as home_trust
@@ -80,6 +86,14 @@ _AUDITED = [Depends(audit_admin_write)]
 
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(products.router, prefix="/products", tags=["products"])
+api_router.include_router(search.router, prefix="/search", tags=["search"])
+api_router.include_router(categories.public_router, prefix="/categories", tags=["categories"])
+api_router.include_router(
+    categories.admin_router,
+    prefix="/admin/categories",
+    tags=["admin:categories"],
+    dependencies=_AUDITED,
+)
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(dashboard.router, prefix="/admin/dashboard", tags=["admin:dashboard"])
 api_router.include_router(admin_audit.router, prefix="/admin/audit-events", tags=["admin:audit"])
@@ -154,6 +168,34 @@ api_router.include_router(
 api_router.include_router(home_faq.public_router, prefix="/home/faq", tags=["home:faq"])
 api_router.include_router(
     home_faq.admin_router, prefix="/admin/home/faq", tags=["admin:home:faq"], dependencies=_AUDITED
+)
+api_router.include_router(home_promo.public_router, prefix="/home/promo", tags=["home:promo"])
+api_router.include_router(
+    home_promo.admin_router,
+    prefix="/admin/home/promo",
+    tags=["admin:home:promo"],
+    dependencies=_AUDITED,
+)
+api_router.include_router(site_footer.public_router, prefix="/site/footer", tags=["site:footer"])
+api_router.include_router(
+    site_footer.admin_router,
+    prefix="/admin/site/footer",
+    tags=["admin:site:footer"],
+    dependencies=_AUDITED,
+)
+api_router.include_router(site_contact.public_router, prefix="/site/contact", tags=["site:contact"])
+api_router.include_router(
+    site_contact.admin_router,
+    prefix="/admin/site/contact",
+    tags=["admin:site:contact"],
+    dependencies=_AUDITED,
+)
+api_router.include_router(site_header.public_router, prefix="/site/header", tags=["site:header"])
+api_router.include_router(
+    site_header.admin_router,
+    prefix="/admin/site/header",
+    tags=["admin:site:header"],
+    dependencies=_AUDITED,
 )
 api_router.include_router(
     home_newsletter.public_router, prefix="/home/newsletter", tags=["home:newsletter"]

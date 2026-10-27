@@ -28,6 +28,12 @@ class HomeCategoryTile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         index=True,
         nullable=False,
     )
+    # Optional parent tile: categories nest to any depth. NULL means top level.
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("home_category_tiles.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
     label: Mapped[str] = mapped_column(String(120), nullable=False)
     href: Mapped[str] = mapped_column(String(255), nullable=False)
     image_src: Mapped[str] = mapped_column(String(255), nullable=False, default="")

@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -45,6 +45,7 @@ class DetailsAdmin(BaseModel):
 
 
 class ChannelWrite(WriteModel):
+    href_checked_by_service: ClassVar[bool] = True
     icon: str = Field(default="call", max_length=40)
     title: str = Field(default="", max_length=80)
     value: str = Field(default="", max_length=160)
@@ -60,6 +61,7 @@ class ChannelWrite(WriteModel):
 
 
 class SocialWrite(WriteModel):
+    href_checked_by_service: ClassVar[bool] = True
     platform: Literal["facebook", "linkedin"]
     label: str = Field(default="", max_length=80)
     href: str = Field(default="", max_length=800)

@@ -86,7 +86,8 @@ tests/                   SQLite unit tests
 | Health      | `GET /health/live`, `GET /health/ready`                                               | —                                                    | —                               |
 | Metrics     | `GET /metrics` (Bearer `METRICS_TOKEN`; 404 whenever it is unset)                 | —                                                    | —                               |
 | Auth        | `POST /api/v1/auth/login`, `refresh`, `logout`                                        | `GET /auth/me`, `POST /auth/change-password`         | viewer for the signed-in routes |
-| Catalog     | `GET /api/v1/products`, `GET /api/v1/products/{id}`                                   | `GET` `POST` `PATCH` `DELETE /api/v1/admin/products` | editor                          |
+| Catalog     | `GET /api/v1/products`, `GET /api/v1/products/{id}` (canonical), `/by-slug/{slug}` (legacy)    | `GET` `POST` `PATCH` `DELETE /api/v1/admin/products` | editor                          |
+| Search      | `GET /api/v1/search?q=&type=all\|products\|blogs&page=&page_size=` (also `GET /api/v1/products?q=`)        | —                                                    | —                               |
 | Cart        | `GET /api/v1/cart`, plus item create, update, and delete                              | `GET /api/v1/admin/carts`                            | editor for the inbox            |
 | Delivery    | `GET /api/v1/delivery`                                                                | `GET` `PATCH /api/v1/admin/delivery`                 | editor                          |
 | Orders      | `POST /api/v1/orders/quote`, `POST /orders/lookup`, `POST /orders`                    | `GET` `PATCH /api/v1/admin/orders`                   | editor                          |
@@ -95,6 +96,8 @@ tests/                   SQLite unit tests
 | Users       | —                                                                                     | `GET` `POST` `PATCH` `DELETE /api/v1/users`          | superadmin                      |
 | Home CMS    | `GET /api/v1/home/{banner,trust,categories,featured,showcase,reviews,faq,newsletter}` | `/api/v1/admin/home/...`                             | editor                          |
 | Other pages | `GET /api/v1/pages/{about,contact,faqs,blogs,sustainability,shipping,privacy}/...`    | `/api/v1/admin/pages/...`                            | editor                          |
+
+Variants: a product may carry `variants` (one per option combination, each with its own price, compare-at price, SKU, stock and active flag). Cart lines, quotes and orders take `variant_id`; the server prices and checks stock from the variant row and ignores any client price. Migration `0076` is additive; see its docstring for rollback limits.
 
 The public catalog returns published products only. A hidden product id answers `404`, the same as a missing id. Lookups use the product UUID. Create and update send `multipart/form-data`: a `payload` JSON field plus image files. List responses include `page`, `page_size`, `total`, and `pages`. Inventory `quantity` stays on the admin API.
 

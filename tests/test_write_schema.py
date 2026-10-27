@@ -42,7 +42,8 @@ def test_cms_write_schemas_reject_unknown_fields() -> None:
     # 131: About hero/story/dress image writes now share one SingleImageWrite (was 3 classes).
     # 129: sustainability hero/origin/quality/durability image writes (4) became aliases of
     # OptionalImageWrite + LegacyImageWrite (2).
-    assert len(models) == 129
+    # 130: + PromoWrite (home promo banner).
+    assert len(models) == 130
     for model in models:
         assert issubclass(model, WriteModel)
         assert model.model_config.get("extra") == "forbid"

@@ -75,7 +75,7 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     number: Mapped[str] = mapped_column(String(32), nullable=False)
     user_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     source: Mapped[str] = mapped_column(String(16), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default=OrderStatus.NEW.value)
@@ -116,8 +116,14 @@ class OrderItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True
     )
     product_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("products.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("products.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Variant sold on this line. SET NULL if the variant is later deleted; `sku`, `selection`
+    # and `unit_price` below stay as the snapshot.
+    variant_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("product_variants.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    sku: Mapped[str] = mapped_column(String(64), nullable=False, default="", server_default="")
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     slug: Mapped[str] = mapped_column(String(160), nullable=False)
     image_src: Mapped[str] = mapped_column(String(2048), nullable=False, default="")
@@ -143,7 +149,7 @@ class OrderIdempotency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     actor: Mapped[str] = mapped_column(String(80), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(80), nullable=False)
     order_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("orders.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     order: Mapped[Order] = relationship()

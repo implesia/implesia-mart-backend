@@ -22,6 +22,12 @@ class BlogPost(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     cover_image: Mapped[str] = mapped_column(String(800), nullable=False, default="")
     cover_alt: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    seo_title: Mapped[str] = mapped_column(
+        String(70), nullable=False, default="", server_default=""
+    )
+    seo_description: Mapped[str] = mapped_column(
+        String(200), nullable=False, default="", server_default=""
+    )
     author: Mapped[str] = mapped_column(String(80), nullable=False, default="")
     author_role: Mapped[str] = mapped_column(String(80), nullable=False, default="")
     published_at: Mapped[str] = mapped_column(String(40), nullable=False, default="")

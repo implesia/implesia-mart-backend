@@ -1,13 +1,14 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.sql.elements import conv
 from sqlalchemy.types import JSON
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from app.models.product import Product
+from app.models.product import Product, ProductVariant
 from app.models.user import User
 
 
@@ -49,7 +50,23 @@ class Cart(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class CartItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "cart_items"
     __table_args__ = (
-        UniqueConstraint("cart_id", "product_id", name="uq_cart_items_cart_product"),
+        # One line per product, or one line per variant for a variant product.
+        Index(
+            conv("uq_cart_items_cart_product"),
+            "cart_id",
+            "product_id",
+            unique=True,
+            postgresql_where=text("variant_id IS NULL"),
+            sqlite_where=text("variant_id IS NULL"),
+        ),
+        Index(
+            conv("uq_cart_items_cart_variant"),
+            "cart_id",
+            "variant_id",
+            unique=True,
+            postgresql_where=text("variant_id IS NOT NULL"),
+            sqlite_where=text("variant_id IS NOT NULL"),
+        ),
         CheckConstraint("quantity >= 1 AND quantity <= 5", name="quantity_in_range"),
     )
 
@@ -57,7 +74,10 @@ class CartItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("carts.id", ondelete="CASCADE"), nullable=False, index=True
     )
     product_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("products.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    variant_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("product_variants.id", ondelete="CASCADE"), nullable=True, index=True
     )
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     selection: Mapped[list[Any]] = mapped_column(
@@ -68,3 +88,4 @@ class CartItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     cart: Mapped[Cart] = relationship(back_populates="items")
     product: Mapped[Product] = relationship()
+    variant: Mapped[ProductVariant | None] = relationship()
