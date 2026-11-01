@@ -325,21 +325,24 @@ async def test_unsafe_input_is_rejected(client: AsyncClient, auth_headers: dict[
             headers=auth_headers,
             files=_parts(_product(image_src=image_src, title=f"Bad {image_src[:12]}")),
         )
-        assert response.status_code == 422, image_src
+        assert response.status_code == 400, image_src
+        assert response.json()["errors"][0]["field"] == "images", image_src
 
     cheap = await client.post(
         "/api/v1/admin/products",
         headers=auth_headers,
         files=_parts(_product(price=200, compare_at_price=100)),
     )
-    assert cheap.status_code == 422
+    assert cheap.status_code == 400
+    assert cheap.json()["errors"][0]["field"] == "compareAtPrice"
 
     extra = await client.post(
         "/api/v1/admin/products",
         headers=auth_headers,
         files=_parts(_product(role="superadmin")),
     )
-    assert extra.status_code == 422
+    assert extra.status_code == 400
+    assert extra.json()["errors"][0]["field"] == "form"
 
     slug = await client.get("/api/v1/products/not-a-product")
     assert slug.status_code == 422
@@ -501,14 +504,22 @@ async def test_create_and_update_upload_the_page_images(
             images=[("icon.svg", b"<svg xmlns='http://www.w3.org/2000/svg'/>", "image/svg+xml")],
         ),
     )
-    assert rejected.status_code == 422
+    assert rejected.status_code == 400
+    assert rejected.json()["errors"][0]["field"] == "images"
 
     missing = await client.post(
         "/api/v1/admin/products",
         headers=auth_headers,
         files=_parts(_product(title="No Photo", image_src="")),
     )
-    assert missing.status_code == 422
+    assert missing.status_code == 400
+    assert missing.json()["errors"] == [
+        {
+            "field": "images",
+            "message": "প্রোডাক্টের ছবি দিতে হবে",
+            "fix": "অন্তত একটা ছবি আপলোড করুন",
+        }
+    ]
 
     added = await client.patch(
         f"/api/v1/admin/products/{created['id']}",
@@ -537,8 +548,8 @@ async def test_product_images_reject_avif_and_a_thirteenth_file(
             images=[("photo.avif", AVIF, "image/avif")],
         ),
     )
-    assert avif.status_code == 422
-    assert "JPEG" in avif.json()["error"]["message"]
+    assert avif.status_code == 400
+    assert "JPEG" in avif.json()["errors"][0]["fix"]
 
     too_many = await client.post(
         "/api/v1/admin/products",
@@ -548,8 +559,8 @@ async def test_product_images_reject_avif_and_a_thirteenth_file(
             images=[(f"{index}.jpg", JPEG, "image/jpeg") for index in range(13)],
         ),
     )
-    assert too_many.status_code == 422
-    assert "12" in too_many.json()["error"]["message"]
+    assert too_many.status_code == 400
+    assert "১২" in too_many.json()["errors"][0]["fix"]
 
 
 async def test_operations_routes_reject_a_missing_token(client: AsyncClient) -> None:
@@ -578,10 +589,9 @@ async def test_invalid_multipart_payload_reports_fields(
         headers=auth_headers,
         data={"payload": '{"category": "gadgets", "price": -1}'},
     )
-    assert response.status_code == 422
-    locs = {tuple(item["loc"]) for item in response.json()["error"]["details"]}
-    assert ("payload", "title") in locs
-    assert ("payload", "price") in locs
+    assert response.status_code == 400
+    fields = {item["field"] for item in response.json()["errors"]}
+    assert {"title", "price"} <= fields
 
 
 async def test_public_product_by_slug_hides_unpublished(

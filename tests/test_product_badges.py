@@ -184,12 +184,13 @@ async def test_unknown_or_too_many_badges_are_rejected(
     body.pop("badge")
     body["badge_ids"] = ["00000000-0000-0000-0000-000000000001"]
     response = await client.post(PRODUCTS, headers=auth_headers, files=_parts(body))
-    assert response.status_code == 422
-    assert "badge" in response.text.lower()
+    assert response.status_code == 400
+    assert [e["field"] for e in response.json()["errors"]] == ["badges"]
 
     body["badge_ids"] = [f"00000000-0000-0000-0000-00000000000{i}" for i in range(9)]
     response = await client.post(PRODUCTS, headers=auth_headers, files=_parts(body))
-    assert response.status_code == 422
+    assert response.status_code == 400
+    assert [e["field"] for e in response.json()["errors"]] == ["badges"]
 
 
 async def test_legacy_badge_field_still_works(

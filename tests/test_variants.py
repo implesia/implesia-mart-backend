@@ -167,9 +167,11 @@ async def test_variant_rules_are_enforced(
     }
     for name, variants in cases.items():
         response = await _post(client, auth_headers, variants=variants)
-        assert response.status_code == 422, (name, response.text)
+        assert response.status_code == 400, (name, response.text)
+        assert response.json()["errors"][0]["field"] in {"variants", "compareAtPrice"}, name
     no_options = await _post(client, auth_headers, variants=[rows[0]], content=_content(options=[]))
-    assert no_options.status_code == 422
+    assert no_options.status_code == 400
+    assert no_options.json()["errors"][0]["field"] == "variants"
 
 
 async def test_sku_must_be_unique_across_products(
@@ -178,7 +180,8 @@ async def test_sku_must_be_unique_across_products(
     await _make(client, auth_headers, title="First tee")
     clash = await _post(client, auth_headers, title="Second tee", variants=_combos())
     assert clash.status_code == 409, clash.text
-    assert "SKU" in clash.json()["error"]["message"]
+    assert clash.json()["errors"][0]["field"] == "variants"
+    assert "SKU" in clash.json()["errors"][0]["message"]
     # the failed create left nothing behind
     titles = [
         row["title"] for row in (await client.get(ADMIN, headers=auth_headers)).json()["items"]
@@ -278,9 +281,11 @@ async def test_min_and_max_order_quantity_are_validated(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
     bad = await _post(client, auth_headers, min_order_quantity=3, max_order_quantity=2)
-    assert bad.status_code == 422
+    assert bad.status_code == 400
+    assert bad.json()["errors"][0]["field"] == "orderLimits"
     over = await _post(client, auth_headers, max_order_quantity=9)
-    assert over.status_code == 422
+    assert over.status_code == 400
+    assert over.json()["errors"][0]["field"] == "orderLimits"
     product = await _create(client, auth_headers, min_order_quantity=2, max_order_quantity=3)
     assert (await _read(client, auth_headers, product["id"]))["max_order_quantity"] == 3
     response = await _patch(client, auth_headers, product["id"], {"min_order_quantity": 4})
