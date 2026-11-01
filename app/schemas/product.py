@@ -7,6 +7,7 @@ from urllib.parse import unquote, urlsplit
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from app.models.product import ProductBadge, SpecGroup, StockStatus
+from app.schemas.badge import MAX_PER_PRODUCT, BadgeRef, PublicBadge
 from app.schemas.category import CategoryRef
 
 _ROW_ID = re.compile(r"[a-z0-9-]{1,40}")
@@ -424,7 +425,11 @@ class ProductCreate(BaseModel):
     compare_at_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     quantity: int | None = Field(default=None, ge=0, le=MAX_QUANTITY)
     status: StockStatus = StockStatus.AVAILABLE
+    # Legacy single badge. Prefer `badge_ids`; when only `badge_ids` is sent, `badge` is
+    # derived from the built-in badges among them.
     badge: ProductBadge | None = None
+    # Badges to show, in this order. Omitted = none (or the legacy `badge` alone).
+    badge_ids: list[uuid.UUID] | None = Field(default=None, max_length=MAX_PER_PRODUCT)
     image_src: str = ""
     featured: bool = False
     published: bool = False
@@ -493,6 +498,8 @@ class ProductUpdate(BaseModel):
     quantity: int | None = Field(default=None, ge=0, le=MAX_QUANTITY)
     status: StockStatus | None = None
     badge: ProductBadge | None = None
+    # Omitted = keep the product's badges. [] = remove them all.
+    badge_ids: list[uuid.UUID] | None = Field(default=None, max_length=MAX_PER_PRODUCT)
     image_src: str | None = None
     featured: bool | None = None
     published: bool | None = None
@@ -550,6 +557,8 @@ class AdminProductCard(BaseModel):
     quantity: int | None
     status: StockStatus
     badge: ProductBadge | None
+    # Every badge on the product, in display order, including switched-off ones.
+    badges: list[BadgeRef] = Field(default_factory=list)
     image_src: str
     featured: bool
     published: bool
@@ -634,6 +643,8 @@ class PublicProductCard(BaseModel):
     image_src: str
     image_alt: str
     badge: ProductBadge | None
+    # Active badges only, in display order.
+    badges: list[PublicBadge] = Field(default_factory=list)
     status: StockStatus
     featured: bool
     # True when the price shown is the lowest of several variants ("From ...").

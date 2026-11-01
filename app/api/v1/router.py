@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 from app.api.deps import audit_admin_write
 from app.api.v1.endpoints import (
     admin_audit,
+    admin_badges,
     admin_cart,
     admin_delivery,
     admin_orders,
@@ -92,6 +93,12 @@ api_router.include_router(
     categories.admin_router,
     prefix="/admin/categories",
     tags=["admin:categories"],
+    dependencies=_AUDITED,
+)
+api_router.include_router(
+    admin_badges.router,
+    prefix="/admin/badges",
+    tags=["admin:badges"],
     dependencies=_AUDITED,
 )
 api_router.include_router(users.router, prefix="/users", tags=["users"])

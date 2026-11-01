@@ -1,6 +1,7 @@
 import json
 import re
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 from fastapi import UploadFile
@@ -14,6 +15,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.exceptions import ConflictError, NotFoundError, UnprocessableError
 from app.models.audit_event import AuditAction
+from app.models.badge import Badge
 from app.models.category import Category
 from app.models.product import Product, ProductBadge, ProductVariant, StockStatus
 from app.models.user import User
@@ -42,7 +44,13 @@ from app.schemas.product import (
     PublicProductList,
     PublicSpec,
 )
-from app.services import audit_service, category_service, search_text, variant_service
+from app.services import (
+    audit_service,
+    badge_service,
+    category_service,
+    search_text,
+    variant_service,
+)
 from app.services.category_service import CategoryIndex
 from app.services.image_storage import (
     delete_owned_media,
@@ -211,6 +219,11 @@ async def _insert_product(db: AsyncSession, payload: ProductCreate) -> Product:
         db, category_id=payload.category_id, legacy_slug=payload.category
     )
     unit_label, image_alt, stored = _split_content(payload.content, title=payload.title)
+    badges = await badge_service.resolve(db, payload.badge_ids or [])
+    legacy = payload.badge.value if payload.badge else None
+    if payload.badge_ids is not None:
+        # The chosen badges decide; `badge` follows the built-in ones among them.
+        legacy = badge_service.legacy_value(badges)
     sort_order = int(await db.scalar(select(func.max(Product.sort_order))) or 0) + 1
     product = Product(
         slug=slug,
@@ -221,7 +234,7 @@ async def _insert_product(db: AsyncSession, payload: ProductCreate) -> Product:
         compare_at_price=payload.compare_at_price,
         quantity=payload.quantity,
         status=payload.status.value,
-        badge=payload.badge.value if payload.badge else None,
+        badge=legacy,
         image_src=payload.image_src,
         image_alt=image_alt,
         unit_label=unit_label,
@@ -234,11 +247,16 @@ async def _insert_product(db: AsyncSession, payload: ProductCreate) -> Product:
     )
     db.add(product)
     try:
-        if payload.variants:
+        if payload.variants or payload.badge_ids is not None or legacy is not None:
             await db.flush()
+        if payload.variants:
             await variant_service.save_variants(
                 db, product, payload.content, payload.variants, explicit_status=True
             )
+        if payload.badge_ids is not None:
+            await badge_service.replace_links(db, product.id, badges)
+        elif legacy is not None:
+            await badge_service.apply_legacy(db, product.id, legacy)
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -298,8 +316,13 @@ async def _apply_update(
         "status": product.status,
     }
     fields = payload.model_dump(
-        exclude_unset=True, exclude={"content", "category", "category_id", "variants"}
+        exclude_unset=True,
+        exclude={"content", "category", "category_id", "variants", "badge_ids"},
     )
+    new_badges: list[Badge] | None = None
+    if payload.badge_ids is not None:
+        new_badges = await badge_service.resolve(db, payload.badge_ids)
+        fields["badge"] = badge_service.legacy_value(new_badges)
     if fields.get("min_order_quantity", 0) is None:
         fields.pop("min_order_quantity")
     new_min = int(fields.get("min_order_quantity", product.min_order_quantity))
@@ -356,6 +379,11 @@ async def _apply_update(
     elif has_content:
         await variant_service.ensure_still_valid(db, product, content_of(product))
 
+    if new_badges is not None:
+        await badge_service.replace_links(db, product.id, new_badges)
+    elif "badge" in fields:
+        await badge_service.apply_legacy(db, product.id, product.badge)
+
     await _audit_catalog_changes(db, product, actor, before)
     await db.commit()
     await db.refresh(product)
@@ -403,6 +431,7 @@ def _field_changes(
 
 async def delete_product(db: AsyncSession, product: Product) -> None:
     refs = _media_refs(product)
+    await badge_service.unlink_product(db, product.id)
     await db.delete(product)
     await db.commit()
     delete_owned_media(refs)
@@ -589,7 +618,9 @@ def _category_fields(index: CategoryIndex, product: Product) -> dict[str, Any]:
     }
 
 
-def admin_card(product: Product, index: CategoryIndex) -> AdminProductCard:
+def admin_card(
+    product: Product, index: CategoryIndex, badges: Sequence[Badge] = ()
+) -> AdminProductCard:
     return AdminProductCard(
         id=product.id,
         slug=product.slug,
@@ -602,6 +633,7 @@ def admin_card(product: Product, index: CategoryIndex) -> AdminProductCard:
         quantity=product.quantity,
         status=StockStatus(product.status),
         badge=ProductBadge(product.badge) if product.badge else None,
+        badges=[badge_service.ref(badge) for badge in badges],
         image_src=product.image_src,
         featured=product.featured,
         published=product.published,
@@ -618,11 +650,14 @@ def content_of(product: Product) -> ProductContent:
 
 
 def admin_read(
-    product: Product, index: CategoryIndex, variants: list[ProductVariant] | None = None
+    product: Product,
+    index: CategoryIndex,
+    variants: list[ProductVariant] | None = None,
+    badges: Sequence[Badge] = (),
 ) -> AdminProductRead:
     content = content_of(product)
     return AdminProductRead(
-        **admin_card(product, index).model_dump(),
+        **admin_card(product, index, badges).model_dump(),
         content=content,
         min_order_quantity=product.min_order_quantity,
         max_order_quantity=product.max_order_quantity,
@@ -634,10 +669,13 @@ def admin_read(
 async def admin_read_full(
     db: AsyncSession, product: Product, index: CategoryIndex
 ) -> AdminProductRead:
-    return admin_read(product, index, await variant_service.list_variants(db, product.id))
+    badges = (await badge_service.for_products(db, [product.id])).get(product.id, [])
+    return admin_read(product, index, await variant_service.list_variants(db, product.id), badges)
 
 
-def public_card(product: Product, index: CategoryIndex) -> PublicProductCard:
+def public_card(
+    product: Product, index: CategoryIndex, badges: Sequence[Badge] = ()
+) -> PublicProductCard:
     return PublicProductCard(
         id=product.id,
         slug=product.slug,
@@ -650,6 +688,7 @@ def public_card(product: Product, index: CategoryIndex) -> PublicProductCard:
         image_src=product.image_src,
         image_alt=product.image_alt,
         badge=ProductBadge(product.badge) if product.badge else None,
+        badges=badge_service.public(badges),
         status=StockStatus(product.status),
         featured=product.featured,
         has_variants=product.has_variants,
@@ -661,7 +700,9 @@ def public_detail(
     related: list[Product],
     index: CategoryIndex,
     variants: list[ProductVariant] | None = None,
+    badges: dict[uuid.UUID, list[Badge]] | None = None,
 ) -> PublicProductDetail:
+    badges = badges or {}
     content = content_of(product)
     gallery = [
         PublicGalleryImage(src=item.src, alt=item.alt or product.title) for item in content.gallery
@@ -671,7 +712,7 @@ def public_detail(
             PublicGalleryImage(src=product.image_src, alt=product.image_alt or product.title)
         ]
     return PublicProductDetail(
-        **public_card(product, index).model_dump(),
+        **public_card(product, index, badges.get(product.id, ())).model_dump(),
         category_path=category_service.refs(index, product.category_id),
         tagline=content.tagline,
         description=content.description,
@@ -708,7 +749,7 @@ def public_detail(
         variants=variant_service.public_read(product, content, variants or []),
         min_per_order=variant_service.order_limits(product)[0],
         max_per_order=variant_service.order_limits(product)[1],
-        related=[public_card(item, index) for item in related],
+        related=[public_card(item, index, badges.get(item.id, ())) for item in related],
     )
 
 
@@ -725,9 +766,10 @@ async def list_admin(db: AsyncSession, query: AdminProductQuery) -> AdminProduct
         .limit(query.page_size)
     )
     rows: list[Product] = list((await db.execute(stmt)).scalars().all())
+    badges = await badge_service.for_products(db, [row.id for row in rows])
     counts = await _category_counts(db, _admin_filters(query, scope=None, search=False), index)
     return AdminProductList(
-        items=[admin_card(product, index) for product in rows],
+        items=[admin_card(product, index, badges.get(product.id, ())) for product in rows],
         total=total,
         page=query.page,
         page_size=query.page_size,
@@ -753,6 +795,7 @@ async def list_public(db: AsyncSession, query: CatalogQuery) -> PublicProductLis
         .limit(query.page_size)
     )
     rows: list[Product] = list((await db.execute(stmt)).scalars().all())
+    badges = await badge_service.for_products(db, [row.id for row in rows])
     categories = await _category_counts(
         db, _public_filters(query, index=index, ignore=frozenset({"category"})), index
     )
@@ -765,7 +808,7 @@ async def list_public(db: AsyncSession, query: CatalogQuery) -> PublicProductLis
         if status in availability:
             availability[str(status)] = int(count)
     return PublicProductList(
-        items=[public_card(product, index) for product in rows],
+        items=[public_card(product, index, badges.get(product.id, ())) for product in rows],
         total=total,
         page=query.page,
         page_size=query.page_size,
@@ -815,4 +858,5 @@ async def _public_detail(db: AsyncSession, match: Any) -> PublicProductDetail:
         .all()
     )
     variants = await variant_service.list_variants(db, product.id) if product.has_variants else []
-    return public_detail(product, related, index, variants)
+    badges = await badge_service.for_products(db, [product.id, *(item.id for item in related)])
+    return public_detail(product, related, index, variants, badges)

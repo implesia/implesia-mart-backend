@@ -19,6 +19,7 @@ from app.models.about.story import (
 )
 from app.models.about.values import AboutValueItem, AboutValues
 from app.models.audit_event import AuditEvent
+from app.models.badge import Badge, ProductBadgeLink
 from app.models.blogs.categories import BlogCategories, BlogCategoryItem
 from app.models.blogs.cta import BlogCta
 from app.models.blogs.hero import BlogHero
@@ -121,6 +122,7 @@ __all__ = [
     "AboutValueItem",
     "AboutValues",
     "AuditEvent",
+    "Badge",
     "BannerAccent",
     "Base",
     "BlogCategories",
@@ -188,6 +190,7 @@ __all__ = [
     "PrivacyUsageBadge",
     "PrivacyUsageItem",
     "Product",
+    "ProductBadgeLink",
     "ProductVariant",
     "RefreshToken",
     "ShippingBlock",
