@@ -202,6 +202,32 @@ async def test_editing_unrelated_fields_keeps_variants_and_ids(
     assert after["price"] == 1000 and after["quantity"] == 12
 
 
+async def test_saving_the_form_keeps_the_card_price_from_the_variants(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    """The dashboard re-sends price and compare_at_price=null for variant products without
+    the variants; the card's price and struck-through price still come from the variants."""
+    rows = _combos({"red-m": {"compare_at_price": 1400}, "navy-m": {"compare_at_price": 1300}})
+    product = await _make(client, auth_headers, variants=rows)
+    assert (product["price"], product["compare_at_price"]) == (1000, 1400)
+
+    response = await _patch(
+        client,
+        auth_headers,
+        product["id"],
+        {"title": "Renamed tee", "price": 9, "compare_at_price": None},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["price"], body["compare_at_price"]) == (1000, 1400)
+    card = next(
+        row
+        for row in (await client.get("/api/v1/products")).json()["items"]
+        if row["id"] == product["id"]
+    )
+    assert (card["price"], card["compare_at_price"]) == (1000, 1400)
+
+
 async def test_update_changes_price_and_stock_by_id_and_keeps_order(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:

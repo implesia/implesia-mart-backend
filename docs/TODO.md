@@ -11,7 +11,7 @@ Open items found in the code and in recent work. Remove an item when it is done.
 - **Bulk delete and orders**: deleting products that appear in past orders is allowed (order lines keep name and price, lose the product link). Decide whether that should need extra confirmation.
 
 - **Max quantity exposes low stock**: `max_per_order` / `max_quantity` are min(limit, stock), so a stock count below the limit is visible to shoppers. Decide whether that is acceptable or whether to expose only the limit and refuse at cart time.
-- **Product cards**: list/card discount badges still come from `compare_at_price` (= base %); they do not show quantity tiers.
+- **Product cards**: list/card discount badges come from `compare_at_price` (= base %, or the cheapest variant's compare-at); they do not show quantity tiers (by design). For variant products the badge shows the cheapest variant's %, not the largest.
 - **Slug race**: slug uniqueness against other products and redirect rows is checked in the service, not by a DB constraint, so two simultaneous saves could collide (the unique index on `products.slug` still blocks two products with the same current slug).
 - **Transliteration is approximate**: Bengali schwa deletion is not modelled fully (e.g. "আয়না" → `ayona`). Admins can edit the slug after create; improve the rules if needed.
 - **Category `updated_at`** changes only when the category row changes, not when its products change; the storefront sitemap uses it as is.

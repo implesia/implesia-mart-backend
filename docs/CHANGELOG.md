@@ -2,6 +2,13 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Variant products keep their card discount after a save (2026-11-03).**
+  - Bug: saving a variant product in the dashboard without changing its variants sends `price` + `compare_at_price: null`; the update wrote those on the product row and skipped the variant roll-up. Product cards read `products.compare_at_price`, so the struck-through price and the `-X%` badge vanished (live: every product had `compare_at_price: null` in `GET /api/v1/products` while its variants still had compare-at prices, e.g. ৳945 / ৳1,350).
+  - Fix: `product_service.update_product` now calls `variant_service.sync_price` for variant products after every save, so `price` / `compare_at_price` always come from the cheapest active variant (same rule as `rollup`, shared helper `_copy_cheapest_price`).
+  - Migration **0090** (data only, no schema change): re-syncs `price` / `compare_at_price` of products with variants from their variants. Plain products, variants, carts and orders are untouched; no downgrade action. Checked on the local DB: the broken row was repaired, plain products' checksum unchanged.
+  - Test: `tests/test_variants.py::test_saving_the_form_keeps_the_card_price_from_the_variants`.
+  - Files: `app/services/product_service.py`, `app/services/variant_service.py`, `alembic/versions/0090_variant_card_price_resync.py`, `tests/test_variants.py`, docs.
+  - Frontend: no change needed. The product card (`app/(client)/products/_components/product-card.tsx`) already shows the selling price, the struck-through regular price and a `-X%` badge top-right (custom badges sit top-left) whenever `compare_at_price > price`.
 - **Quantity discount on the line total, rounded up (2026-11-02).**
   - New rule in the one pricing function (`pricing_service.price_line`, used by the product page block, cart, quote and order): `total = selling price × quantity`, `final = ceil(total − total × tier % / 100)`, `discount = total − final`. Replaces the old "unit price − round(regular × extra %)" rule. Tier lookup is unchanged (nearest tier at or below the quantity; none → no discount). Integer maths in `discounted_total()` (hundredths of a percent), so 2772 stays 2772. The browser still never sends a price.
   - Response shape unchanged, meaning changed: `unit_price` on cart, quote and order lines is now the quantity-1 selling price; `line_total` is the discounted, rounded-up amount, so `unit_price × quantity − line_total` = the quantity discount in taka. `quantity_discount_percent` is the tier % applied to the line. No migration; placed orders keep their stored snapshot (older orders keep the old per-unit prices).

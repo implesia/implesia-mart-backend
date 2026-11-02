@@ -204,6 +204,25 @@ async def _check_sku_free(
         raise ConflictError("A variant SKU is already used by another product")
 
 
+def _copy_cheapest_price(product: Product, rows: list[ProductVariant]) -> None:
+    """Card price and compare-at = the cheapest active variant's (lowest sort_order on a tie)."""
+    basis = [row for row in rows if row.is_active] or rows
+    cheapest = min(basis, key=lambda row: (row.price, row.sort_order))
+    product.price = cheapest.price
+    product.compare_at_price = cheapest.compare_at_price
+
+
+async def sync_price(db: AsyncSession, product: Product) -> None:
+    """Put the variants' price back on the product row after a save that did not send variants.
+
+    The dashboard sends `price` and `compare_at_price: null` for a variant product, which would
+    otherwise wipe the struck-through price (and the -X% badge) from the product cards.
+    """
+    rows = await list_variants(db, product.id)
+    if rows:
+        _copy_cheapest_price(product, rows)
+
+
 async def rollup(db: AsyncSession, product: Product, *, explicit_status: bool = False) -> None:
     """Refresh the product row from its variants. Locks the product row first."""
     await db.execute(select(Product.id).where(Product.id == product.id).with_for_update())
@@ -212,11 +231,8 @@ async def rollup(db: AsyncSession, product: Product, *, explicit_status: bool = 
         product.has_variants = False
         return
     active = [row for row in rows if row.is_active]
-    basis = active or rows
-    cheapest = min(basis, key=lambda row: (row.price, row.sort_order))
     product.has_variants = True
-    product.price = cheapest.price
-    product.compare_at_price = cheapest.compare_at_price
+    _copy_cheapest_price(product, rows)
     if not active:
         product.quantity = 0
     elif any(row.quantity is None for row in active):
