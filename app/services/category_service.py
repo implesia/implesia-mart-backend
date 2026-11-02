@@ -204,6 +204,7 @@ def _node(
         image_src=row.image_src,
         depth=depth,
         product_count=counts.get(row.id, 0),
+        updated_at=row.updated_at,
         children=[
             _node(index, child, counts, depth + 1)
             for child in index.kids(row.id)

@@ -25,6 +25,7 @@ Generated from the FastAPI routers (`app/api/v1/router.py` and `app/api/v1/endpo
 - `DELETE /admin/products/{id}`: 204.
 - `DELETE /admin/products/bulk`: body `{"ids": ["<uuid>", ...]}` (1–100 after de-duplication). Returns `{"requested", "deleted", "deleted_ids", "skipped": [{"id", "reason": "not_found", "message"}], "failed": [{"id", "reason": "error", "message"}]}`.
 - `GET /products/by-slug/{slug}` and `GET /products/{id}`: `PublicProductDetail`, published products only. `by-slug` also resolves a product's old slugs (`product_slug_redirects`). `gallery` items carry `kind` (`image`/`video`/`youtube`), `src`, `youtube_id`, `alt`, `thumbnail` (custom thumbnail or empty).
+- Public product cards (`GET /products`, category product lists) and `PublicProductDetail` include `updated_at` (ISO datetime). New products without an explicit `slug` get a transliterated slug for Bengali titles (`smart-ghori`).
 
 ## Outside `/api/v1`
 
@@ -433,6 +434,8 @@ Product admin create/update also take `regular_price`, `base_discount_percent`, 
 | GET | `/api/v1/categories/tree` | public | — | `CategoryTree` |
 | GET | `/api/v1/categories/{slug}` | public | — | `CategoryDetail` |
 | GET | `/api/v1/categories/{slug}/products` | public | — | `PublicProductList` |
+
+`CategoryTree` nodes include `updated_at` (ISO datetime) for sitemap `lastmod`.
 
 ## `delivery`
 

@@ -34,6 +34,8 @@ Rules enforced by the API, per feature. Code locations are given so the rule can
 - `seo_title` (≤120), `seo_description` (≤320), `seo_keywords` (≤500, comma separated, de-duplicated) are optional; empty means the storefront falls back to the title and description.
 - The slug is generated on create; on update it may be changed (format `^[a-z0-9]+(-[a-z0-9]+)*$`, ≤160, unique across products → 409 on field `slug`).
 - A replaced slug is kept in `product_slug_redirects`, so `GET /products/by-slug/{old}` still returns the product (published only). A product taking a slug that is a redirect removes that redirect. Uniqueness is checked in the service; there is no DB constraint between `products.slug` and redirect slugs.
+- Slug generation (new products only): Bengali letters are transliterated phonetically (`app/services/transliteration.py`; consonants carry an inherent "o" unless a vowel sign, hasanta or word end follows; Bengali digits → 0–9), then `python-slugify`. A title with nothing usable gives `product`; collisions get `-2`…`-99`, then `product-<random>`. Existing slugs are never regenerated.
+- `updated_at` on public product cards and category tree nodes is the row's last change; the storefront uses it as sitemap `lastmod`.
 
 ## Product media (gallery, video, YouTube)
 

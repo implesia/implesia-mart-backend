@@ -2,6 +2,8 @@
 
 from httpx import AsyncClient
 
+from app.services.product_service import slug_from_title
+from app.services.transliteration import bengali_to_latin
 from tests.test_products import _create, _parts
 
 
@@ -105,3 +107,40 @@ async def test_old_slug_of_a_hidden_product_is_404(
     assert (await _patch(client, auth_headers, created["id"], {"slug": "hidden-lamp"})).is_success
     assert (await _patch(client, auth_headers, created["id"], {"published": False})).is_success
     assert (await client.get("/api/v1/products/by-slug/hide-lamp")).status_code == 404
+
+
+def test_bengali_is_transliterated_phonetically() -> None:
+    assert bengali_to_latin("স্মার্ট ঘড়ি") == "smart ghori"
+    assert bengali_to_latin("হাতে তৈরি গর্জিয়াস ড্রেস") == "hate toiri gorjiyas dres"
+    assert bengali_to_latin("কাস্টম ব্যাগ ১২৮") == "kastom byag 128"
+    assert bengali_to_latin("Desk Lamp") == "Desk Lamp"
+    assert slug_from_title("শাড়ি — Silk Edition!") == "shari-silk-edition"
+    assert slug_from_title("!!!") == "product"
+
+
+async def test_new_bengali_titles_get_readable_slugs_and_existing_slugs_stay(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    first = await _create(client, auth_headers, title="স্মার্ট ঘড়ি")
+    second = await _create(client, auth_headers, title="স্মার্ট ঘড়ি")
+    explicit = await _create(client, auth_headers, title="স্মার্ট ঘড়ি", slug="watch-x")
+    assert [first["slug"], second["slug"], explicit["slug"]] == [
+        "smart-ghori",
+        "smart-ghori-2",
+        "watch-x",
+    ]
+    renamed = await _patch(client, auth_headers, first["id"], {"title": "নতুন ঘড়ি"})
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["slug"] == "smart-ghori"
+
+
+async def test_public_cards_and_category_tree_carry_updated_at(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    await _create(client, auth_headers, title="Dated Lamp", slug="dated-lamp")
+    detail = (await client.get("/api/v1/products/by-slug/dated-lamp")).json()
+    assert detail["updated_at"]
+    listed = (await client.get("/api/v1/products", params={"q": "Dated Lamp"})).json()
+    assert listed["items"][0]["updated_at"]
+    tree = (await client.get("/api/v1/categories/tree")).json()["items"]
+    assert tree and all("updated_at" in node for node in tree)

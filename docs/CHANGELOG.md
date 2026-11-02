@@ -2,6 +2,11 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **SEO follow-ups: `updated_at` for the sitemap, readable Bengali slugs (2026-11-02).**
+  - `PublicProductCard` (list items, `GET /products/by-slug/{slug}`, `GET /products/{id}`) and category tree nodes (`GET /categories/tree`) now return `updated_at` (ISO datetime, the row's last change). Additive, nullable in the schema; no migration.
+  - New products with a Bengali title get a phonetic Latin slug (`app/services/transliteration.py`): "স্মার্ট ঘড়ি" → `smart-ghori` instead of `smaartt-ghddi`. Only `allocate_slug` on create uses it; existing slugs never change (editing a title keeps the slug) and an explicit `slug` in the payload still wins. Duplicates get `-2`, `-3`…
+  - Files: `app/schemas/product.py`, `app/schemas/category.py`, `app/services/product_service.py`, `app/services/category_service.py`, `app/services/transliteration.py`, `tests/test_product_seo.py`, `tests/test_product_urls.py` (`updated_at` is no longer in its "internal fields" list).
+  - Frontend (same day): sitemap categories and real `lastModified`, product JSON-LD shipping/return policy/AggregateOffer, catalog canonicals and 307, verification meta, HSTS, gallery alt fallback.
 - **Product SEO fields and editable slug (2026-11-02).**
   - `products.seo_title` (max 120), `seo_description` (max 320), `seo_keywords` (max 500, comma separated, trimmed and de-duplicated), all default `""`. Accepted on `POST`/`PATCH /admin/products` (on PATCH, omitted or `null` = keep) and returned in `AdminProductRead` and `PublicProductDetail`.
   - `PATCH /admin/products/{id}` accepts `slug` (lowercased; `^[a-z0-9]+(-[a-z0-9]+)*$`, max 160). A slug used by another product returns 409 `{"errors": [{"field": "slug", "message", "fix"}]}` (Bengali); a bad format is 422.

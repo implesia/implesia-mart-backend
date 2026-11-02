@@ -859,6 +859,8 @@ class PublicProductCard(BaseModel):
     featured: bool
     # True when the price shown is the lowest of several variants ("From ...").
     has_variants: bool = False
+    # Last change to the product row (sitemap lastmod).
+    updated_at: datetime | None = None
 
 
 class PublicProductDetail(PublicProductCard):

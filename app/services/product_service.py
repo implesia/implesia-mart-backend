@@ -72,6 +72,7 @@ from app.services.image_storage import (
     store_video,
 )
 from app.services.pricing_service import CEILING
+from app.services.transliteration import bengali_to_latin
 
 _SLUG = re.compile(SLUG_PATTERN)
 _logger = get_logger("products")
@@ -82,11 +83,13 @@ _Expr = ColumnElement[Any]
 
 
 def slug_from_title(title: str) -> str:
-    raw = slugify(title, max_length=140, lowercase=True)
+    # New products only: Bengali is spelled phonetically ("smart-ghori"). Existing
+    # slugs are never regenerated, and an explicit slug from the form wins.
+    raw = slugify(bengali_to_latin(title), max_length=140, lowercase=True)
     raw = re.sub(r"-{2,}", "-", raw).strip("-")
     if _SLUG.fullmatch(raw):
         return raw
-    # Bengali titles have no ASCII slug. Callers append a numeric suffix.
+    # Titles with no letters or digits left. Callers append a numeric suffix.
     return "product"
 
 
@@ -973,6 +976,7 @@ def public_card(
         status=StockStatus(product.status),
         featured=product.featured,
         has_variants=product.has_variants,
+        updated_at=product.updated_at,
     )
 
 
