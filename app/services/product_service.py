@@ -14,6 +14,7 @@ from sqlalchemy.orm import defer
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.exceptions import ConflictError, NotFoundError, UnprocessableError
+from app.core.logging import get_logger
 from app.models.audit_event import AuditAction
 from app.models.badge import Badge
 from app.models.category import Category
@@ -28,9 +29,11 @@ from app.schemas.product import (
     AdminProductQuery,
     AdminProductRead,
     AvailabilityCounts,
+    BulkDeleteIssue,
     CatalogQuery,
     CategoryCounts,
     GalleryImage,
+    ProductBulkDeleteResult,
     ProductContent,
     ProductCreate,
     ProductUpdate,
@@ -63,6 +66,7 @@ from app.services.image_storage import (
 )
 
 _SLUG = re.compile(SLUG_PATTERN)
+_logger = get_logger("products")
 _CONTENT_LIMIT = 100_000
 _RELATED_LIMIT = 8
 
@@ -484,6 +488,48 @@ async def delete_product(db: AsyncSession, product: Product) -> None:
     await db.delete(product)
     await db.commit()
     delete_owned_media(refs)
+
+
+async def bulk_delete(db: AsyncSession, ids: list[uuid.UUID]) -> ProductBulkDeleteResult:
+    """Delete each product exactly as the single delete does, one at a time.
+
+    Partial success: a missing product is skipped and an unexpected failure is rolled back
+    for that product only, so the rest still go. Order lines keep their snapshot (their
+    product link becomes empty), the same as a single delete.
+    """
+    deleted: list[uuid.UUID] = []
+    skipped: list[BulkDeleteIssue] = []
+    failed: list[BulkDeleteIssue] = []
+    for product_id in ids:
+        product = await db.get(Product, product_id)
+        if product is None:
+            skipped.append(
+                BulkDeleteIssue(id=product_id, reason="not_found", message="Product not found")
+            )
+            continue
+        try:
+            await delete_product(db, product)
+        except Exception as exc:
+            await db.rollback()
+            _logger.error(
+                "product_bulk_delete_failed",
+                product_id=str(product_id),
+                error_type=type(exc).__name__,
+            )
+            failed.append(
+                BulkDeleteIssue(
+                    id=product_id, reason="error", message="The product could not be deleted"
+                )
+            )
+            continue
+        deleted.append(product_id)
+    return ProductBulkDeleteResult(
+        requested=len(ids),
+        deleted=len(deleted),
+        deleted_ids=deleted,
+        skipped=skipped,
+        failed=failed,
+    )
 
 
 def _admin_order(sort: str) -> tuple[Any, ...]:

@@ -15,10 +15,13 @@ from app.core.logging import get_logger
 from app.rate_limit import limiter
 from app.schemas.badge import MAX_PER_PRODUCT
 from app.schemas.product import (
+    MAX_BULK_DELETE,
     MAX_VARIANTS,
     AdminProductList,
     AdminProductQuery,
     AdminProductRead,
+    ProductBulkDelete,
+    ProductBulkDeleteResult,
     ProductCreate,
     ProductUpdate,
 )
@@ -494,6 +497,33 @@ async def update_product(
         video_alts=_alts(video_alts),
     )
     return await product_service.admin_read_full(db, updated, await category_service.load_index(db))
+
+
+def _bulk_ids(raw: list[object]) -> list[uuid.UUID]:
+    if not raw:
+        raise UnprocessableError("Choose at least one product to delete")
+    ids: list[uuid.UUID] = []
+    invalid: list[str] = []
+    for item in raw:
+        try:
+            if not isinstance(item, str):
+                raise ValueError
+            ids.append(uuid.UUID(item))
+        except ValueError:
+            invalid.append(str(item)[:64])
+    if invalid:
+        raise UnprocessableError("Some product ids are not valid", {"invalid_ids": invalid[:20]})
+    unique = list(dict.fromkeys(ids))
+    if len(unique) > MAX_BULK_DELETE:
+        raise UnprocessableError(f"Delete at most {MAX_BULK_DELETE} products at a time")
+    return unique
+
+
+# Declared before /{product_id} so "bulk" is never read as a product id.
+@router.delete("/bulk", response_model=ProductBulkDeleteResult)
+async def bulk_delete_products(db: DbSession, body: ProductBulkDelete) -> ProductBulkDeleteResult:
+    """Delete several products. Same rules as the single delete; partial success is reported."""
+    return await product_service.bulk_delete(db, _bulk_ids(body.ids))
 
 
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)

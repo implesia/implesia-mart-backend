@@ -654,6 +654,33 @@ class CategoryCounts(BaseModel):
     fashion: int
 
 
+MAX_BULK_DELETE = 100
+
+
+class ProductBulkDelete(BaseModel):
+    """Raw ids; the endpoint checks them so each problem gets a clear message."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ids: list[object]
+
+
+class BulkDeleteIssue(BaseModel):
+    id: uuid.UUID
+    reason: Literal["not_found", "error"]
+    message: str
+
+
+class ProductBulkDeleteResult(BaseModel):
+    """Each product is deleted on its own: one problem does not undo the others."""
+
+    requested: int
+    deleted: int
+    deleted_ids: list[uuid.UUID]
+    skipped: list[BulkDeleteIssue]
+    failed: list[BulkDeleteIssue]
+
+
 class AdminProductList(BaseModel):
     items: list[AdminProductCard]
     total: int
