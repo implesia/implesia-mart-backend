@@ -2,6 +2,12 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Home video/media section (2026-11-02).**
+  - New table `home_media` (migration **0089**, additive, no seed row; applied to the local dev DB only). Model `HomeMedia`, schemas `app/schemas/home/media.py` (`MediaWrite`, `MediaAdmin`, `MediaPublic`, `MediaUploaded`), service `app/services/home/media_service.py`, endpoints `app/api/v1/endpoints/home/media.py`.
+  - Public `GET /api/v1/home/media` → the section or `null` (inactive, empty, or no usable media). Admin (editor auth, audited, `no-store`): `GET`/`PUT /api/v1/admin/home/media`, `POST /api/v1/admin/home/media/image` (5 MB), `POST /api/v1/admin/home/media/video` (MP4/WEBM, 50 MB). Files are stored in `media/home-media/` (new storage folder); replaced or dropped files are deleted on save.
+  - Validation: YouTube links reuse `youtube_id()` and are stored as the id; button link must be `/path` or `https://`; `cta_enabled` needs label and link; publishing needs a heading and the chosen type's media.
+  - Frontend must: call `GET /api/v1/home/media` with no cache and render it above the testimonials; add the admin editor that uploads files to `…/image` / `…/video` and then `PUT`s `youtube_url` (link) rather than the id. Done in the frontend repo in the same task.
+  - Files: `alembic/versions/0089_home_media.py`, `app/models/home/media.py`, `app/models/__init__.py`, `app/schemas/home/media.py`, `app/services/home/media_service.py`, `app/services/image_storage.py`, `app/api/v1/endpoints/home/media.py`, `app/api/v1/router.py`, `tests/test_home_media.py`, `tests/test_write_schema.py` (write-schema count 130 → 131), docs.
 - **SEO follow-ups: `updated_at` for the sitemap, readable Bengali slugs (2026-11-02).**
   - `PublicProductCard` (list items, `GET /products/by-slug/{slug}`, `GET /products/{id}`) and category tree nodes (`GET /categories/tree`) now return `updated_at` (ISO datetime, the row's last change). Additive, nullable in the schema; no migration.
   - New products with a Bengali title get a phonetic Latin slug (`app/services/transliteration.py`): "স্মার্ট ঘড়ি" → `smart-ghori` instead of `smaartt-ghddi`. Only `allocate_slug` on create uses it; existing slugs never change (editing a title keeps the slug) and an explicit `slug` in the payload still wins. Duplicates get `-2`, `-3`…

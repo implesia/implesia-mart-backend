@@ -44,6 +44,7 @@ from app.models.home.banner import BannerAccent, HomeBanner, HomeBannerSlide
 from app.models.home.category import HomeCategory, HomeCategoryTile
 from app.models.home.faq import HomeFaq, HomeFaqItem
 from app.models.home.featured import HomeFeatured, HomeFeaturedItem
+from app.models.home.media import HomeMedia
 from app.models.home.newsletter import HomeNewsletter, HomeNewsletterPerk
 from app.models.home.promo import HomePromo
 from app.models.home.review import HomeReview, HomeReviewItem
@@ -163,6 +164,7 @@ __all__ = [
     "HomeFaqItem",
     "HomeFeatured",
     "HomeFeaturedItem",
+    "HomeMedia",
     "HomeNewsletter",
     "HomeNewsletterPerk",
     "HomePromo",

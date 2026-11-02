@@ -25,6 +25,7 @@ _FOLDERS = frozenset(
         "sustainability",
         "blogs",
         "promo",
+        "home-media",
         "footer",
     }
 )

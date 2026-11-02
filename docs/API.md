@@ -151,6 +151,15 @@ Product admin create/update also take `regular_price`, `base_discount_percent`, 
 | DELETE | `/api/v1/admin/home/newsletter/perks/{perk_id}` | admin (editor, superadmin) | — | `Message` |
 | PATCH | `/api/v1/admin/home/newsletter/perks/{perk_id}` | admin (editor, superadmin) | `NewsletterPerkUpdate` | `NewsletterPerkRead` |
 
+## `admin/home/media`
+
+| Method | Path | Access | Request body | Response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/v1/admin/home/media` | admin (editor, superadmin) | — | `MediaAdmin` |
+| PUT | `/api/v1/admin/home/media` | admin (editor, superadmin) | `MediaWrite` | `MediaAdmin` |
+| POST | `/api/v1/admin/home/media/image` | admin (editor, superadmin) | multipart form (`image`) | `MediaUploaded` |
+| POST | `/api/v1/admin/home/media/video` | admin (editor, superadmin) | multipart form (`video`) | `MediaUploaded` |
+
 ## `admin/home/promo`
 
 | Method | Path | Access | Request body | Response |
@@ -472,6 +481,12 @@ Product admin create/update also take `regular_price`, `base_discount_percent`, 
 | Method | Path | Access | Request body | Response |
 | --- | --- | --- | --- | --- |
 | GET | `/api/v1/home/newsletter` | public | — | `NewsletterPublic` |
+
+## `home/media`
+
+| Method | Path | Access | Request body | Response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/v1/home/media` | public | — | `MediaPublic or null` |
 
 ## `home/promo`
 
