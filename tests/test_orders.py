@@ -58,12 +58,12 @@ async def test_direct_order_ignores_client_prices_and_replays(
     body = placed.json()
     assert body["anonymous"] is True
     assert body["payment_method"] == "cod"
-    # 2 units get the default +0.25% quantity tier: 15000 - 38 = 14962.
-    assert body["items"][0]["unit_price"] == 14962
-    assert body["items"][0]["line_total"] == 29924
-    assert body["subtotal"] == 29924
+    # 2 units get the default 0.25% quantity tier on the line: 30000 - 75 = 29925.
+    assert body["items"][0]["unit_price"] == 15000
+    assert body["items"][0]["line_total"] == 29925
+    assert body["subtotal"] == 29925
     assert body["shipping"] == 70
-    assert body["total"] == 29994
+    assert body["total"] == 29995
     assert body["delivery_zone"] == "inside"
     assert body["number"].startswith("IM-")
 
@@ -116,8 +116,8 @@ async def test_quote_does_not_take_stock_and_cart_order_clears_the_cart(
     )
     assert quoted.status_code == 200, quoted.text
     quote = quoted.json()
-    # 2 units get the default +0.25% quantity tier: 500 - 1 = 499.
-    assert quote["items"][0]["unit_price"] == 499
+    # 2 units get the default 0.25% quantity tier: 1000 - 2.5 = 997.5, rounded up.
+    assert quote["items"][0]["unit_price"] == 500
     assert quote["items"][0]["line_total"] == 998
     assert quote["shipping"] == 130
     assert quote["total"] == 1128

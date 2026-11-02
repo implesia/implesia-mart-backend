@@ -42,8 +42,8 @@ class CartItemRead(BaseModel):
     line_total: int
     available: bool
     selection: list[SelectedOption] = Field(default_factory=list)
-    # How unit_price was worked out: regular price less the total discount
-    # (base % + quantity %, capped). Display only; the server prices every line.
+    # unit_price is the quantity-1 selling price; line_total = ceil(unit_price x quantity less
+    # quantity %). total % = base % + quantity % (capped). The server prices every line.
     regular_price: int = 0
     base_discount_percent: Percent = Decimal("0.00")
     quantity_discount_percent: Percent = Decimal("0.00")

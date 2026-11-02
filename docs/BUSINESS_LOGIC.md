@@ -98,8 +98,10 @@ Code: `app/services/badge_service.py`, `app/schemas/badge.py`, `app/models/badge
 ## Prices and discounts
 
 - Each product has a **regular price** and a **base discount %**. The quantity-1 selling price is `round(regular × (1 − base/100))`, whole taka, half up.
-- **Quantity tiers** add an extra % (on the regular price) for buying more pieces in one line: the highest tier with `min_quantity ≤ quantity` counts. Defaults: 2 → 0.25, 3 → 0.5, 4 → 0.75, 5 → 1, 6 → 1.25, 7 → 1.5, 8+ → 2.
-- `total % = min(base + extra, max %, 99.99 %)`; a discount never reaches 100 %. Unit price = quantity-1 price − round(regular × (total − base)/100), so the quantity-1 price is always exactly the stored `price`. If the max % is below a product's base, the unit price is the regular price at the max %.
+- **Quantity tiers** give a discount % on the line total for buying more pieces in one line: the tier with the highest `min_quantity ≤ quantity` counts (a quantity with no tier of its own uses the nearest lower tier; below the first tier, or with no tiers, there is no quantity discount). Defaults: 2 → 0.25, 3 → 0.5, 4 → 0.75, 5 → 1, 6 → 1.25, 7 → 1.5, 8+ → 2.
+- Line price (since 2026-11-02): `total = selling price × quantity`; `final = ceil(total − total × tier % / 100)`, always rounded **up** to whole taka; `discount = total − final`. Example: ৳700 × 2 at 0.25 % = 1396.5 → ৳1,397; × 3 at 0.75 % = 2084.25 → ৳2,085; × 4 at 1 % = ৳2,772 exactly. Worked out in integers (percent in hundredths), so an exact result is never bumped up by float error (`pricing_service.discounted_total`).
+- The tier % is capped so `base + tier ≤ min(max %, 99.99 %)`; a discount never reaches 100 %. `total_discount_percent` = base + tier (capped) is a summary only. If the max % is below a product's base, the selling price is the regular price at the max % and no tier applies.
+- API fields: `unit_price` = quantity-1 selling price (no longer reduced by the tier); `line_total` = the rounded-up final; `subtotal` = sum of line totals. Each line is rounded on its own (no order-level rounding).
 - Store settings (`pricing_settings`, Admin › Discounts): tiers on/off, max %, tier list. Turning tiers off affects products on store-wide tiers only; products with custom tiers keep them. The max % applies to every product. No settings row = defaults (on, 90 %, default tiers).
 - Per product: `tier_mode = global` (store tiers) or `custom` (its own `tiers`).
 - Field mapping:
