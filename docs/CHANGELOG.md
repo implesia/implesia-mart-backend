@@ -4,6 +4,7 @@ Newest first. Every task adds an entry: date, what changed, files touched, and a
 
 ## 2026-11-02 (summary of today's work)
 
+- **Showcase:** test that a pinned product drops out of `GET /home/showcase` once it is hidden (admin view still lists it). No API change. File: `tests/test_home_showcase.py`.
 - **Custom thumbnails for gallery videos and YouTube items.**
   - `GalleryImage.thumbnail` (admin and public gallery items); always empty for photos.
   - New multipart parts on `POST` / `PATCH /admin/products`: `thumbnails` (image files, same checks as gallery photos: JPEG/PNG/WEBP/GIF, 5 MB) and `thumbnail_targets` (JSON list, one per file: a gallery item id, or `video:<n>` for the n-th video uploaded in the same request).
