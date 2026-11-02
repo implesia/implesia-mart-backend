@@ -186,7 +186,7 @@ async def create_product(
         if len(gallery) > 12:
             raise UnprocessableError("A product can have at most 12 images")
         image_src = payload.image_src or (gallery[0].src if gallery else "")
-        if not image_src:
+        if not image_src and payload.published:
             raise UnprocessableError("Add a product image")
         payload = payload.model_copy(
             update={
@@ -215,8 +215,12 @@ async def _insert_product(db: AsyncSession, payload: ProductCreate) -> Product:
     else:
         slug = await allocate_slug(db, payload.title)
 
-    category = await category_service.resolve_for_product(
-        db, category_id=payload.category_id, legacy_slug=payload.category
+    category = (
+        await category_service.resolve_for_product(
+            db, category_id=payload.category_id, legacy_slug=payload.category
+        )
+        if payload.category_id is not None or payload.category is not None
+        else None  # A draft saved before a category was chosen.
     )
     unit_label, image_alt, stored = _split_content(payload.content, title=payload.title)
     badges = await badge_service.resolve(db, payload.badge_ids or [])
@@ -229,8 +233,8 @@ async def _insert_product(db: AsyncSession, payload: ProductCreate) -> Product:
         slug=slug,
         title=payload.title,
         subtitle=payload.subtitle,
-        category_id=category.id,
-        price=payload.price,
+        category_id=category.id if category is not None else None,
+        price=payload.price if payload.price is not None else 0,
         compare_at_price=payload.compare_at_price,
         quantity=payload.quantity,
         status=payload.status.value,
@@ -384,9 +388,20 @@ async def _apply_update(
     elif "badge" in fields:
         await badge_service.apply_legacy(db, product.id, product.badge)
 
+    _publishable(product)
     await _audit_catalog_changes(db, product, actor, before)
     await db.commit()
     await db.refresh(product)
+
+
+def _publishable(product: Product) -> None:
+    """A draft may be incomplete. A published product needs a category and a main image."""
+    if not product.published:
+        return
+    if product.category_id is None:
+        raise UnprocessableError("Choose a category")
+    if not product.image_src:
+        raise UnprocessableError("Add a product image")
 
 
 async def _audit_catalog_changes(
@@ -603,13 +618,15 @@ async def _category_counts(
     return counts
 
 
-def _root_slug(index: CategoryIndex, category_id: uuid.UUID) -> str:
+def _root_slug(index: CategoryIndex, category_id: uuid.UUID | None) -> str:
+    if category_id is None:
+        return ""
     root = index.root_of(category_id)
     return root.slug if root is not None else ""
 
 
 def _category_fields(index: CategoryIndex, product: Product) -> dict[str, Any]:
-    row = index.by_id.get(product.category_id)
+    row = index.by_id.get(product.category_id) if product.category_id is not None else None
     return {
         "category": _root_slug(index, product.category_id),
         "category_id": product.category_id,

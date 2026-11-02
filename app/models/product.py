@@ -93,10 +93,11 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     subtitle: Mapped[str] = mapped_column(
         String(300), nullable=False, default="", server_default=""
     )
-    # Primary category. Every product sits in exactly one node of the tree (any level).
-    # RESTRICT: a category that still holds products cannot be deleted.
-    category_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("categories.id", ondelete="RESTRICT"), nullable=False
+    # Primary category. Every published product sits in exactly one node of the tree (any
+    # level); a draft may have none yet. RESTRICT: a category that still holds products
+    # cannot be deleted.
+    category_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("categories.id", ondelete="RESTRICT"), nullable=True
     )
     # Deprecated: the pre-0075 enum column. Kept (nullable, no CHECK) for one release so a
     # rollback or a reader of the raw table still works; nothing writes it any more.

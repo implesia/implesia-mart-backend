@@ -150,6 +150,8 @@ _KNOWN: Mapping[str, FieldError] = {
     "Product name is required": _err(
         "title", "প্রোডাক্টের নাম দিতে হবে", "একটা নাম লিখুন, যেমন “কটন টি-শার্ট”"
     ),
+    # Price and category are required only to publish; a draft needs just the name.
+    "Price is required": _err("price", "দাম দিতে হবে", "০ বা তার বেশি একটা পূর্ণ সংখ্যা লিখুন (টাকায়)"),
     "Compare-at price must be at least the selling price": _err(
         "compareAtPrice",
         "আগের দাম বিক্রির দামের চেয়ে কম হতে পারে না",
@@ -297,7 +299,7 @@ def _numeric(field: str, kind: str, ctx: Mapping[str, Any]) -> FieldError | None
 
 _REQUIRED: Mapping[str, FieldError] = {
     "title": _KNOWN["Product name is required"],
-    "price": _err("price", "দাম দিতে হবে", "০ বা তার বেশি একটা পূর্ণ সংখ্যা লিখুন (টাকায়)"),
+    "price": _KNOWN["Price is required"],
 }
 
 
@@ -344,14 +346,19 @@ def _from_validation(exc: ValidationError) -> list[FieldError]:
 
 
 def _cross_field(payload: str) -> list[FieldError]:
-    """The model-level checks are skipped when a field fails, so report a missing category too."""
+    """The model-level checks are skipped when a field fails, so report what publishing needs."""
     try:
         raw = json.loads(payload)
     except ValueError:
         return []
-    if isinstance(raw, dict) and not raw.get("category_id") and not raw.get("category"):
-        return [_KNOWN["Choose a category"]]
-    return []
+    if not isinstance(raw, dict) or raw.get("published") is not True:
+        return []  # A draft needs only its name.
+    errors: list[FieldError] = []
+    if "price" not in raw and not raw.get("variants"):
+        errors.append(_KNOWN["Price is required"])
+    if not raw.get("category_id") and not raw.get("category"):
+        errors.append(_KNOWN["Choose a category"])
+    return errors
 
 
 def _from_app_error(exc: UnprocessableError | ConflictError, slug_sent: bool) -> FieldError:

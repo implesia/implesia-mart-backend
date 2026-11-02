@@ -421,7 +421,8 @@ class ProductCreate(BaseModel):
     # Assign by id (preferred) or by slug. The slug form keeps `gadgets` / `fashion` working.
     category_id: uuid.UUID | None = None
     category: str | None = Field(default=None, max_length=80)
-    price: int = Field(ge=0, le=MAX_PRICE)
+    # Required to publish. A draft (`published: false`) may leave it out; it is stored as 0.
+    price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     compare_at_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     quantity: int | None = Field(default=None, ge=0, le=MAX_QUANTITY)
     status: StockStatus = StockStatus.AVAILABLE
@@ -474,9 +475,14 @@ class ProductCreate(BaseModel):
 
     @model_validator(mode="after")
     def _prices(self) -> Self:
-        if self.compare_at_price is not None and self.compare_at_price < self.price:
+        # A draft needs only its name. Price and category are required to publish; values
+        # that were given are still checked, since the table's own constraints need them.
+        price = self.price if self.price is not None else 0
+        if self.compare_at_price is not None and self.compare_at_price < price:
             raise ValueError("Compare-at price must be at least the selling price")
-        if self.category_id is None and self.category is None:
+        if self.published and self.price is None and not self.variants:
+            raise ValueError("Price is required")
+        if self.published and self.category_id is None and self.category is None:
             raise ValueError("Choose a category")
         if (
             self.max_order_quantity is not None
@@ -548,7 +554,8 @@ class AdminProductCard(BaseModel):
     # `category` is the top-level ancestor's slug (the legacy gadgets/fashion value);
     # `category_*` describe the node the product is assigned to.
     category: str
-    category_id: uuid.UUID
+    # None only for a draft saved before a category was chosen.
+    category_id: uuid.UUID | None
     category_slug: str
     category_name: str
     category_path: list[CategoryRef]
