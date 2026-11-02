@@ -4,6 +4,13 @@ Newest first. Every task adds an entry: date, what changed, files touched, and a
 
 ## 2026-11-02 (summary of today's work)
 
+- **Custom thumbnails for gallery videos and YouTube items.**
+  - `GalleryImage.thumbnail` (admin and public gallery items); always empty for photos.
+  - New multipart parts on `POST` / `PATCH /admin/products`: `thumbnails` (image files, same checks as gallery photos: JPEG/PNG/WEBP/GIF, 5 MB) and `thumbnail_targets` (JSON list, one per file: a gallery item id, or `video:<n>` for the n-th video uploaded in the same request).
+  - A replaced or removed thumbnail file is deleted from disk (it is one of the product's owned media refs); thumbnails are also deleted with the product.
+  - Error "Thumbnail does not match a video" (create: Bengali `{errors}` on field `images`).
+  - Files: `app/schemas/product.py`, `app/services/product_service.py`, `app/api/v1/endpoints/admin_products.py`, `tests/test_product_media.py`.
+  - Frontend: admin gallery "Add / Change / Remove thumbnail" and the storefront poster with a play button (frontend repo, same day).
 - **Docs**: added `docs/AI_INSTRUCTIONS.md`, `PROJECT_OVERVIEW.md`, `BUSINESS_LOGIC.md`, `API.md`, `CHANGELOG.md`, `TODO.md`; added root `AGENTS.md`; README now points to `docs/AI_INSTRUCTIONS.md`.
 - **Bulk product delete** (`8d3800c`): `DELETE /api/v1/admin/products/bulk` with `{"ids": [...]}`, editor+, max 100, partial success with `deleted` / `skipped` / `failed`. Files: `app/schemas/product.py`, `app/services/product_service.py`, `app/api/v1/endpoints/admin_products.py`, `tests/test_product_bulk_delete.py`.
   - Frontend: `/admin/products` row checkboxes, select-all and "Delete selected" use this endpoint (frontend commit `d724296`).

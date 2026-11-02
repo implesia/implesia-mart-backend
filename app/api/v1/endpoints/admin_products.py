@@ -43,6 +43,23 @@ def _model(
         raise UnprocessableError("Request payload is invalid", payload_errors(exc)) from exc
 
 
+def _thumb_targets(raw: str) -> list[str]:
+    """JSON list naming the gallery item each `thumbnails` file belongs to."""
+    if not raw.strip():
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise UnprocessableError("Thumbnail does not match a video") from exc
+    if (
+        not isinstance(parsed, list)
+        or len(parsed) > 12
+        or any(not isinstance(item, str) or not 0 < len(item) <= 64 for item in parsed)
+    ):
+        raise UnprocessableError("Thumbnail does not match a video")
+    return parsed
+
+
 def _alts(raw: str) -> list[str]:
     if not raw.strip():
         return []
@@ -198,6 +215,9 @@ _KNOWN: Mapping[str, FieldError] = {
         f"{_bn(settings.max_video_bytes // (1024 * 1024))} MB-এর ছোট ভিডিও আপলোড করুন",
     ),
     "Video is empty": _err("images", "ভিডিও ফাইলটা খালি", "অন্য একটা ভিডিও বাছাই করে আবার আপলোড করুন"),
+    "Thumbnail does not match a video": _err(
+        "images", "থাম্বনেইলটা কোনো ভিডিওর সাথে মেলেনি", "ভিডিওর থাম্বনেইল আবার বাছাই করে সেভ করুন"
+    ),
     "YouTube link is not valid": _err(
         "images",
         "YouTube লিংকটা সঠিক নয়",
@@ -424,6 +444,8 @@ async def create_product(
     quality_image_alt: Annotated[str, Form()] = "",
     videos: Annotated[list[UploadFile] | None, File()] = None,
     video_alts: Annotated[str, Form()] = "[]",
+    thumbnails: Annotated[list[UploadFile] | None, File()] = None,
+    thumbnail_targets: Annotated[str, Form()] = "[]",
 ) -> AdminProductRead | JSONResponse:
     del request
     if not payload.strip():
@@ -445,6 +467,8 @@ async def create_product(
             quality_image_alt,
             videos=videos,
             video_alts=_alts(video_alts),
+            thumbnails=thumbnails,
+            thumbnail_targets=_thumb_targets(thumbnail_targets),
         )
         return await product_service.admin_read_full(
             db, product, await category_service.load_index(db)
@@ -479,6 +503,8 @@ async def update_product(
     quality_image_alt: Annotated[str, Form()] = "",
     videos: Annotated[list[UploadFile] | None, File()] = None,
     video_alts: Annotated[str, Form()] = "[]",
+    thumbnails: Annotated[list[UploadFile] | None, File()] = None,
+    thumbnail_targets: Annotated[str, Form()] = "[]",
 ) -> AdminProductRead:
     del request
     data = _model(payload, ProductUpdate)
@@ -495,6 +521,8 @@ async def update_product(
         actor=actor,
         videos=videos,
         video_alts=_alts(video_alts),
+        thumbnails=thumbnails,
+        thumbnail_targets=_thumb_targets(thumbnail_targets),
     )
     return await product_service.admin_read_full(db, updated, await category_service.load_index(db))
 

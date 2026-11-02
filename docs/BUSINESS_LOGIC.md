@@ -40,6 +40,9 @@ Code: `app/services/image_storage.py`, `app/services/product_service.py`, `app/s
 - YouTube: accepts a bare id or a `youtube.com` / `youtu.be` / `youtube-nocookie.com` link (`watch`, `shorts`, `embed`, `live`, `v`); anything else is rejected.
 - Files are stored under the media root in folder `products` with a random UUID filename and served from `/media/products/<file>`. A replaced file always gets a new URL.
 - New uploads are appended after the gallery items already in the payload, so after save the order is: existing items first, then new uploads.
+- Videos and YouTube items may carry a custom `thumbnail` image (stored like a gallery photo, same type and size checks). Photos never keep one. Without it the storefront uses the YouTube still or the video's first frame.
+- Thumbnail uploads use the `thumbnails` parts with `thumbnail_targets` (gallery item id, or `video:<n>` for a video uploaded in the same request). A target that is not a video/YouTube item is refused.
+- Every media URL is unique (UUID filename), so a changed video, thumbnail or photo always gets a new URL and no cache can serve the old one.
 - Media files owned by a product are deleted from disk when the product is deleted or when the file is no longer referenced after an update.
 
 ## Product badges

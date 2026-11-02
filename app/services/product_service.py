@@ -182,6 +182,48 @@ async def _saved_videos(
         raise
 
 
+# A thumbnail target is a gallery item id, or "video:<n>" for the n-th video uploaded now.
+Thumbnail = tuple[str, str]
+
+
+async def _saved_thumbnails(files: list[UploadFile], targets: list[str]) -> list[Thumbnail]:
+    """Store custom video/YouTube thumbnails with the same checks as gallery photos."""
+    uploads = real_uploads(files)
+    if len(uploads) != len(targets):
+        raise UnprocessableError("Thumbnail does not match a video")
+    saved: list[Thumbnail] = []
+    try:
+        for target, upload in zip(targets, uploads, strict=True):
+            saved.append((target, store_image(await read_image(upload))))
+        return saved
+    except Exception:
+        delete_owned_media({url for _, url in saved})
+        raise
+
+
+def _with_thumbnails(
+    gallery: list[GalleryImage], added: list[GalleryImage], thumbs: list[Thumbnail]
+) -> list[GalleryImage]:
+    if not thumbs:
+        return gallery
+    new_videos = [item.id for item in added if item.kind == "video"]
+    chosen: dict[str, str] = {}
+    for target, url in thumbs:
+        if target.startswith("video:") and target[6:].isdigit():
+            index = int(target[6:])
+            if index >= len(new_videos):
+                raise UnprocessableError("Thumbnail does not match a video")
+            target = new_videos[index]
+        chosen[target] = url
+    playable = {item.id for item in gallery if item.kind in ("video", "youtube")}
+    if not set(chosen) <= playable:
+        raise UnprocessableError("Thumbnail does not match a video")
+    return [
+        item.model_copy(update={"thumbnail": chosen[item.id]}) if item.id in chosen else item
+        for item in gallery
+    ]
+
+
 def _first_photo(gallery: list[GalleryImage]) -> str:
     """The main image falls back to the first gallery photo, never a video."""
     return next((item.src for item in gallery if item.kind == "image" and item.src), "")
@@ -193,6 +235,7 @@ def _media_refs(product: Product) -> set[str]:
         product.image_src,
         content.quality_image_src,
         *(item.src for item in content.gallery),
+        *(item.thumbnail for item in content.gallery),
     )
 
 
@@ -205,19 +248,23 @@ async def create_product(
     quality_image_alt: str = "",
     videos: list[UploadFile] | None = None,
     video_alts: list[str] | None = None,
+    thumbnails: list[UploadFile] | None = None,
+    thumbnail_targets: list[str] | None = None,
 ) -> Product:
     fallback_alt = payload.content.image_alt or payload.title
     added: list[GalleryImage] = []
+    thumbs: list[Thumbnail] = []
     quality_url = ""
     try:
         added = await _saved_images(images or [], image_alts or [], fallback_alt)
         added += await _saved_videos(videos or [], video_alts or [], fallback_alt)
+        thumbs = await _saved_thumbnails(thumbnails or [], thumbnail_targets or [])
         if quality_image is not None and quality_image.filename:
             saved = await _saved_images([quality_image], [quality_image_alt], fallback_alt)
             quality_url = saved[0].src
             if not quality_image_alt:
                 quality_image_alt = saved[0].alt
-        gallery = [*payload.content.gallery, *added]
+        gallery = _with_thumbnails([*payload.content.gallery, *added], added, thumbs)
         if len(gallery) > 12:
             raise UnprocessableError("A product can have at most 12 images")
         image_src = payload.image_src or _first_photo(gallery)
@@ -237,7 +284,8 @@ async def create_product(
         )
         return await _insert_product(db, payload)
     except Exception:
-        delete_owned_media(owned_refs(*(item.src for item in added), quality_url))
+        thumb_urls = (url for _, url in thumbs)
+        delete_owned_media(owned_refs(*(item.src for item in added), quality_url, *thumb_urls))
         raise
 
 
@@ -319,6 +367,8 @@ async def update_product(
     actor: User,
     videos: list[UploadFile] | None = None,
     video_alts: list[str] | None = None,
+    thumbnails: list[UploadFile] | None = None,
+    thumbnail_targets: list[str] | None = None,
 ) -> Product:
     before = _media_refs(product)
     fallback_alt = (
@@ -327,16 +377,21 @@ async def update_product(
         else product.image_alt or product.title
     )
     added: list[GalleryImage] = []
+    thumbs: list[Thumbnail] = []
     quality_url = ""
     try:
         added = await _saved_images(images or [], image_alts or [], fallback_alt)
         added += await _saved_videos(videos or [], video_alts or [], fallback_alt)
+        thumbs = await _saved_thumbnails(thumbnails or [], thumbnail_targets or [])
         if quality_image is not None and quality_image.filename:
             saved = await _saved_images([quality_image], [quality_image_alt], fallback_alt)
             quality_url = saved[0].src
-        await _apply_update(db, product, payload, added, quality_url, quality_image_alt, actor)
+        await _apply_update(
+            db, product, payload, added, quality_url, quality_image_alt, actor, thumbs
+        )
     except Exception:
-        delete_owned_media(owned_refs(*(item.src for item in added), quality_url))
+        thumb_urls = (url for _, url in thumbs)
+        delete_owned_media(owned_refs(*(item.src for item in added), quality_url, *thumb_urls))
         raise
     delete_owned_media(before - _media_refs(product))
     return product
@@ -350,6 +405,7 @@ async def _apply_update(
     quality_url: str,
     quality_image_alt: str,
     actor: User,
+    thumbs: list[Thumbnail] | None = None,
 ) -> None:
     before = {
         "price": product.price,
@@ -390,11 +446,11 @@ async def _apply_update(
         setattr(product, field, value)
 
     has_content = "content" in payload.model_fields_set and payload.content is not None
-    if added or quality_url or quality_image_alt or has_content:
+    if added or quality_url or quality_image_alt or has_content or thumbs:
         content = content_of(product)
         if has_content and payload.content is not None:
             content = payload.content
-        gallery = [*content.gallery, *added]
+        gallery = _with_thumbnails([*content.gallery, *added], added, thumbs or [])
         if len(gallery) > 12:
             raise UnprocessableError("A product can have at most 12 images")
         updates: dict[str, Any] = {"gallery": gallery}
@@ -803,7 +859,11 @@ def public_detail(
     content = content_of(product)
     gallery = [
         PublicGalleryImage(
-            kind=item.kind, src=item.src, youtube_id=item.youtube_id, alt=item.alt or product.title
+            kind=item.kind,
+            src=item.src,
+            youtube_id=item.youtube_id,
+            alt=item.alt or product.title,
+            thumbnail=item.thumbnail,
         )
         for item in content.gallery
     ]

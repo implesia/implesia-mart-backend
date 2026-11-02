@@ -157,6 +157,8 @@ class GalleryImage(BaseModel):
     # YouTube items only. A full link is accepted and stored as the id.
     youtube_id: str = ""
     alt: str = ""
+    # Videos and YouTube items only: an optional custom thumbnail image (/media/...).
+    thumbnail: str = ""
 
     @field_validator("youtube_id")
     @classmethod
@@ -165,6 +167,8 @@ class GalleryImage(BaseModel):
 
     @model_validator(mode="after")
     def _media(self) -> Self:
+        if self.kind == "image":
+            self.thumbnail = ""
         if self.kind == "youtube":
             if not self.youtube_id:
                 raise ValueError("YouTube link is not valid")
@@ -181,7 +185,7 @@ class GalleryImage(BaseModel):
     def _id(cls, value: object) -> str:
         return _row_id("gallery", value)
 
-    @field_validator("src")
+    @field_validator("src", "thumbnail")
     @classmethod
     def _src(cls, value: str) -> str:
         return clean_media_ref(value)
@@ -696,6 +700,7 @@ class PublicGalleryImage(BaseModel):
     src: str
     youtube_id: str = ""
     alt: str
+    thumbnail: str = ""
 
 
 class PublicSpec(BaseModel):
