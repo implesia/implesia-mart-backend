@@ -186,6 +186,20 @@ _KNOWN: Mapping[str, FieldError] = {
         "ছবির সাইজ অনেক বড়",
         f"{_bn(settings.max_image_bytes // (1024 * 1024))} MB-এর ছোট ছবি আপলোড করুন",
     ),
+    "Video must be an MP4 or WEBM file": _err(
+        "images", "এই ধরনের ভিডিও নেওয়া যায় না", "MP4 বা WEBM ভিডিও আপলোড করুন"
+    ),
+    "Video is too large": _err(
+        "images",
+        "ভিডিওর সাইজ অনেক বড়",
+        f"{_bn(settings.max_video_bytes // (1024 * 1024))} MB-এর ছোট ভিডিও আপলোড করুন",
+    ),
+    "Video is empty": _err("images", "ভিডিও ফাইলটা খালি", "অন্য একটা ভিডিও বাছাই করে আবার আপলোড করুন"),
+    "YouTube link is not valid": _err(
+        "images",
+        "YouTube লিংকটা সঠিক নয়",
+        "youtube.com/watch?v=..., youtu.be/... বা shorts লিংক দিন",
+    ),
     "Image is empty": _err("images", "ছবির ফাইলটা খালি", "অন্য একটা ছবি বাছাই করে আবার আপলোড করুন"),
     "Image text is invalid": _err(
         "images", "ছবির বিবরণ (alt text) সঠিক নয়", "ছবির বিবরণ ছোট আর সাধারণ লেখায় দিন"
@@ -405,6 +419,8 @@ async def create_product(
     image_alts: Annotated[str, Form()] = "[]",
     quality_image: Annotated[UploadFile | None, File()] = None,
     quality_image_alt: Annotated[str, Form()] = "",
+    videos: Annotated[list[UploadFile] | None, File()] = None,
+    video_alts: Annotated[str, Form()] = "[]",
 ) -> AdminProductRead | JSONResponse:
     del request
     if not payload.strip():
@@ -418,7 +434,14 @@ async def create_product(
     try:
         alts = _alts(image_alts)
         product = await product_service.create_product(
-            db, data, images, alts, quality_image, quality_image_alt
+            db,
+            data,
+            images,
+            alts,
+            quality_image,
+            quality_image_alt,
+            videos=videos,
+            video_alts=_alts(video_alts),
         )
         return await product_service.admin_read_full(
             db, product, await category_service.load_index(db)
@@ -451,6 +474,8 @@ async def update_product(
     image_alts: Annotated[str, Form()] = "[]",
     quality_image: Annotated[UploadFile | None, File()] = None,
     quality_image_alt: Annotated[str, Form()] = "",
+    videos: Annotated[list[UploadFile] | None, File()] = None,
+    video_alts: Annotated[str, Form()] = "[]",
 ) -> AdminProductRead:
     del request
     data = _model(payload, ProductUpdate)
@@ -465,6 +490,8 @@ async def update_product(
         quality_image,
         quality_image_alt,
         actor=actor,
+        videos=videos,
+        video_alts=_alts(video_alts),
     )
     return await product_service.admin_read_full(db, updated, await category_service.load_index(db))
 

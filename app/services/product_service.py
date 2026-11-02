@@ -56,8 +56,10 @@ from app.services.image_storage import (
     delete_owned_media,
     owned_refs,
     read_image,
+    read_video,
     real_uploads,
     store_image,
+    store_video,
 )
 
 _SLUG = re.compile(SLUG_PATTERN)
@@ -155,6 +157,32 @@ async def _saved_images(
         raise
 
 
+async def _saved_videos(
+    files: list[UploadFile], alts: list[str], fallback_alt: str
+) -> list[GalleryImage]:
+    uploads = real_uploads(files)
+    saved: list[str] = []
+    try:
+        videos: list[GalleryImage] = []
+        for index, upload in enumerate(uploads):
+            url = store_video(await read_video(upload))
+            saved.append(url)
+            alt = alts[index] if index < len(alts) and alts[index] else fallback_alt
+            videos.append(GalleryImage(kind="video", src=url, alt=alt))
+        return videos
+    except ValidationError as exc:
+        delete_owned_media(set(saved))
+        raise UnprocessableError("Image text is invalid") from exc
+    except Exception:
+        delete_owned_media(set(saved))
+        raise
+
+
+def _first_photo(gallery: list[GalleryImage]) -> str:
+    """The main image falls back to the first gallery photo, never a video."""
+    return next((item.src for item in gallery if item.kind == "image" and item.src), "")
+
+
 def _media_refs(product: Product) -> set[str]:
     content = content_of(product)
     return owned_refs(
@@ -171,12 +199,15 @@ async def create_product(
     image_alts: list[str] | None = None,
     quality_image: UploadFile | None = None,
     quality_image_alt: str = "",
+    videos: list[UploadFile] | None = None,
+    video_alts: list[str] | None = None,
 ) -> Product:
     fallback_alt = payload.content.image_alt or payload.title
     added: list[GalleryImage] = []
     quality_url = ""
     try:
         added = await _saved_images(images or [], image_alts or [], fallback_alt)
+        added += await _saved_videos(videos or [], video_alts or [], fallback_alt)
         if quality_image is not None and quality_image.filename:
             saved = await _saved_images([quality_image], [quality_image_alt], fallback_alt)
             quality_url = saved[0].src
@@ -185,7 +216,7 @@ async def create_product(
         gallery = [*payload.content.gallery, *added]
         if len(gallery) > 12:
             raise UnprocessableError("A product can have at most 12 images")
-        image_src = payload.image_src or (gallery[0].src if gallery else "")
+        image_src = payload.image_src or _first_photo(gallery)
         if not image_src and payload.published:
             raise UnprocessableError("Add a product image")
         payload = payload.model_copy(
@@ -282,6 +313,8 @@ async def update_product(
     quality_image_alt: str = "",
     *,
     actor: User,
+    videos: list[UploadFile] | None = None,
+    video_alts: list[str] | None = None,
 ) -> Product:
     before = _media_refs(product)
     fallback_alt = (
@@ -293,6 +326,7 @@ async def update_product(
     quality_url = ""
     try:
         added = await _saved_images(images or [], image_alts or [], fallback_alt)
+        added += await _saved_videos(videos or [], video_alts or [], fallback_alt)
         if quality_image is not None and quality_image.filename:
             saved = await _saved_images([quality_image], [quality_image_alt], fallback_alt)
             quality_url = saved[0].src
@@ -369,8 +403,8 @@ async def _apply_update(
         product.unit_label = unit_label
         product.image_alt = image_alt
         product.content = stored
-        if not product.image_src and gallery:
-            product.image_src = gallery[0].src
+        if not product.image_src:
+            product.image_src = _first_photo(gallery)
 
     if payload.variants is not None:
         await variant_service.save_variants(
@@ -722,12 +756,16 @@ def public_detail(
     badges = badges or {}
     content = content_of(product)
     gallery = [
-        PublicGalleryImage(src=item.src, alt=item.alt or product.title) for item in content.gallery
+        PublicGalleryImage(
+            kind=item.kind, src=item.src, youtube_id=item.youtube_id, alt=item.alt or product.title
+        )
+        for item in content.gallery
     ]
-    if not gallery and product.image_src:
-        gallery = [
-            PublicGalleryImage(src=product.image_src, alt=product.image_alt or product.title)
-        ]
+    if product.image_src and not any(item.kind == "image" for item in gallery):
+        # Only videos (or nothing) in the gallery: the main image leads.
+        gallery.insert(
+            0, PublicGalleryImage(src=product.image_src, alt=product.image_alt or product.title)
+        )
     return PublicProductDetail(
         **public_card(product, index, badges.get(product.id, ())).model_dump(),
         category_path=category_service.refs(index, product.category_id),

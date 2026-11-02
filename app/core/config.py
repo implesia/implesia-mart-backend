@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     rate_limit_cart_writes: str = "60/minute"
     rate_limit_inquiries: str = "10/hour"
     max_image_bytes: int = 5 * 1024 * 1024
+    max_video_bytes: int = 50 * 1024 * 1024
 
     # Bootstrap superuser
     first_superuser_email: str = "admin@implesia.com"

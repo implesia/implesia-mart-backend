@@ -38,6 +38,46 @@ _SIGNATURES: tuple[tuple[bytes, str], ...] = (
 )
 
 
+_VIDEO_TYPES = frozenset({"video/mp4", "video/webm", "application/octet-stream", ""})
+
+
+def sniff_video(data: bytes) -> str:
+    """MP4 has an `ftyp` box at byte 4. WebM is EBML with the `webm` doc type."""
+    if len(data) >= 12 and data[4:8] == b"ftyp":
+        return ".mp4"
+    if data.startswith(b"\x1a\x45\xdf\xa3") and b"webm" in data[:64]:
+        return ".webm"
+    raise UnprocessableError("Video must be an MP4 or WEBM file")
+
+
+async def read_video(upload: UploadFile) -> bytes:
+    name = (upload.filename or "").lower()
+    if not name.endswith((".mp4", ".webm")):
+        raise UnprocessableError("Video must be an MP4 or WEBM file")
+    if (upload.content_type or "").split(";")[0].strip().lower() not in _VIDEO_TYPES:
+        raise UnprocessableError("Video must be an MP4 or WEBM file")
+    chunks: list[bytes] = []
+    total = 0
+    limit = settings.max_video_bytes
+    while True:
+        chunk = await upload.read(_READ * 16)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit:
+            raise UnprocessableError("Video is too large")
+        chunks.append(chunk)
+    data = b"".join(chunks)
+    if not data:
+        raise UnprocessableError("Video is empty")
+    sniff_video(data)
+    return data
+
+
+def store_video(data: bytes, *, folder: str = "products") -> str:
+    return _write(data, _folder(folder), sniff_video(data))
+
+
 def sniff_image(data: bytes) -> str:
     if data[:4] == b"RIFF" and len(data) >= 12 and data[8:12] == b"WEBP":
         return ".webp"
@@ -73,8 +113,10 @@ def _folder(name: str) -> str:
 
 
 def store_image(data: bytes, *, folder: str = "products") -> str:
-    folder = _folder(folder)
-    suffix = sniff_image(data)
+    return _write(data, _folder(folder), sniff_image(data))
+
+
+def _write(data: bytes, folder: str, suffix: str) -> str:
     directory = (settings.media_root / folder).resolve()
     directory.mkdir(parents=True, exist_ok=True)
     name = f"{uuid.uuid4().hex}{suffix}"

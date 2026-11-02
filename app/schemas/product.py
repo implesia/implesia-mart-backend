@@ -36,6 +36,43 @@ AdminSort = Literal[
 CatalogSort = Literal["popularity", "price-asc", "price-desc", "newest"]
 CatalogView = Literal["featured", "latest", "new"]
 Visibility = Literal["live", "hidden"]
+# A gallery item is a photo, an uploaded video, or a YouTube video. Older items have no kind.
+MediaKind = Literal["image", "video", "youtube"]
+
+_YOUTUBE_ID = re.compile(r"[A-Za-z0-9_-]{11}")
+_YOUTUBE_HOSTS = frozenset({"youtube.com", "youtube-nocookie.com", "youtu.be"})
+_YOUTUBE_PATHS = frozenset({"shorts", "embed", "live", "v"})
+VIDEO_SUFFIXES = (".mp4", ".webm")
+
+
+def youtube_id(value: str) -> str:
+    """The 11-character id from a bare id or a watch, youtu.be, shorts, or embed link."""
+    text = value.strip()
+    if _YOUTUBE_ID.fullmatch(text):
+        return text
+    if len(text) > 300 or any(ch.isspace() for ch in text):
+        raise ValueError("YouTube link is not valid")
+    parsed = urlsplit(text if "://" in text else f"https://{text}")
+    host = (parsed.hostname or "").lower()
+    for prefix in ("www.", "m.", "music."):
+        host = host.removeprefix(prefix)
+    if parsed.scheme not in {"http", "https"} or host not in _YOUTUBE_HOSTS:
+        raise ValueError("YouTube link is not valid")
+    parts = [part for part in parsed.path.split("/") if part]
+    found = ""
+    if host == "youtu.be":
+        found = parts[0] if parts else ""
+    elif parts == ["watch"]:
+        for pair in parsed.query.split("&"):
+            key, _, val = pair.partition("=")
+            if key == "v":
+                found = val
+                break
+    elif len(parts) >= 2 and parts[0] in _YOUTUBE_PATHS:
+        found = parts[1]
+    if not _YOUTUBE_ID.fullmatch(found):
+        raise ValueError("YouTube link is not valid")
+    return found
 
 
 def _category_slug(value: str | None) -> str | None:
@@ -115,8 +152,29 @@ class GalleryImage(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_default=True)
 
     id: str = ""
+    kind: MediaKind = "image"
     src: str = ""
+    # YouTube items only. A full link is accepted and stored as the id.
+    youtube_id: str = ""
     alt: str = ""
+
+    @field_validator("youtube_id")
+    @classmethod
+    def _youtube(cls, value: str) -> str:
+        return youtube_id(value) if value.strip() else ""
+
+    @model_validator(mode="after")
+    def _media(self) -> Self:
+        if self.kind == "youtube":
+            if not self.youtube_id:
+                raise ValueError("YouTube link is not valid")
+            self.src = ""
+            return self
+        self.youtube_id = ""
+        video_path = urlsplit(self.src).path.lower() if self.kind == "video" else ""
+        if video_path and not video_path.endswith(VIDEO_SUFFIXES):
+            raise ValueError("Video must be an MP4 or WEBM file")
+        return self
 
     @field_validator("id", mode="before")
     @classmethod
@@ -322,7 +380,7 @@ class ProductContent(BaseModel):
     @field_validator("gallery")
     @classmethod
     def _gallery(cls, items: list[GalleryImage]) -> list[GalleryImage]:
-        return [item for item in items if item.src]
+        return [item for item in items if item.src or item.youtube_id]
 
     @field_validator("specs")
     @classmethod
@@ -607,7 +665,9 @@ class AdminProductList(BaseModel):
 
 
 class PublicGalleryImage(BaseModel):
+    kind: MediaKind = "image"
     src: str
+    youtube_id: str = ""
     alt: str
 
 
