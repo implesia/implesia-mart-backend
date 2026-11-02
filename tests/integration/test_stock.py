@@ -11,8 +11,9 @@ from app.core.exceptions import UnprocessableError
 from app.models.order import Order
 from app.models.product import Product, ProductVariant, StockStatus
 from app.schemas.order import OrderCreate, OrderLineInput
-from app.services import order_service
+from app.services import order_service, variant_service
 from app.services.cart_service import Shopper
+from app.services.pricing_service import Line, Rules
 from tests.integration.helpers import product
 
 pytestmark = pytest.mark.postgres
@@ -45,10 +46,14 @@ async def test_one_unit_can_be_bought_only_once(
     real_claim = order_service._claim
 
     async def gated(
-        db: AsyncSession, item: Product, variant: ProductVariant | None, quantity: int
-    ) -> tuple[int, str, str, str, str]:
+        db: AsyncSession,
+        item: Product,
+        variant: ProductVariant | None,
+        quantity: int,
+        rules: Rules,
+    ) -> tuple[Line, str, str, str, str]:
         await started.wait()
-        return await real_claim(db, item, variant, quantity)
+        return await real_claim(db, item, variant, quantity, rules)
 
     monkeypatch.setattr(order_service, "_claim", gated)
 
@@ -112,7 +117,7 @@ async def test_two_orders_for_more_than_the_stock_never_oversell(
     )
     assert sum(item.startswith("IM-") for item in results) == 1
     refusal = next(item for item in results if not item.startswith("IM-"))
-    assert "not enough stock" in refusal
+    assert refusal == variant_service.NOT_ENOUGH_STOCK
     assert not any(ch.isdigit() for ch in refusal)  # the remaining count is never revealed
     async with pg() as db:
         left = await db.get(Product, product_id)

@@ -72,13 +72,18 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="badge_known",
         ),
         CheckConstraint(
-            "min_order_quantity >= 1 AND min_order_quantity <= 5", name="min_qty_range"
+            "min_order_quantity >= 1 AND min_order_quantity <= 1000", name="min_qty_range"
         ),
         CheckConstraint(
             "max_order_quantity IS NULL OR "
-            "(max_order_quantity >= min_order_quantity AND max_order_quantity <= 5)",
+            "(max_order_quantity >= min_order_quantity AND max_order_quantity <= 1000)",
             name="max_qty_range",
         ),
+        CheckConstraint(
+            "base_discount IS NULL OR (base_discount >= 0 AND base_discount <= 9999)",
+            name="base_discount_range",
+        ),
+        CheckConstraint("tier_mode IN ('global', 'custom')", name="tier_mode_known"),
         Index(conv("ix_products_storefront"), "published", "category", "status", "price"),
         Index(
             conv("ix_products_category_storefront"), "category_id", "published", "status", "price"
@@ -93,16 +98,32 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     subtitle: Mapped[str] = mapped_column(
         String(300), nullable=False, default="", server_default=""
     )
-    # Primary category. Every product sits in exactly one node of the tree (any level).
-    # RESTRICT: a category that still holds products cannot be deleted.
-    category_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("categories.id", ondelete="RESTRICT"), nullable=False
+    # Primary category. Every published product sits in exactly one node of the tree (any
+    # level); a draft may have none yet. RESTRICT: a category that still holds products
+    # cannot be deleted.
+    category_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("categories.id", ondelete="RESTRICT"), nullable=True
     )
     # Deprecated: the pre-0075 enum column. Kept (nullable, no CHECK) for one release so a
     # rollback or a reader of the raw table still works; nothing writes it any more.
     category: Mapped[str | None] = mapped_column(String(32), nullable=True)
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     compare_at_price: Mapped[int | None] = mapped_column(Integer)
+    # Base discount the admin set, in hundredths of a percent (2800 = 28 %). `price` is then
+    # the quantity-1 selling price and `compare_at_price` the regular price. NULL = a price set
+    # directly (older rows, variant products): the base % is derived from the two prices.
+    base_discount: Mapped[int | None] = mapped_column(Integer)
+    # Quantity discounts: "global" follows pricing_settings, "custom" uses `tiers` below
+    # ({"min_quantity", "extra"} with `extra` in hundredths of a percent).
+    tier_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="global", server_default="global"
+    )
+    tiers: Mapped[list[Any]] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"),
+        nullable=False,
+        default=list,
+        server_default="[]",
+    )
     # Null means made to order. Never returned on the public API.
     quantity: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -116,13 +137,24 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     unit_label: Mapped[str] = mapped_column(
         String(40), nullable=False, default="", server_default=""
     )
+    # Search snippet overrides. Empty = the storefront falls back to the title and a trimmed
+    # description. `seo_keywords` is comma-separated.
+    seo_title: Mapped[str] = mapped_column(
+        String(120), nullable=False, default="", server_default=""
+    )
+    seo_description: Mapped[str] = mapped_column(
+        String(320), nullable=False, default="", server_default=""
+    )
+    seo_keywords: Mapped[str] = mapped_column(
+        String(500), nullable=False, default="", server_default=""
+    )
     # True when the product sells through `product_variants`. Then price, compare_at_price and
     # quantity above are a roll-up of the active variants (see variant_service.rollup), so
     # sorting, filtering and dashboards keep reading one column.
     has_variants: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=false()
     )
-    # Per-order limits for this product. The platform cap of 5 still applies.
+    # Per-order limits for this product. Null max = the store-wide limit.
     min_order_quantity: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, server_default="1"
     )
@@ -141,6 +173,18 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     def __repr__(self) -> str:
         return f"<Product {self.slug}>"
+
+
+class ProductSlugRedirect(Base):
+    """A slug a product used before. Old links resolve to the product (the storefront 308s)."""
+
+    __tablename__ = "product_slug_redirects"
+    __table_args__ = (Index(conv("ix_product_slug_redirects_product_id"), "product_id"),)
+
+    slug: Mapped[str] = mapped_column(String(160), primary_key=True)
+    product_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("products.id", ondelete="CASCADE"), nullable=False
+    )
 
 
 class ProductVariant(UUIDPrimaryKeyMixin, TimestampMixin, Base):

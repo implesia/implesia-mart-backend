@@ -64,8 +64,10 @@ async def test_product_refuses_a_category_that_does_not_exist(
         headers=auth_headers,
         files=_form(_product(category=None, category_id=str(uuid.uuid4()))),
     )
-    assert response.status_code == 422
-    assert "Category not found" in response.json()["error"]["message"]
+    assert response.status_code == 400
+    error = response.json()["errors"][0]
+    assert error["field"] == "category"
+    assert error["message"] == "বাছাই করা ক্যাটাগরিটা আর নেই"
 
 
 async def test_product_in_a_hidden_category_is_saved_but_not_public(

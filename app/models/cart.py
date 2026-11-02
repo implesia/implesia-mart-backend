@@ -67,7 +67,7 @@ class CartItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             postgresql_where=text("variant_id IS NOT NULL"),
             sqlite_where=text("variant_id IS NOT NULL"),
         ),
-        CheckConstraint("quantity >= 1 AND quantity <= 5", name="quantity_in_range"),
+        CheckConstraint("quantity >= 1 AND quantity <= 1000", name="quantity_in_range"),
     )
 
     cart_id: Mapped[uuid.UUID] = mapped_column(

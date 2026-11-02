@@ -38,11 +38,12 @@ async def test_add_to_cart_uses_the_server_price(
     token = body["cart_token"]
     assert token
     assert body["item_count"] == 2
-    assert body["items"][0]["unit_price"] == 15000
-    assert body["items"][0]["line_total"] == 30000
-    assert body["subtotal"] == 30000
+    # 2 units get the default +0.25% quantity tier: 15000 - 38 = 14962.
+    assert body["items"][0]["unit_price"] == 14962
+    assert body["items"][0]["line_total"] == 29924
+    assert body["subtotal"] == 29924
     assert body["shipping"] == 0
-    assert body["total"] == 30000
+    assert body["total"] == 29924
 
     again = await client.post(
         "/api/v1/cart/items",

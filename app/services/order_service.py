@@ -37,8 +37,9 @@ from app.schemas.order import (
     QuoteRead,
     order_page_count,
 )
-from app.services import audit_service, delivery_service, variant_service
-from app.services.cart_service import MAX_QTY, Shopper, _cap, _purchasable, open_cart, shopper_actor
+from app.schemas.pricing import QUANTITY_CEILING
+from app.services import audit_service, delivery_service, pricing_service, variant_service
+from app.services.cart_service import Shopper, _cap, _purchasable, open_cart, shopper_actor
 from app.services.product_options import resolve_selection, selection_of
 from app.services.product_service import content_of
 
@@ -76,9 +77,24 @@ def _merge(items: list[Requested]) -> list[Requested]:
         else:
             merged[key] = item._replace(quantity=previous.quantity + item.quantity)
     for item in merged.values():
-        if item.quantity > MAX_QTY:
-            raise UnprocessableError("A product can have at most 5 in an order")
+        # Per-product limits are checked when the line is priced or claimed.
+        if item.quantity > QUANTITY_CEILING:
+            raise UnprocessableError(variant_service.over_limit_message(QUANTITY_CEILING))
     return list(merged.values())
+
+
+def _snapshot(item: OrderItem) -> dict[str, Any]:
+    """The discount snapshot taken when the order was placed (None on older orders)."""
+
+    def pct(value: int | None) -> Any:
+        return None if value is None else pricing_service.from_hundredths(value)
+
+    return {
+        "regular_price": item.regular_price,
+        "base_discount_percent": pct(item.base_discount),
+        "quantity_discount_percent": pct(item.quantity_discount),
+        "total_discount_percent": pct(item.total_discount),
+    }
 
 
 def _read(order: Order) -> OrderRead:
@@ -115,6 +131,7 @@ def _read(order: Order) -> OrderRead:
                 quantity=item.quantity,
                 line_total=item.line_total,
                 selection=selection_of(item.selection),
+                **_snapshot(item),
             )
             for item in order.items
         ],
@@ -188,11 +205,14 @@ def _line(
     quantity: int,
     cart_item_id: uuid.UUID | None,
     selection: list[dict],
+    rules: pricing_service.Rules,
 ) -> QuoteLineRead:
-    available = _purchasable(product, variant)
-    cap = _cap(product, variant) if available else 0
-    minimum = variant_service.order_limits(product)[0]
-    unit_price = variant.price if variant is not None else product.price
+    limit = rules.max_quantity
+    available = _purchasable(product, variant, limit)
+    cap = _cap(product, variant, limit) if available else 0
+    minimum = variant_service.order_limits(product, limit)[0]
+    line = pricing_service.price_product(product, variant, quantity, rules)
+    unit_price = line.unit_price
     counted = available and max(1, minimum) <= quantity <= max(cap, 0)
     return QuoteLineRead(
         product_id=product.id,
@@ -204,10 +224,14 @@ def _line(
         image_src=product.image_src,
         unit_price=unit_price,
         quantity=quantity,
-        line_total=unit_price * quantity if counted else 0,
+        line_total=line.line_total if counted else 0,
         available=counted,
         max_quantity=cap,
         selection=selection_of(selection),
+        regular_price=line.regular_price,
+        base_discount_percent=line.base_percent,
+        quantity_discount_percent=line.quantity_percent,
+        total_discount_percent=line.total_percent,
     )
 
 
@@ -235,6 +259,7 @@ def _totals(
 
 async def quote(db: AsyncSession, shopper: Shopper, payload: OrderQuoteRequest) -> QuoteRead:
     requested = await _requested(db, shopper, payload)
+    rules = await pricing_service.store_rules(db)
     lines = [
         _line(
             await _product(db, row.product_id),
@@ -242,6 +267,7 @@ async def quote(db: AsyncSession, shopper: Shopper, payload: OrderQuoteRequest) 
             row.quantity,
             row.cart_item_id,
             row.selection,
+            rules,
         )
         for row in requested
     ]
@@ -250,16 +276,20 @@ async def quote(db: AsyncSession, shopper: Shopper, payload: OrderQuoteRequest) 
 
 
 async def _claim(
-    db: AsyncSession, product: Product, variant: ProductVariant | None, quantity: int
-) -> tuple[int, str, str, str, str]:
-    """Take stock in one conditional update. The returned price is the locked row."""
-    minimum, maximum = variant_service.order_limits(product)
+    db: AsyncSession,
+    product: Product,
+    variant: ProductVariant | None,
+    quantity: int,
+    rules: pricing_service.Rules,
+) -> tuple[pricing_service.Line, str, str, str, str]:
+    """Take stock in one conditional update. The line is priced from the locked row."""
+    minimum, maximum = variant_service.order_limits(product, rules.max_quantity)
     if quantity > maximum:
-        raise UnprocessableError(f"A product can have at most {maximum} in an order")
+        raise UnprocessableError(variant_service.over_limit_message(maximum))
     if quantity < minimum:
         raise UnprocessableError(f"The minimum order for this product is {minimum}")
     if variant is not None:
-        return await _claim_variant(db, product, variant, quantity)
+        return await _claim_variant(db, product, variant, quantity, rules)
     if product.has_variants:
         raise UnprocessableError("Choose an option before ordering")
     unlimited = product.quantity is None
@@ -277,29 +307,45 @@ async def _claim(
     row = (
         await db.execute(
             stmt.returning(
-                Product.price, Product.title, Product.slug, Product.image_src, Product.quantity
+                Product.price,
+                Product.title,
+                Product.slug,
+                Product.image_src,
+                Product.quantity,
+                Product.compare_at_price,
+                Product.base_discount,
             )
         )
     ).one_or_none()
     if row is None:
         if product.quantity is not None and 0 < product.quantity < quantity:
-            raise UnprocessableError(
-                "There is not enough stock for that quantity. Please choose fewer."
-            )
+            raise UnprocessableError(variant_service.NOT_ENOUGH_STOCK)
         raise UnprocessableError("This product cannot be ordered")
-    price, title, slug, image_src, left = row
+    price, title, slug, image_src, left, compare_at, base = row
     if left == 0:
         await db.execute(
             update(Product)
             .where(Product.id == product.id, Product.quantity == 0)
             .values(status=StockStatus.SOLD_OUT.value)
         )
-    return int(price), str(title), str(slug), str(image_src), ""
+    line = pricing_service.price_line(
+        regular=pricing_service.regular_of(int(price), compare_at),
+        price=int(price),
+        stored_base=base,
+        quantity=quantity,
+        tiers=pricing_service.product_tiers(product, rules),
+        rules=rules,
+    )
+    return line, str(title), str(slug), str(image_src), ""
 
 
 async def _claim_variant(
-    db: AsyncSession, product: Product, variant: ProductVariant, quantity: int
-) -> tuple[int, str, str, str, str]:
+    db: AsyncSession,
+    product: Product,
+    variant: ProductVariant,
+    quantity: int,
+    rules: pricing_service.Rules,
+) -> tuple[pricing_service.Line, str, str, str, str]:
     """Same rule as a plain product, on the variant row (price and stock live there)."""
     # Lock order is product then variants everywhere (admin save, claim, restock).
     await variant_service.lock_product(db, product.id)
@@ -323,16 +369,28 @@ async def _claim_variant(
         stmt = stmt.values(updated_at=func.now())
     else:
         stmt = stmt.values(quantity=ProductVariant.quantity - quantity)
-    row = (await db.execute(stmt.returning(ProductVariant.price, ProductVariant.sku))).one_or_none()
+    row = (
+        await db.execute(
+            stmt.returning(
+                ProductVariant.price, ProductVariant.sku, ProductVariant.compare_at_price
+            )
+        )
+    ).one_or_none()
     if row is None:
         if variant.quantity is not None and 0 < variant.quantity < quantity:
-            raise UnprocessableError(
-                "There is not enough stock for that quantity. Please choose fewer."
-            )
+            raise UnprocessableError(variant_service.NOT_ENOUGH_STOCK)
         raise UnprocessableError("This product cannot be ordered")
     await variant_service.rollup_by_id(db, product.id)
-    price, sku = row
-    return int(price), product.title, product.slug, product.image_src, str(sku)
+    price, sku, compare_at = row
+    line = pricing_service.price_line(
+        regular=pricing_service.regular_of(int(price), compare_at),
+        price=int(price),
+        stored_base=None,
+        quantity=quantity,
+        tiers=pricing_service.product_tiers(product, rules),
+        rules=rules,
+    )
+    return line, product.title, product.slug, product.image_src, str(sku)
 
 
 async def _number(db: AsyncSession) -> str:
@@ -382,15 +440,17 @@ async def create_order(
     if not available:
         raise UnprocessableError("Delivery is not available for this area")
 
-    priced: list[tuple[Requested, int, str, str, str, str]] = []
+    # Prices come only from the database rows and the pricing rules, never from the request.
+    rules = await pricing_service.store_rules(db)
+    priced: list[tuple[Requested, pricing_service.Line, str, str, str, str]] = []
     ordered = sorted(requested, key=lambda row: (row.product_id.hex, str(row.variant_id or "")))
     for row in ordered:
         product = await _product(db, row.product_id)
         variant = await variant_service.resolve_for_purchase(db, product, row.variant_id)
-        price, title, slug, image_src, sku = await _claim(db, product, variant, row.quantity)
-        priced.append((row, price, title, slug, image_src, sku))
+        line, title, slug, image_src, sku = await _claim(db, product, variant, row.quantity, rules)
+        priced.append((row, line, title, slug, image_src, sku))
 
-    subtotal = sum(price * row.quantity for row, price, *_rest in priced)
+    subtotal = sum(line.line_total for _row, line, *_rest in priced)
     shipping = fee if priced else 0
     order = Order(
         number=await _number(db),
@@ -411,7 +471,7 @@ async def create_order(
         total=subtotal + shipping,
         inventory_held=True,
     )
-    for row, price, title, slug, image_src, sku in priced:
+    for row, line, title, slug, image_src, sku in priced:
         order.items.append(
             OrderItem(
                 product_id=row.product_id,
@@ -420,10 +480,14 @@ async def create_order(
                 title=title,
                 slug=slug,
                 image_src=image_src,
-                unit_price=price,
+                unit_price=line.unit_price,
                 quantity=row.quantity,
-                line_total=price * row.quantity,
+                line_total=line.line_total,
                 selection=row.selection,
+                regular_price=line.regular_price,
+                base_discount=pricing_service.to_hundredths(line.base_percent),
+                quantity_discount=pricing_service.to_hundredths(line.quantity_percent),
+                total_discount=pricing_service.to_hundredths(line.total_percent),
             )
         )
     db.add(order)

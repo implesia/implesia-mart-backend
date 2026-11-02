@@ -102,7 +102,7 @@ async def test_variant_check_constraints(pg: async_sessionmaker[AsyncSession]) -
 async def test_order_quantity_limits_are_checked_by_the_database(
     pg: async_sessionmaker[AsyncSession],
 ) -> None:
-    for minimum, maximum in ((0, None), (6, None), (3, 2), (1, 6)):
+    for minimum, maximum in ((0, None), (1001, None), (3, 2), (1, 1001)):
         async with pg() as db:
             row = product()
             row.min_order_quantity = minimum

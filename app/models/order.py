@@ -108,7 +108,7 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class OrderItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "order_items"
     __table_args__ = (
-        CheckConstraint("quantity >= 1 AND quantity <= 5", name="quantity_in_range"),
+        CheckConstraint("quantity >= 1 AND quantity <= 1000", name="quantity_in_range"),
         CheckConstraint("unit_price >= 0 AND line_total >= 0", name="money_non_negative"),
     )
 
@@ -130,6 +130,12 @@ class OrderItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     unit_price: Mapped[int] = mapped_column(Integer, nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     line_total: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Price snapshot at order time (hundredths of a percent). NULL on orders placed before
+    # discounts were recorded.
+    regular_price: Mapped[int | None] = mapped_column(Integer)
+    base_discount: Mapped[int | None] = mapped_column(Integer)
+    quantity_discount: Mapped[int | None] = mapped_column(Integer)
+    total_discount: Mapped[int | None] = mapped_column(Integer)
     selection: Mapped[list[Any]] = mapped_column(
         JSON().with_variant(JSONB(), "postgresql"),
         nullable=False,

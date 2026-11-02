@@ -3,9 +3,11 @@ from fastapi import APIRouter, Depends
 from app.api.deps import audit_admin_write
 from app.api.v1.endpoints import (
     admin_audit,
+    admin_badges,
     admin_cart,
     admin_delivery,
     admin_orders,
+    admin_pricing,
     admin_products,
     auth,
     cart,
@@ -50,6 +52,7 @@ from app.api.v1.endpoints.home import banner as home_banner
 from app.api.v1.endpoints.home import category as home_category
 from app.api.v1.endpoints.home import faq as home_faq
 from app.api.v1.endpoints.home import featured as home_featured
+from app.api.v1.endpoints.home import media as home_media
 from app.api.v1.endpoints.home import newsletter as home_newsletter
 from app.api.v1.endpoints.home import promo as home_promo
 from app.api.v1.endpoints.home import review as home_review
@@ -94,6 +97,12 @@ api_router.include_router(
     tags=["admin:categories"],
     dependencies=_AUDITED,
 )
+api_router.include_router(
+    admin_badges.router,
+    prefix="/admin/badges",
+    tags=["admin:badges"],
+    dependencies=_AUDITED,
+)
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(dashboard.router, prefix="/admin/dashboard", tags=["admin:dashboard"])
 api_router.include_router(admin_audit.router, prefix="/admin/audit-events", tags=["admin:audit"])
@@ -112,6 +121,9 @@ api_router.include_router(
 )
 api_router.include_router(
     admin_delivery.router, prefix="/admin/delivery", tags=["admin:delivery"], dependencies=_AUDITED
+)
+api_router.include_router(
+    admin_pricing.router, prefix="/admin/pricing", tags=["admin:pricing"], dependencies=_AUDITED
 )
 api_router.include_router(admin_cart.router, prefix="/admin/carts", tags=["admin:carts"])
 api_router.include_router(
@@ -174,6 +186,13 @@ api_router.include_router(
     home_promo.admin_router,
     prefix="/admin/home/promo",
     tags=["admin:home:promo"],
+    dependencies=_AUDITED,
+)
+api_router.include_router(home_media.public_router, prefix="/home/media", tags=["home:media"])
+api_router.include_router(
+    home_media.admin_router,
+    prefix="/admin/home/media",
+    tags=["admin:home:media"],
     dependencies=_AUDITED,
 )
 api_router.include_router(site_footer.public_router, prefix="/site/footer", tags=["site:footer"])

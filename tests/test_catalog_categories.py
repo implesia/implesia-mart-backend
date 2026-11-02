@@ -281,7 +281,9 @@ async def test_products_are_assigned_by_category_id_and_counted(
         headers=auth_headers,
         files=_form(_body(category=None, category_id=str(uuid.uuid4()))),
     )
-    assert bad.status_code == 422
+    # Product create answers with the form-field error list (400), not the shared 422 envelope.
+    assert bad.status_code == 400
+    assert bad.json()["errors"][0]["field"] == "category"
 
 
 def _body(**overrides: object) -> dict:
@@ -306,7 +308,8 @@ async def test_legacy_enum_filter_and_slug_keep_working(
     unknown = await client.post(
         "/api/v1/admin/products", headers=auth_headers, files=_form(_body(category="nope"))
     )
-    assert unknown.status_code == 422
+    assert unknown.status_code == 400
+    assert unknown.json()["errors"][0]["field"] == "category"
 
 
 async def test_listing_includes_descendants_by_default_and_can_be_narrowed(
@@ -507,8 +510,10 @@ async def test_public_catalog_never_exposes_the_inventory_count(
     card = listing["items"][0]
     detail = (await client.get(f"/api/v1/products/by-slug/{product['slug']}")).json()
     for body in (card, detail):
-        assert "quantity" not in body
-        assert "quantity" not in json.dumps(body)
+        # The pricing block lists quantity tiers (min_quantity), not stock.
+        public = {key: value for key, value in body.items() if key != "pricing"}
+        assert "quantity" not in public
+        assert "quantity" not in json.dumps(public)
         assert body["status"] == "available"
     assert "unit_label" in card
 

@@ -68,11 +68,11 @@ class CategoryIndex:
     def kids(self, category_id: uuid.UUID | None) -> list[Category]:
         return self.children.get(category_id, [])
 
-    def path(self, category_id: uuid.UUID) -> list[Category]:
+    def path(self, category_id: uuid.UUID | None) -> list[Category]:
         """Root-first chain ending at the category. Bounded, so a corrupt cycle cannot hang."""
         chain: list[Category] = []
         seen: set[uuid.UUID] = set()
-        current = self.by_id.get(category_id)
+        current = self.by_id.get(category_id) if category_id is not None else None
         while current is not None and current.id not in seen and len(chain) <= MAX_DEPTH * 2:
             seen.add(current.id)
             chain.append(current)
@@ -83,7 +83,7 @@ class CategoryIndex:
     def depth(self, category_id: uuid.UUID) -> int:
         return len(self.path(category_id))
 
-    def root_of(self, category_id: uuid.UUID) -> Category | None:
+    def root_of(self, category_id: uuid.UUID | None) -> Category | None:
         chain = self.path(category_id)
         return chain[0] if chain else None
 
@@ -123,7 +123,10 @@ class CategoryIndex:
             self._hidden = hidden
         return self._hidden
 
-    def visible(self, category_id: uuid.UUID) -> bool:
+    def visible(self, category_id: uuid.UUID | None) -> bool:
+        # A draft may have no category yet; it is never visible.
+        if category_id is None:
+            return False
         return category_id in self.by_id and category_id not in self.hidden_ids()
 
     def ref(self, row: Category) -> CategoryRef:
@@ -167,7 +170,8 @@ async def _direct_counts(db: AsyncSession, *, published_only: bool) -> dict[uuid
     stmt = select(Product.category_id, func.count()).group_by(Product.category_id)
     if published_only:
         stmt = stmt.where(Product.published.is_(True))
-    return {cid: int(total) for cid, total in (await db.execute(stmt)).all()}
+    # Drafts saved before a category was chosen count toward no category.
+    return {cid: int(total) for cid, total in (await db.execute(stmt)).all() if cid is not None}
 
 
 def rollup(index: CategoryIndex, direct: dict[uuid.UUID, int]) -> dict[uuid.UUID, int]:
@@ -200,6 +204,7 @@ def _node(
         image_src=row.image_src,
         depth=depth,
         product_count=counts.get(row.id, 0),
+        updated_at=row.updated_at,
         children=[
             _node(index, child, counts, depth + 1)
             for child in index.kids(row.id)
@@ -572,7 +577,7 @@ async def resolve_for_product(
     return row
 
 
-def refs(index: CategoryIndex, category_id: uuid.UUID) -> list[CategoryRef]:
+def refs(index: CategoryIndex, category_id: uuid.UUID | None) -> list[CategoryRef]:
     return [index.ref(row) for row in index.path(category_id)]
 
 

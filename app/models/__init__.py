@@ -19,6 +19,7 @@ from app.models.about.story import (
 )
 from app.models.about.values import AboutValueItem, AboutValues
 from app.models.audit_event import AuditEvent
+from app.models.badge import Badge, ProductBadgeLink
 from app.models.blogs.categories import BlogCategories, BlogCategoryItem
 from app.models.blogs.cta import BlogCta
 from app.models.blogs.hero import BlogHero
@@ -43,6 +44,7 @@ from app.models.home.banner import BannerAccent, HomeBanner, HomeBannerSlide
 from app.models.home.category import HomeCategory, HomeCategoryTile
 from app.models.home.faq import HomeFaq, HomeFaqItem
 from app.models.home.featured import HomeFeatured, HomeFeaturedItem
+from app.models.home.media import HomeMedia
 from app.models.home.newsletter import HomeNewsletter, HomeNewsletterPerk
 from app.models.home.promo import HomePromo
 from app.models.home.review import HomeReview, HomeReviewItem
@@ -50,6 +52,7 @@ from app.models.home.showcase import HomeShowcase, HomeShowcaseItem, HomeShowcas
 from app.models.home.trust import HomeTrust, HomeTrustItem
 from app.models.inquiry import Inquiry, InquiryStatus, InquiryType
 from app.models.order import Order, OrderIdempotency, OrderItem
+from app.models.pricing import PricingSettings
 from app.models.privacy.collection import PrivacyCollection, PrivacyCollectionCard
 from app.models.privacy.contents import PrivacyContents
 from app.models.privacy.hero import PrivacyHero
@@ -58,7 +61,7 @@ from app.models.privacy.rights import PrivacyRightItem, PrivacyRights
 from app.models.privacy.sharing import PrivacySharing, PrivacySharingChip
 from app.models.privacy.support import PrivacySupport
 from app.models.privacy.usage import PrivacyUsage, PrivacyUsageBadge, PrivacyUsageItem
-from app.models.product import Product, ProductVariant
+from app.models.product import Product, ProductSlugRedirect, ProductVariant
 from app.models.refresh_token import RefreshToken
 from app.models.shipping.block import (
     ShippingBlock,
@@ -121,6 +124,7 @@ __all__ = [
     "AboutValueItem",
     "AboutValues",
     "AuditEvent",
+    "Badge",
     "BannerAccent",
     "Base",
     "BlogCategories",
@@ -160,6 +164,7 @@ __all__ = [
     "HomeFaqItem",
     "HomeFeatured",
     "HomeFeaturedItem",
+    "HomeMedia",
     "HomeNewsletter",
     "HomeNewsletterPerk",
     "HomePromo",
@@ -188,6 +193,8 @@ __all__ = [
     "PrivacyUsageBadge",
     "PrivacyUsageItem",
     "Product",
+    "ProductBadgeLink",
+    "ProductSlugRedirect",
     "ProductVariant",
     "RefreshToken",
     "ShippingBlock",
@@ -222,6 +229,7 @@ __all__ = [
     "SustainabilityQualityBadge",
     "SiteFooter",
     "SiteContact",
+    "PricingSettings",
     "SiteHeader",
     "SustainabilityQualityStep",
     "User",

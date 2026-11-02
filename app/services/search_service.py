@@ -21,7 +21,7 @@ from app.schemas.search import (
     SearchQuery,
     SearchResults,
 )
-from app.services import category_service, product_service, search_text
+from app.services import badge_service, category_service, product_service, search_text
 
 
 async def _products(
@@ -45,8 +45,9 @@ async def _products(
         .limit(query.page_size)
     )
     rows = list((await db.execute(stmt)).scalars().all())
+    badges = await badge_service.for_products(db, [row.id for row in rows])
     return ProductHits(
-        items=[product_service.public_card(row, index) for row in rows],
+        items=[product_service.public_card(row, index, badges.get(row.id, ())) for row in rows],
         total=total,
         page=query.page,
         pages=page_count(total, query.page_size),

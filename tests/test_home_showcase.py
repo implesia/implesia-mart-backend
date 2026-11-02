@@ -74,6 +74,30 @@ async def test_public_showcase_seeds_each_category(
     assert fashion["product_ids"] == [gown["id"]]
 
 
+async def test_public_showcase_drops_a_pinned_product_once_hidden(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    lamp = await _create(
+        client, auth_headers, title="Lamp", slug="showcase-lamp", category="gadgets"
+    )
+    assert _row((await client.get("/api/v1/home/showcase")).json(), "gadgets")["product_ids"] == [
+        lamp["id"]
+    ]
+
+    hidden = await client.patch(
+        f"/api/v1/admin/products/{lamp['id']}",
+        headers=auth_headers,
+        files=[("payload", (None, json.dumps({"published": False})))],
+    )
+    assert hidden.status_code == 200, hidden.text
+
+    public = await client.get("/api/v1/home/showcase")
+    assert _row(public.json(), "gadgets")["product_ids"] == []
+    admin = await client.get("/api/v1/admin/home/showcase", headers=auth_headers)
+    pinned = _row(admin.json(), "gadgets")["items"]
+    assert [item["product"]["published"] for item in pinned] == [False]
+
+
 async def test_showcase_admin_requires_an_editor(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:

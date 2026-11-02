@@ -58,11 +58,12 @@ async def test_direct_order_ignores_client_prices_and_replays(
     body = placed.json()
     assert body["anonymous"] is True
     assert body["payment_method"] == "cod"
-    assert body["items"][0]["unit_price"] == 15000
-    assert body["items"][0]["line_total"] == 30000
-    assert body["subtotal"] == 30000
+    # 2 units get the default +0.25% quantity tier: 15000 - 38 = 14962.
+    assert body["items"][0]["unit_price"] == 14962
+    assert body["items"][0]["line_total"] == 29924
+    assert body["subtotal"] == 29924
     assert body["shipping"] == 70
-    assert body["total"] == 30070
+    assert body["total"] == 29994
     assert body["delivery_zone"] == "inside"
     assert body["number"].startswith("IM-")
 
@@ -115,10 +116,11 @@ async def test_quote_does_not_take_stock_and_cart_order_clears_the_cart(
     )
     assert quoted.status_code == 200, quoted.text
     quote = quoted.json()
-    assert quote["items"][0]["unit_price"] == 500
-    assert quote["items"][0]["line_total"] == 1000
+    # 2 units get the default +0.25% quantity tier: 500 - 1 = 499.
+    assert quote["items"][0]["unit_price"] == 499
+    assert quote["items"][0]["line_total"] == 998
     assert quote["shipping"] == 130
-    assert quote["total"] == 1130
+    assert quote["total"] == 1128
     assert quote["delivery_zone"] == "outside"
     assert quote["items"][0]["max_quantity"] == 3
     untouched = await _stock(client, auth_headers, product["id"])
@@ -130,7 +132,7 @@ async def test_quote_does_not_take_stock_and_cart_order_clears_the_cart(
         json={"source": "cart", **SHIPPING},
     )
     assert placed.status_code == 201, placed.text
-    assert placed.json()["total"] == 1130
+    assert placed.json()["total"] == 1128
     assert placed.json()["source"] == "cart"
 
     emptied = await client.get("/api/v1/cart", headers=guest)

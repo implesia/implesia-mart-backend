@@ -1,13 +1,24 @@
 import re
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal, Self
 from urllib.parse import unquote, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from app.models.product import ProductBadge, SpecGroup, StockStatus
+from app.schemas.badge import MAX_PER_PRODUCT, BadgeRef, PublicBadge
 from app.schemas.category import CategoryRef
+from app.schemas.pricing import (
+    DEFAULT_MAX_QUANTITY,
+    MAX_TIERS,
+    QUANTITY_CEILING,
+    Percent,
+    ProductPricing,
+    QuantityTier,
+    clean_tiers,
+)
 
 _ROW_ID = re.compile(r"[a-z0-9-]{1,40}")
 _SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
@@ -35,6 +46,68 @@ AdminSort = Literal[
 CatalogSort = Literal["popularity", "price-asc", "price-desc", "newest"]
 CatalogView = Literal["featured", "latest", "new"]
 Visibility = Literal["live", "hidden"]
+# A gallery item is a photo, an uploaded video, or a YouTube video. Older items have no kind.
+MediaKind = Literal["image", "video", "youtube"]
+
+_YOUTUBE_ID = re.compile(r"[A-Za-z0-9_-]{11}")
+_YOUTUBE_HOSTS = frozenset({"youtube.com", "youtube-nocookie.com", "youtu.be"})
+_YOUTUBE_PATHS = frozenset({"shorts", "embed", "live", "v"})
+VIDEO_SUFFIXES = (".mp4", ".webm")
+
+
+def youtube_id(value: str) -> str:
+    """The 11-character id from a bare id or a watch, youtu.be, shorts, or embed link."""
+    text = value.strip()
+    if _YOUTUBE_ID.fullmatch(text):
+        return text
+    if len(text) > 300 or any(ch.isspace() for ch in text):
+        raise ValueError("YouTube link is not valid")
+    parsed = urlsplit(text if "://" in text else f"https://{text}")
+    host = (parsed.hostname or "").lower()
+    for prefix in ("www.", "m.", "music."):
+        host = host.removeprefix(prefix)
+    if parsed.scheme not in {"http", "https"} or host not in _YOUTUBE_HOSTS:
+        raise ValueError("YouTube link is not valid")
+    parts = [part for part in parsed.path.split("/") if part]
+    found = ""
+    if host == "youtu.be":
+        found = parts[0] if parts else ""
+    elif parts == ["watch"]:
+        for pair in parsed.query.split("&"):
+            key, _, val = pair.partition("=")
+            if key == "v":
+                found = val
+                break
+    elif len(parts) >= 2 and parts[0] in _YOUTUBE_PATHS:
+        found = parts[1]
+    if not _YOUTUBE_ID.fullmatch(found):
+        raise ValueError("YouTube link is not valid")
+    return found
+
+
+SEO_TITLE_MAX = 120
+SEO_DESCRIPTION_MAX = 320
+SEO_KEYWORDS_MAX = 500
+
+
+def clean_slug(value: str) -> str:
+    text = value.strip().lower()
+    if not _SLUG.fullmatch(text) or len(text) > 160:
+        raise ValueError("Slug must use lowercase letters, numbers, and hyphens")
+    return text
+
+
+def clean_keywords(value: str) -> str:
+    """Comma-separated keywords: each one tidied, blanks and repeats dropped."""
+    seen: dict[str, str] = {}
+    for part in value.replace("،", ",").split(","):
+        word = clean_line(part, SEO_KEYWORDS_MAX)
+        if word and word.lower() not in seen:
+            seen[word.lower()] = word
+    text = ", ".join(seen.values())
+    if len(text) > SEO_KEYWORDS_MAX:
+        raise ValueError(f"Must be at most {SEO_KEYWORDS_MAX} characters")
+    return text
 
 
 def _category_slug(value: str | None) -> str | None:
@@ -114,15 +187,40 @@ class GalleryImage(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_default=True)
 
     id: str = ""
+    kind: MediaKind = "image"
     src: str = ""
+    # YouTube items only. A full link is accepted and stored as the id.
+    youtube_id: str = ""
     alt: str = ""
+    # Videos and YouTube items only: an optional custom thumbnail image (/media/...).
+    thumbnail: str = ""
+
+    @field_validator("youtube_id")
+    @classmethod
+    def _youtube(cls, value: str) -> str:
+        return youtube_id(value) if value.strip() else ""
+
+    @model_validator(mode="after")
+    def _media(self) -> Self:
+        if self.kind == "image":
+            self.thumbnail = ""
+        if self.kind == "youtube":
+            if not self.youtube_id:
+                raise ValueError("YouTube link is not valid")
+            self.src = ""
+            return self
+        self.youtube_id = ""
+        video_path = urlsplit(self.src).path.lower() if self.kind == "video" else ""
+        if video_path and not video_path.endswith(VIDEO_SUFFIXES):
+            raise ValueError("Video must be an MP4 or WEBM file")
+        return self
 
     @field_validator("id", mode="before")
     @classmethod
     def _id(cls, value: object) -> str:
         return _row_id("gallery", value)
 
-    @field_validator("src")
+    @field_validator("src", "thumbnail")
     @classmethod
     def _src(cls, value: str) -> str:
         return clean_media_ref(value)
@@ -321,7 +419,7 @@ class ProductContent(BaseModel):
     @field_validator("gallery")
     @classmethod
     def _gallery(cls, items: list[GalleryImage]) -> list[GalleryImage]:
-        return [item for item in items if item.src]
+        return [item for item in items if item.src or item.youtube_id]
 
     @field_validator("specs")
     @classmethod
@@ -402,7 +500,8 @@ class VariantRead(BaseModel):
 
 
 class PublicVariant(BaseModel):
-    """What a shopper may see. No stock count: only whether it can be bought now."""
+    """What a shopper may see: whether it can be bought now and the most per order line
+    (min(order limit, stock); stock shows only when it is below the limit)."""
 
     id: uuid.UUID
     options: dict[str, str]
@@ -410,6 +509,7 @@ class PublicVariant(BaseModel):
     price: int
     compare_at_price: int | None
     available: bool
+    max_quantity: int
 
 
 class ProductCreate(BaseModel):
@@ -420,18 +520,34 @@ class ProductCreate(BaseModel):
     # Assign by id (preferred) or by slug. The slug form keeps `gadgets` / `fashion` working.
     category_id: uuid.UUID | None = None
     category: str | None = Field(default=None, max_length=80)
-    price: int = Field(ge=0, le=MAX_PRICE)
+    # Required to publish. A draft (`published: false`) may leave it out; it is stored as 0.
+    price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     compare_at_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
+    # Preferred over price/compare_at_price: the regular price and the base discount %.
+    # The server works out the selling price (`price`) and keeps `compare_at_price` = regular.
+    regular_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
+    base_discount_percent: Percent | None = None
+    # Quantity discounts: the store-wide tiers, or this product's own `tiers`.
+    tier_mode: Literal["global", "custom"] = "global"
+    tiers: list[QuantityTier] = Field(default_factory=list, max_length=MAX_TIERS)
     quantity: int | None = Field(default=None, ge=0, le=MAX_QUANTITY)
     status: StockStatus = StockStatus.AVAILABLE
+    # Legacy single badge. Prefer `badge_ids`; when only `badge_ids` is sent, `badge` is
+    # derived from the built-in badges among them.
     badge: ProductBadge | None = None
+    # Badges to show, in this order. Omitted = none (or the legacy `badge` alone).
+    badge_ids: list[uuid.UUID] | None = Field(default=None, max_length=MAX_PER_PRODUCT)
     image_src: str = ""
     featured: bool = False
     published: bool = False
     slug: str | None = None
+    # Search snippet overrides. Empty = fall back to the title and the description.
+    seo_title: str = ""
+    seo_description: str = ""
+    seo_keywords: str = ""
     content: ProductContent = Field(default_factory=ProductContent)
-    min_order_quantity: int = Field(1, ge=1, le=5)
-    max_order_quantity: int | None = Field(default=None, ge=1, le=5)
+    min_order_quantity: int = Field(1, ge=1, le=QUANTITY_CEILING)
+    max_order_quantity: int | None = Field(default=None, ge=1, le=QUANTITY_CEILING)
     variants: list[VariantInput] = Field(default_factory=list, max_length=MAX_VARIANTS)
 
     @field_validator("title")
@@ -455,12 +571,22 @@ class ProductCreate(BaseModel):
     @field_validator("slug")
     @classmethod
     def _slug(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        text = value.strip().lower()
-        if not _SLUG.fullmatch(text) or len(text) > 160:
-            raise ValueError("Slug must use lowercase letters, numbers, and hyphens")
-        return text
+        return None if value is None else clean_slug(value)
+
+    @field_validator("seo_title")
+    @classmethod
+    def _seo_title(cls, value: str) -> str:
+        return clean_line(value, SEO_TITLE_MAX)
+
+    @field_validator("seo_description")
+    @classmethod
+    def _seo_description(cls, value: str) -> str:
+        return clean_line(value, SEO_DESCRIPTION_MAX)
+
+    @field_validator("seo_keywords")
+    @classmethod
+    def _seo_keywords(cls, value: str) -> str:
+        return clean_keywords(value)
 
     @field_validator("category")
     @classmethod
@@ -469,9 +595,24 @@ class ProductCreate(BaseModel):
 
     @model_validator(mode="after")
     def _prices(self) -> Self:
-        if self.compare_at_price is not None and self.compare_at_price < self.price:
+        # A draft needs only its name. Price and category are required to publish; values
+        # that were given are still checked, since the table's own constraints need them.
+        self.tiers = clean_tiers(self.tiers)
+        price = self.price if self.price is not None else 0
+        if (
+            self.regular_price is None
+            and self.compare_at_price is not None
+            and self.compare_at_price < price
+        ):
             raise ValueError("Compare-at price must be at least the selling price")
-        if self.category_id is None and self.category is None:
+        if (
+            self.published
+            and self.price is None
+            and self.regular_price is None
+            and not self.variants
+        ):
+            raise ValueError("Price is required")
+        if self.published and self.category_id is None and self.category is None:
             raise ValueError("Choose a category")
         if (
             self.max_order_quantity is not None
@@ -490,15 +631,26 @@ class ProductUpdate(BaseModel):
     category: str | None = Field(default=None, max_length=80)
     price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     compare_at_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
+    regular_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
+    base_discount_percent: Percent | None = None
+    tier_mode: Literal["global", "custom"] | None = None
+    tiers: list[QuantityTier] | None = Field(default=None, max_length=MAX_TIERS)
     quantity: int | None = Field(default=None, ge=0, le=MAX_QUANTITY)
     status: StockStatus | None = None
     badge: ProductBadge | None = None
+    # Omitted = keep the product's badges. [] = remove them all.
+    badge_ids: list[uuid.UUID] | None = Field(default=None, max_length=MAX_PER_PRODUCT)
     image_src: str | None = None
     featured: bool | None = None
     published: bool | None = None
+    # A new slug. The old one keeps resolving to this product (see product_slug_redirects).
+    slug: str | None = None
+    seo_title: str | None = None
+    seo_description: str | None = None
+    seo_keywords: str | None = None
     content: ProductContent | None = None
-    min_order_quantity: int | None = Field(default=None, ge=1, le=5)
-    max_order_quantity: int | None = Field(default=None, ge=1, le=5)
+    min_order_quantity: int | None = Field(default=None, ge=1, le=QUANTITY_CEILING)
+    max_order_quantity: int | None = Field(default=None, ge=1, le=QUANTITY_CEILING)
     # Omitted = leave variants as they are. [] = remove them all (price and stock go back
     # to the product row).
     variants: list[VariantInput] | None = Field(default=None, max_length=MAX_VARIANTS)
@@ -532,6 +684,31 @@ class ProductUpdate(BaseModel):
     def _category(cls, value: str | None) -> str | None:
         return _category_slug(value)
 
+    @field_validator("tiers")
+    @classmethod
+    def _tiers(cls, value: list[QuantityTier] | None) -> list[QuantityTier] | None:
+        return None if value is None else clean_tiers(value)
+
+    @field_validator("slug")
+    @classmethod
+    def _slug(cls, value: str | None) -> str | None:
+        return None if value is None else clean_slug(value)
+
+    @field_validator("seo_title")
+    @classmethod
+    def _seo_title(cls, value: str | None) -> str | None:
+        return None if value is None else clean_line(value, SEO_TITLE_MAX)
+
+    @field_validator("seo_description")
+    @classmethod
+    def _seo_description(cls, value: str | None) -> str | None:
+        return None if value is None else clean_line(value, SEO_DESCRIPTION_MAX)
+
+    @field_validator("seo_keywords")
+    @classmethod
+    def _seo_keywords(cls, value: str | None) -> str | None:
+        return None if value is None else clean_keywords(value)
+
 
 class AdminProductCard(BaseModel):
     id: uuid.UUID
@@ -541,7 +718,8 @@ class AdminProductCard(BaseModel):
     # `category` is the top-level ancestor's slug (the legacy gadgets/fashion value);
     # `category_*` describe the node the product is assigned to.
     category: str
-    category_id: uuid.UUID
+    # None only for a draft saved before a category was chosen.
+    category_id: uuid.UUID | None
     category_slug: str
     category_name: str
     category_path: list[CategoryRef]
@@ -550,6 +728,8 @@ class AdminProductCard(BaseModel):
     quantity: int | None
     status: StockStatus
     badge: ProductBadge | None
+    # Every badge on the product, in display order, including switched-off ones.
+    badges: list[BadgeRef] = Field(default_factory=list)
     image_src: str
     featured: bool
     published: bool
@@ -559,8 +739,17 @@ class AdminProductCard(BaseModel):
 
 class AdminProductRead(AdminProductCard):
     content: ProductContent
+    # The regular price, the base % (saved, or derived from price/compare_at_price) and the
+    # quantity tier choice. `tiers` is the product's own list (used when tier_mode is custom).
+    regular_price: int = 0
+    base_discount_percent: Percent = Decimal("0.00")
+    tier_mode: Literal["global", "custom"] = "global"
+    tiers: list[QuantityTier] = Field(default_factory=list)
     min_order_quantity: int = 1
     max_order_quantity: int | None = None
+    seo_title: str = ""
+    seo_description: str = ""
+    seo_keywords: str = ""
     variants: list[VariantRead] = Field(default_factory=list)
     updated_at: datetime
 
@@ -580,6 +769,33 @@ class CategoryCounts(BaseModel):
     fashion: int
 
 
+MAX_BULK_DELETE = 100
+
+
+class ProductBulkDelete(BaseModel):
+    """Raw ids; the endpoint checks them so each problem gets a clear message."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ids: list[object]
+
+
+class BulkDeleteIssue(BaseModel):
+    id: uuid.UUID
+    reason: Literal["not_found", "error"]
+    message: str
+
+
+class ProductBulkDeleteResult(BaseModel):
+    """Each product is deleted on its own: one problem does not undo the others."""
+
+    requested: int
+    deleted: int
+    deleted_ids: list[uuid.UUID]
+    skipped: list[BulkDeleteIssue]
+    failed: list[BulkDeleteIssue]
+
+
 class AdminProductList(BaseModel):
     items: list[AdminProductCard]
     total: int
@@ -591,8 +807,11 @@ class AdminProductList(BaseModel):
 
 
 class PublicGalleryImage(BaseModel):
+    kind: MediaKind = "image"
     src: str
+    youtube_id: str = ""
     alt: str
+    thumbnail: str = ""
 
 
 class PublicSpec(BaseModel):
@@ -634,14 +853,22 @@ class PublicProductCard(BaseModel):
     image_src: str
     image_alt: str
     badge: ProductBadge | None
+    # Active badges only, in display order.
+    badges: list[PublicBadge] = Field(default_factory=list)
     status: StockStatus
     featured: bool
     # True when the price shown is the lowest of several variants ("From ...").
     has_variants: bool = False
+    # Last change to the product row (sitemap lastmod).
+    updated_at: datetime | None = None
 
 
 class PublicProductDetail(PublicProductCard):
     category_path: list[CategoryRef]
+    # Search snippet overrides; "" = use the title / description.
+    seo_title: str = ""
+    seo_description: str = ""
+    seo_keywords: str = ""
     tagline: str
     description: str
     stock_label: str
@@ -662,7 +889,12 @@ class PublicProductDetail(PublicProductCard):
     options: list[PublicOptionGroup]
     variants: list[PublicVariant] = Field(default_factory=list)
     min_per_order: int = 1
-    max_per_order: int = 5
+    # min(order limit, stock) for a plain product; the order limit for one with variants
+    # (each variant has its own `max_quantity`).
+    max_per_order: int = DEFAULT_MAX_QUANTITY
+    # Regular price, base % and the quantity tiers in force, so the page can show the price
+    # for any quantity. Display only: the cart and checkout price on the server.
+    pricing: ProductPricing | None = None
     related: list[PublicProductCard]
 
 

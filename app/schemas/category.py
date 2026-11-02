@@ -160,6 +160,8 @@ class CategoryNode(BaseModel):
     image_src: str
     depth: int
     product_count: int
+    # Last change to the category row (sitemap lastmod).
+    updated_at: datetime | None = None
     children: list["CategoryNode"] = Field(default_factory=list)
 
 

@@ -23,8 +23,6 @@ from app.schemas.product import (
     VariantRead,
 )
 
-PLATFORM_MAX_QTY = 5
-
 
 def option_key(options: dict[str, str]) -> str:
     """Canonical string for an option combination, independent of key order."""
@@ -45,21 +43,37 @@ def label_of(content: ProductContent, options: dict[str, str]) -> str:
     return " / ".join(item.label for item in selection_of_variant(content, options))
 
 
-def order_limits(product: Product) -> tuple[int, int]:
-    """(minimum, maximum) quantity per order for a product, inside the platform cap."""
-    maximum = min(PLATFORM_MAX_QTY, product.max_order_quantity or PLATFORM_MAX_QTY)
+_BN_DIGITS = str.maketrans("0123456789", "০১২৩৪৫৬৭৮৯")
+# Shown when a cart/order line asks for more than min(order limit, stock). Never states the
+# stock count.
+NOT_ENOUGH_STOCK = "স্টকে এতগুলো নেই। পরিমাণ কমিয়ে আবার চেষ্টা করুন।"
+
+
+def over_limit_message(maximum: int) -> str:
+    return f"এই পণ্যটি এক অর্ডারে সর্বোচ্চ {str(maximum).translate(_BN_DIGITS)}টি নেওয়া যাবে।"
+
+
+def order_limits(product: Product, limit: int) -> tuple[int, int]:
+    """(minimum, maximum) quantity per order line for a product.
+
+    `limit` is the store-wide maximum (Admin › Discounts); a product's own
+    `max_order_quantity` replaces it when set.
+    """
+    maximum = product.max_order_quantity or limit
     return min(product.min_order_quantity, maximum), maximum
 
 
-def stock_cap(product: Product, variant: ProductVariant | None) -> int:
-    """Most units a shopper may take right now (min/max rule and live stock)."""
-    _minimum, maximum = order_limits(product)
+def stock_cap(product: Product, variant: ProductVariant | None, limit: int) -> int:
+    """Most units a shopper may take right now: min(order limit, live stock)."""
+    _minimum, maximum = order_limits(product, limit)
     stock = variant.quantity if variant is not None else product.quantity
     return maximum if stock is None else max(0, min(maximum, stock))
 
 
-def variant_available(variant: ProductVariant, product: Product) -> bool:
-    return variant.is_active and stock_cap(product, variant) >= order_limits(product)[0]
+def variant_available(variant: ProductVariant, product: Product, limit: int) -> bool:
+    return (
+        variant.is_active and stock_cap(product, variant, limit) >= order_limits(product, limit)[0]
+    )
 
 
 def check_combination(content: ProductContent, options: dict[str, str]) -> None:
@@ -256,7 +270,7 @@ def admin_read(content: ProductContent, rows: Sequence[ProductVariant]) -> list[
 
 
 def public_read(
-    product: Product, content: ProductContent, rows: Sequence[ProductVariant]
+    product: Product, content: ProductContent, rows: Sequence[ProductVariant], limit: int
 ) -> list[PublicVariant]:
     return [
         PublicVariant(
@@ -265,7 +279,8 @@ def public_read(
             label=label_of(content, row.options),
             price=row.price,
             compare_at_price=row.compare_at_price,
-            available=variant_available(row, product),
+            available=variant_available(row, product, limit),
+            max_quantity=stock_cap(product, row, limit),
         )
         for row in rows
         if row.is_active

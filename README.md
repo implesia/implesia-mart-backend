@@ -1,3 +1,5 @@
+AI বা নতুন developer: কাজ শুরুর আগে docs/AI_INSTRUCTIONS.md পড়ুন।
+
 # Implesia Mart Backend
 
 FastAPI backend for the Implesia Mart storefront and its admin dashboard.

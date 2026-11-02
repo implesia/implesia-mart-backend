@@ -363,7 +363,11 @@ def _stock(product: Product | None) -> str:
 
 
 def _category_label(product: Product | None, index: CategoryIndex) -> str:
-    row = index.by_id.get(product.category_id) if product is not None else None
+    row = (
+        index.by_id.get(product.category_id)
+        if product is not None and product.category_id is not None
+        else None
+    )
     return row.name if row is not None else "Uncategorized"
 
 

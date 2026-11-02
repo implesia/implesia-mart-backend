@@ -43,7 +43,8 @@ def test_cms_write_schemas_reject_unknown_fields() -> None:
     # 129: sustainability hero/origin/quality/durability image writes (4) became aliases of
     # OptionalImageWrite + LegacyImageWrite (2).
     # 130: + PromoWrite (home promo banner).
-    assert len(models) == 130
+    # 131: + MediaWrite (home video/media section).
+    assert len(models) == 131
     for model in models:
         assert issubclass(model, WriteModel)
         assert model.model_config.get("extra") == "forbid"

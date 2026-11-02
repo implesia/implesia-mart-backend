@@ -11,9 +11,9 @@ INTERNAL = {
     "content",
     "sort_order",
     "created_at",
-    "updated_at",
     "has_stock",
 }
+# `updated_at` is public on purpose: the storefront sitemap uses it as lastmod.
 
 
 async def test_id_and_legacy_slug_return_the_same_product(

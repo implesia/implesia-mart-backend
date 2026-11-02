@@ -1,21 +1,30 @@
 import json
 import re
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 from fastapi import UploadFile
 from pydantic import ValidationError
 from slugify import slugify
-from sqlalchemy import case, func, literal, or_, select
+from sqlalchemy import case, delete, func, literal, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.exceptions import ConflictError, NotFoundError, UnprocessableError
+from app.core.logging import get_logger
 from app.models.audit_event import AuditAction
+from app.models.badge import Badge
 from app.models.category import Category
-from app.models.product import Product, ProductBadge, ProductVariant, StockStatus
+from app.models.product import (
+    Product,
+    ProductBadge,
+    ProductSlugRedirect,
+    ProductVariant,
+    StockStatus,
+)
 from app.models.user import User
 from app.schemas.common import page_count
 from app.schemas.product import (
@@ -26,9 +35,11 @@ from app.schemas.product import (
     AdminProductQuery,
     AdminProductRead,
     AvailabilityCounts,
+    BulkDeleteIssue,
     CatalogQuery,
     CategoryCounts,
     GalleryImage,
+    ProductBulkDeleteResult,
     ProductContent,
     ProductCreate,
     ProductUpdate,
@@ -42,17 +53,29 @@ from app.schemas.product import (
     PublicProductList,
     PublicSpec,
 )
-from app.services import audit_service, category_service, search_text, variant_service
+from app.services import (
+    audit_service,
+    badge_service,
+    category_service,
+    pricing_service,
+    search_text,
+    variant_service,
+)
 from app.services.category_service import CategoryIndex
 from app.services.image_storage import (
     delete_owned_media,
     owned_refs,
     read_image,
+    read_video,
     real_uploads,
     store_image,
+    store_video,
 )
+from app.services.pricing_service import CEILING
+from app.services.transliteration import bengali_to_latin
 
 _SLUG = re.compile(SLUG_PATTERN)
+_logger = get_logger("products")
 _CONTENT_LIMIT = 100_000
 _RELATED_LIMIT = 8
 
@@ -60,17 +83,72 @@ _Expr = ColumnElement[Any]
 
 
 def slug_from_title(title: str) -> str:
-    raw = slugify(title, max_length=140, lowercase=True)
+    # New products only: Bengali is spelled phonetically ("smart-ghori"). Existing
+    # slugs are never regenerated, and an explicit slug from the form wins.
+    raw = slugify(bengali_to_latin(title), max_length=140, lowercase=True)
     raw = re.sub(r"-{2,}", "-", raw).strip("-")
     if _SLUG.fullmatch(raw):
         return raw
-    # Bengali titles have no ASCII slug. Callers append a numeric suffix.
+    # Titles with no letters or digits left. Callers append a numeric suffix.
     return "product"
 
 
 def _prices_ok(price: int, compare_at_price: int | None) -> None:
     if compare_at_price is not None and compare_at_price < price:
         raise UnprocessableError("Compare-at price must be at least the selling price")
+
+
+# Only the price columns matter: quantity 1, no cap below the 99.99 % ceiling.
+_NO_RULES = pricing_service.Rules(tiers=(), max_percent=CEILING)
+_PRICING_KEYS = frozenset({"regular_price", "base_discount_percent", "tier_mode", "tiers"})
+
+
+def _same_prices(fields: dict[str, Any], current: pricing_service.Line | None) -> bool:
+    """True when a form re-sends the prices it was shown, so the saved base % is kept."""
+    if current is None:
+        return False
+    price = int(fields.get("price", current.unit_price))
+    if "compare_at_price" in fields:
+        compare = fields["compare_at_price"]
+    else:
+        compare = current.regular_price if current.regular_price > current.unit_price else None
+    regular = int(compare) if compare is not None and int(compare) > price else price
+    return price == current.unit_price and regular == current.regular_price
+
+
+def _priced(
+    fields: dict[str, Any],
+    payload: ProductCreate | ProductUpdate,
+    current: pricing_service.Line | None,
+    rules: pricing_service.Rules,
+) -> dict[str, Any]:
+    """Turn the admin's regular price + base % into the stored price columns.
+
+    `price` becomes the quantity-1 selling price and `compare_at_price` the regular price
+    (None when there is no discount). Sending only price/compare_at_price (the older form)
+    clears the saved base %, which is then derived from the two prices.
+    """
+    out = {key: value for key, value in fields.items() if key not in _PRICING_KEYS}
+    regular = fields.get("regular_price")
+    sent_base = fields.get("base_discount_percent")
+    if regular is None and sent_base is not None and current is not None:
+        regular = current.regular_price
+    if regular is not None:
+        if sent_base is None and current is not None:
+            sent_base = current.base_percent
+        base = pricing_service.percent(sent_base or 0)
+        if base > pricing_service.cap_of(rules):
+            raise UnprocessableError("Base discount cannot be more than the maximum discount")
+        out["price"] = pricing_service.selling_price(int(regular), base)
+        out["compare_at_price"] = int(regular) if out["price"] < int(regular) else None
+        out["base_discount"] = pricing_service.to_hundredths(base)
+    elif ("price" in fields or "compare_at_price" in fields) and not _same_prices(fields, current):
+        out["base_discount"] = None
+    if payload.tier_mode is not None and "tier_mode" in payload.model_fields_set:
+        out["tier_mode"] = payload.tier_mode
+    if payload.tiers is not None and "tiers" in payload.model_fields_set:
+        out["tiers"] = pricing_service.tiers_to_json(payload.tiers)
+    return out
 
 
 def _split_content(content: ProductContent, *, title: str) -> tuple[str, str, dict[str, Any]]:
@@ -147,12 +225,81 @@ async def _saved_images(
         raise
 
 
+async def _saved_videos(
+    files: list[UploadFile], alts: list[str], fallback_alt: str
+) -> list[GalleryImage]:
+    uploads = real_uploads(files)
+    saved: list[str] = []
+    try:
+        videos: list[GalleryImage] = []
+        for index, upload in enumerate(uploads):
+            url = store_video(await read_video(upload))
+            saved.append(url)
+            alt = alts[index] if index < len(alts) and alts[index] else fallback_alt
+            videos.append(GalleryImage(kind="video", src=url, alt=alt))
+        return videos
+    except ValidationError as exc:
+        delete_owned_media(set(saved))
+        raise UnprocessableError("Image text is invalid") from exc
+    except Exception:
+        delete_owned_media(set(saved))
+        raise
+
+
+# A thumbnail target is a gallery item id, or "video:<n>" for the n-th video uploaded now.
+Thumbnail = tuple[str, str]
+
+
+async def _saved_thumbnails(files: list[UploadFile], targets: list[str]) -> list[Thumbnail]:
+    """Store custom video/YouTube thumbnails with the same checks as gallery photos."""
+    uploads = real_uploads(files)
+    if len(uploads) != len(targets):
+        raise UnprocessableError("Thumbnail does not match a video")
+    saved: list[Thumbnail] = []
+    try:
+        for target, upload in zip(targets, uploads, strict=True):
+            saved.append((target, store_image(await read_image(upload))))
+        return saved
+    except Exception:
+        delete_owned_media({url for _, url in saved})
+        raise
+
+
+def _with_thumbnails(
+    gallery: list[GalleryImage], added: list[GalleryImage], thumbs: list[Thumbnail]
+) -> list[GalleryImage]:
+    if not thumbs:
+        return gallery
+    new_videos = [item.id for item in added if item.kind == "video"]
+    chosen: dict[str, str] = {}
+    for target, url in thumbs:
+        if target.startswith("video:") and target[6:].isdigit():
+            index = int(target[6:])
+            if index >= len(new_videos):
+                raise UnprocessableError("Thumbnail does not match a video")
+            target = new_videos[index]
+        chosen[target] = url
+    playable = {item.id for item in gallery if item.kind in ("video", "youtube")}
+    if not set(chosen) <= playable:
+        raise UnprocessableError("Thumbnail does not match a video")
+    return [
+        item.model_copy(update={"thumbnail": chosen[item.id]}) if item.id in chosen else item
+        for item in gallery
+    ]
+
+
+def _first_photo(gallery: list[GalleryImage]) -> str:
+    """The main image falls back to the first gallery photo, never a video."""
+    return next((item.src for item in gallery if item.kind == "image" and item.src), "")
+
+
 def _media_refs(product: Product) -> set[str]:
     content = content_of(product)
     return owned_refs(
         product.image_src,
         content.quality_image_src,
         *(item.src for item in content.gallery),
+        *(item.thumbnail for item in content.gallery),
     )
 
 
@@ -163,22 +310,29 @@ async def create_product(
     image_alts: list[str] | None = None,
     quality_image: UploadFile | None = None,
     quality_image_alt: str = "",
+    videos: list[UploadFile] | None = None,
+    video_alts: list[str] | None = None,
+    thumbnails: list[UploadFile] | None = None,
+    thumbnail_targets: list[str] | None = None,
 ) -> Product:
     fallback_alt = payload.content.image_alt or payload.title
     added: list[GalleryImage] = []
+    thumbs: list[Thumbnail] = []
     quality_url = ""
     try:
         added = await _saved_images(images or [], image_alts or [], fallback_alt)
+        added += await _saved_videos(videos or [], video_alts or [], fallback_alt)
+        thumbs = await _saved_thumbnails(thumbnails or [], thumbnail_targets or [])
         if quality_image is not None and quality_image.filename:
             saved = await _saved_images([quality_image], [quality_image_alt], fallback_alt)
             quality_url = saved[0].src
             if not quality_image_alt:
                 quality_image_alt = saved[0].alt
-        gallery = [*payload.content.gallery, *added]
+        gallery = _with_thumbnails([*payload.content.gallery, *added], added, thumbs)
         if len(gallery) > 12:
             raise UnprocessableError("A product can have at most 12 images")
-        image_src = payload.image_src or (gallery[0].src if gallery else "")
-        if not image_src:
+        image_src = payload.image_src or _first_photo(gallery)
+        if not image_src and payload.published:
             raise UnprocessableError("Add a product image")
         payload = payload.model_copy(
             update={
@@ -194,7 +348,8 @@ async def create_product(
         )
         return await _insert_product(db, payload)
     except Exception:
-        delete_owned_media(owned_refs(*(item.src for item in added), quality_url))
+        thumb_urls = (url for _, url in thumbs)
+        delete_owned_media(owned_refs(*(item.src for item in added), quality_url, *thumb_urls))
         raise
 
 
@@ -206,22 +361,45 @@ async def _insert_product(db: AsyncSession, payload: ProductCreate) -> Product:
         slug = payload.slug
     else:
         slug = await allocate_slug(db, payload.title)
+    # A slug in use now wins over another product's old slug.
+    await db.execute(delete(ProductSlugRedirect).where(ProductSlugRedirect.slug == slug))
 
-    category = await category_service.resolve_for_product(
-        db, category_id=payload.category_id, legacy_slug=payload.category
+    category = (
+        await category_service.resolve_for_product(
+            db, category_id=payload.category_id, legacy_slug=payload.category
+        )
+        if payload.category_id is not None or payload.category is not None
+        else None  # A draft saved before a category was chosen.
     )
     unit_label, image_alt, stored = _split_content(payload.content, title=payload.title)
+    badges = await badge_service.resolve(db, payload.badge_ids or [])
+    legacy = payload.badge.value if payload.badge else None
+    if payload.badge_ids is not None:
+        # The chosen badges decide; `badge` follows the built-in ones among them.
+        legacy = badge_service.legacy_value(badges)
     sort_order = int(await db.scalar(select(func.max(Product.sort_order))) or 0) + 1
+    priced = _priced(
+        payload.model_dump(
+            include={"price", "compare_at_price", "regular_price", "base_discount_percent"},
+            exclude_none=True,
+        ),
+        payload,
+        None,
+        await pricing_service.store_rules(db),
+    )
     product = Product(
         slug=slug,
         title=payload.title,
         subtitle=payload.subtitle,
-        category_id=category.id,
-        price=payload.price,
-        compare_at_price=payload.compare_at_price,
+        category_id=category.id if category is not None else None,
+        price=priced.get("price", 0),
+        compare_at_price=priced.get("compare_at_price"),
+        base_discount=priced.get("base_discount"),
+        tier_mode=payload.tier_mode,
+        tiers=pricing_service.tiers_to_json(payload.tiers),
         quantity=payload.quantity,
         status=payload.status.value,
-        badge=payload.badge.value if payload.badge else None,
+        badge=legacy,
         image_src=payload.image_src,
         image_alt=image_alt,
         unit_label=unit_label,
@@ -231,14 +409,24 @@ async def _insert_product(db: AsyncSession, payload: ProductCreate) -> Product:
         content=stored,
         min_order_quantity=payload.min_order_quantity,
         max_order_quantity=payload.max_order_quantity,
+        seo_title=payload.seo_title,
+        seo_description=payload.seo_description,
+        seo_keywords=payload.seo_keywords,
     )
     db.add(product)
     try:
-        if payload.variants:
+        if payload.variants or payload.badge_ids is not None or legacy is not None:
             await db.flush()
+        if payload.variants:
             await variant_service.save_variants(
                 db, product, payload.content, payload.variants, explicit_status=True
             )
+            # Variants carry their own prices; the base % is derived per variant.
+            product.base_discount = None
+        if payload.badge_ids is not None:
+            await badge_service.replace_links(db, product.id, badges)
+        elif legacy is not None:
+            await badge_service.apply_legacy(db, product.id, legacy)
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -260,6 +448,10 @@ async def update_product(
     quality_image_alt: str = "",
     *,
     actor: User,
+    videos: list[UploadFile] | None = None,
+    video_alts: list[str] | None = None,
+    thumbnails: list[UploadFile] | None = None,
+    thumbnail_targets: list[str] | None = None,
 ) -> Product:
     before = _media_refs(product)
     fallback_alt = (
@@ -268,15 +460,21 @@ async def update_product(
         else product.image_alt or product.title
     )
     added: list[GalleryImage] = []
+    thumbs: list[Thumbnail] = []
     quality_url = ""
     try:
         added = await _saved_images(images or [], image_alts or [], fallback_alt)
+        added += await _saved_videos(videos or [], video_alts or [], fallback_alt)
+        thumbs = await _saved_thumbnails(thumbnails or [], thumbnail_targets or [])
         if quality_image is not None and quality_image.filename:
             saved = await _saved_images([quality_image], [quality_image_alt], fallback_alt)
             quality_url = saved[0].src
-        await _apply_update(db, product, payload, added, quality_url, quality_image_alt, actor)
+        await _apply_update(
+            db, product, payload, added, quality_url, quality_image_alt, actor, thumbs
+        )
     except Exception:
-        delete_owned_media(owned_refs(*(item.src for item in added), quality_url))
+        thumb_urls = (url for _, url in thumbs)
+        delete_owned_media(owned_refs(*(item.src for item in added), quality_url, *thumb_urls))
         raise
     delete_owned_media(before - _media_refs(product))
     return product
@@ -290,6 +488,7 @@ async def _apply_update(
     quality_url: str,
     quality_image_alt: str,
     actor: User,
+    thumbs: list[Thumbnail] | None = None,
 ) -> None:
     before = {
         "price": product.price,
@@ -298,8 +497,13 @@ async def _apply_update(
         "status": product.status,
     }
     fields = payload.model_dump(
-        exclude_unset=True, exclude={"content", "category", "category_id", "variants"}
+        exclude_unset=True,
+        exclude={"content", "category", "category_id", "variants", "badge_ids"},
     )
+    new_badges: list[Badge] | None = None
+    if payload.badge_ids is not None:
+        new_badges = await badge_service.resolve(db, payload.badge_ids)
+        fields["badge"] = badge_service.legacy_value(new_badges)
     if fields.get("min_order_quantity", 0) is None:
         fields.pop("min_order_quantity")
     new_min = int(fields.get("min_order_quantity", product.min_order_quantity))
@@ -311,12 +515,26 @@ async def _apply_update(
             db, category_id=payload.category_id, legacy_slug=payload.category
         )
         product.category_id = target.id
+    fields = _priced(
+        fields,
+        payload,
+        pricing_service.price_product(product, None, 1, _NO_RULES),
+        await pricing_service.store_rules(db),
+    )
     price = fields.get("price", product.price)
     if "compare_at_price" in fields:
         compare_at_price = fields["compare_at_price"]
     else:
         compare_at_price = product.compare_at_price
     _prices_ok(int(price), compare_at_price)
+
+    if fields.get("slug") is None or fields["slug"] == product.slug:
+        fields.pop("slug", None)
+    else:
+        await _change_slug(db, product, str(fields.pop("slug")))
+    for field in ("seo_title", "seo_description", "seo_keywords"):
+        if field in fields and fields[field] is None:
+            fields.pop(field)
 
     title = str(fields.get("title", product.title))
     for field, value in fields.items():
@@ -325,11 +543,11 @@ async def _apply_update(
         setattr(product, field, value)
 
     has_content = "content" in payload.model_fields_set and payload.content is not None
-    if added or quality_url or quality_image_alt or has_content:
+    if added or quality_url or quality_image_alt or has_content or thumbs:
         content = content_of(product)
         if has_content and payload.content is not None:
             content = payload.content
-        gallery = [*content.gallery, *added]
+        gallery = _with_thumbnails([*content.gallery, *added], added, thumbs or [])
         if len(gallery) > 12:
             raise UnprocessableError("A product can have at most 12 images")
         updates: dict[str, Any] = {"gallery": gallery}
@@ -342,8 +560,8 @@ async def _apply_update(
         product.unit_label = unit_label
         product.image_alt = image_alt
         product.content = stored
-        if not product.image_src and gallery:
-            product.image_src = gallery[0].src
+        if not product.image_src:
+            product.image_src = _first_photo(gallery)
 
     if payload.variants is not None:
         await variant_service.save_variants(
@@ -356,9 +574,44 @@ async def _apply_update(
     elif has_content:
         await variant_service.ensure_still_valid(db, product, content_of(product))
 
+    if new_badges is not None:
+        await badge_service.replace_links(db, product.id, new_badges)
+    elif "badge" in fields:
+        await badge_service.apply_legacy(db, product.id, product.badge)
+
+    if product.has_variants:
+        # Variants carry their own prices; the base % is derived per variant.
+        product.base_discount = None
+    _publishable(product)
     await _audit_catalog_changes(db, product, actor, before)
     await db.commit()
     await db.refresh(product)
+
+
+async def _change_slug(db: AsyncSession, product: Product, slug: str) -> None:
+    """Give the product a new slug; its old slug keeps resolving to it."""
+    taken = await db.scalar(
+        select(Product.id).where(Product.slug == slug, Product.id != product.id).limit(1)
+    )
+    if taken is not None:
+        raise ConflictError("A product with this slug already exists")
+    await db.execute(delete(ProductSlugRedirect).where(ProductSlugRedirect.slug == slug))
+    old = await db.get(ProductSlugRedirect, product.slug)
+    if old is None:
+        db.add(ProductSlugRedirect(slug=product.slug, product_id=product.id))
+    else:
+        old.product_id = product.id
+    product.slug = slug
+
+
+def _publishable(product: Product) -> None:
+    """A draft may be incomplete. A published product needs a category and a main image."""
+    if not product.published:
+        return
+    if product.category_id is None:
+        raise UnprocessableError("Choose a category")
+    if not product.image_src:
+        raise UnprocessableError("Add a product image")
 
 
 async def _audit_catalog_changes(
@@ -403,9 +656,52 @@ def _field_changes(
 
 async def delete_product(db: AsyncSession, product: Product) -> None:
     refs = _media_refs(product)
+    await badge_service.unlink_product(db, product.id)
     await db.delete(product)
     await db.commit()
     delete_owned_media(refs)
+
+
+async def bulk_delete(db: AsyncSession, ids: list[uuid.UUID]) -> ProductBulkDeleteResult:
+    """Delete each product exactly as the single delete does, one at a time.
+
+    Partial success: a missing product is skipped and an unexpected failure is rolled back
+    for that product only, so the rest still go. Order lines keep their snapshot (their
+    product link becomes empty), the same as a single delete.
+    """
+    deleted: list[uuid.UUID] = []
+    skipped: list[BulkDeleteIssue] = []
+    failed: list[BulkDeleteIssue] = []
+    for product_id in ids:
+        product = await db.get(Product, product_id)
+        if product is None:
+            skipped.append(
+                BulkDeleteIssue(id=product_id, reason="not_found", message="Product not found")
+            )
+            continue
+        try:
+            await delete_product(db, product)
+        except Exception as exc:
+            await db.rollback()
+            _logger.error(
+                "product_bulk_delete_failed",
+                product_id=str(product_id),
+                error_type=type(exc).__name__,
+            )
+            failed.append(
+                BulkDeleteIssue(
+                    id=product_id, reason="error", message="The product could not be deleted"
+                )
+            )
+            continue
+        deleted.append(product_id)
+    return ProductBulkDeleteResult(
+        requested=len(ids),
+        deleted=len(deleted),
+        deleted_ids=deleted,
+        skipped=skipped,
+        failed=failed,
+    )
 
 
 def _admin_order(sort: str) -> tuple[Any, ...]:
@@ -574,13 +870,15 @@ async def _category_counts(
     return counts
 
 
-def _root_slug(index: CategoryIndex, category_id: uuid.UUID) -> str:
+def _root_slug(index: CategoryIndex, category_id: uuid.UUID | None) -> str:
+    if category_id is None:
+        return ""
     root = index.root_of(category_id)
     return root.slug if root is not None else ""
 
 
 def _category_fields(index: CategoryIndex, product: Product) -> dict[str, Any]:
-    row = index.by_id.get(product.category_id)
+    row = index.by_id.get(product.category_id) if product.category_id is not None else None
     return {
         "category": _root_slug(index, product.category_id),
         "category_id": product.category_id,
@@ -589,7 +887,9 @@ def _category_fields(index: CategoryIndex, product: Product) -> dict[str, Any]:
     }
 
 
-def admin_card(product: Product, index: CategoryIndex) -> AdminProductCard:
+def admin_card(
+    product: Product, index: CategoryIndex, badges: Sequence[Badge] = ()
+) -> AdminProductCard:
     return AdminProductCard(
         id=product.id,
         slug=product.slug,
@@ -602,6 +902,7 @@ def admin_card(product: Product, index: CategoryIndex) -> AdminProductCard:
         quantity=product.quantity,
         status=StockStatus(product.status),
         badge=ProductBadge(product.badge) if product.badge else None,
+        badges=[badge_service.ref(badge) for badge in badges],
         image_src=product.image_src,
         featured=product.featured,
         published=product.published,
@@ -618,14 +919,26 @@ def content_of(product: Product) -> ProductContent:
 
 
 def admin_read(
-    product: Product, index: CategoryIndex, variants: list[ProductVariant] | None = None
+    product: Product,
+    index: CategoryIndex,
+    variants: list[ProductVariant] | None = None,
+    badges: Sequence[Badge] = (),
+    rules: pricing_service.Rules | None = None,
 ) -> AdminProductRead:
     content = content_of(product)
+    line = pricing_service.price_product(product, None, 1, rules or _NO_RULES)
     return AdminProductRead(
-        **admin_card(product, index).model_dump(),
+        **admin_card(product, index, badges).model_dump(),
         content=content,
+        regular_price=line.regular_price,
+        base_discount_percent=line.base_percent,
+        tier_mode="custom" if product.tier_mode == "custom" else "global",
+        tiers=list(pricing_service.tiers_from_json(product.tiers)),
         min_order_quantity=product.min_order_quantity,
         max_order_quantity=product.max_order_quantity,
+        seo_title=product.seo_title,
+        seo_description=product.seo_description,
+        seo_keywords=product.seo_keywords,
         variants=variant_service.admin_read(content, variants or []),
         updated_at=product.updated_at,
     )
@@ -634,10 +947,19 @@ def admin_read(
 async def admin_read_full(
     db: AsyncSession, product: Product, index: CategoryIndex
 ) -> AdminProductRead:
-    return admin_read(product, index, await variant_service.list_variants(db, product.id))
+    badges = (await badge_service.for_products(db, [product.id])).get(product.id, [])
+    return admin_read(
+        product,
+        index,
+        await variant_service.list_variants(db, product.id),
+        badges,
+        await pricing_service.store_rules(db),
+    )
 
 
-def public_card(product: Product, index: CategoryIndex) -> PublicProductCard:
+def public_card(
+    product: Product, index: CategoryIndex, badges: Sequence[Badge] = ()
+) -> PublicProductCard:
     return PublicProductCard(
         id=product.id,
         slug=product.slug,
@@ -650,9 +972,11 @@ def public_card(product: Product, index: CategoryIndex) -> PublicProductCard:
         image_src=product.image_src,
         image_alt=product.image_alt,
         badge=ProductBadge(product.badge) if product.badge else None,
+        badges=badge_service.public(badges),
         status=StockStatus(product.status),
         featured=product.featured,
         has_variants=product.has_variants,
+        updated_at=product.updated_at,
     )
 
 
@@ -661,18 +985,33 @@ def public_detail(
     related: list[Product],
     index: CategoryIndex,
     variants: list[ProductVariant] | None = None,
+    badges: dict[uuid.UUID, list[Badge]] | None = None,
+    rules: pricing_service.Rules | None = None,
 ) -> PublicProductDetail:
+    badges = badges or {}
+    limit = (rules or _NO_RULES).max_quantity
     content = content_of(product)
     gallery = [
-        PublicGalleryImage(src=item.src, alt=item.alt or product.title) for item in content.gallery
+        PublicGalleryImage(
+            kind=item.kind,
+            src=item.src,
+            youtube_id=item.youtube_id,
+            alt=item.alt or product.title,
+            thumbnail=item.thumbnail,
+        )
+        for item in content.gallery
     ]
-    if not gallery and product.image_src:
-        gallery = [
-            PublicGalleryImage(src=product.image_src, alt=product.image_alt or product.title)
-        ]
+    if product.image_src and not any(item.kind == "image" for item in gallery):
+        # Only videos (or nothing) in the gallery: the main image leads.
+        gallery.insert(
+            0, PublicGalleryImage(src=product.image_src, alt=product.image_alt or product.title)
+        )
     return PublicProductDetail(
-        **public_card(product, index).model_dump(),
+        **public_card(product, index, badges.get(product.id, ())).model_dump(),
         category_path=category_service.refs(index, product.category_id),
+        seo_title=product.seo_title,
+        seo_description=product.seo_description,
+        seo_keywords=product.seo_keywords,
         tagline=content.tagline,
         description=content.description,
         stock_label=content.stock_label,
@@ -705,10 +1044,17 @@ def public_detail(
             )
             for group in content.options
         ],
-        variants=variant_service.public_read(product, content, variants or []),
-        min_per_order=variant_service.order_limits(product)[0],
-        max_per_order=variant_service.order_limits(product)[1],
-        related=[public_card(item, index) for item in related],
+        variants=variant_service.public_read(product, content, variants or [], limit),
+        min_per_order=variant_service.order_limits(product, limit)[0],
+        # Plain product: min(order limit, stock). With variants: the order limit (each variant
+        # carries its own `max_quantity`).
+        max_per_order=(
+            variant_service.order_limits(product, limit)[1]
+            if product.has_variants
+            else variant_service.stock_cap(product, None, limit)
+        ),
+        pricing=pricing_service.product_pricing(product, rules) if rules is not None else None,
+        related=[public_card(item, index, badges.get(item.id, ())) for item in related],
     )
 
 
@@ -725,9 +1071,10 @@ async def list_admin(db: AsyncSession, query: AdminProductQuery) -> AdminProduct
         .limit(query.page_size)
     )
     rows: list[Product] = list((await db.execute(stmt)).scalars().all())
+    badges = await badge_service.for_products(db, [row.id for row in rows])
     counts = await _category_counts(db, _admin_filters(query, scope=None, search=False), index)
     return AdminProductList(
-        items=[admin_card(product, index) for product in rows],
+        items=[admin_card(product, index, badges.get(product.id, ())) for product in rows],
         total=total,
         page=query.page,
         page_size=query.page_size,
@@ -753,6 +1100,7 @@ async def list_public(db: AsyncSession, query: CatalogQuery) -> PublicProductLis
         .limit(query.page_size)
     )
     rows: list[Product] = list((await db.execute(stmt)).scalars().all())
+    badges = await badge_service.for_products(db, [row.id for row in rows])
     categories = await _category_counts(
         db, _public_filters(query, index=index, ignore=frozenset({"category"})), index
     )
@@ -765,7 +1113,7 @@ async def list_public(db: AsyncSession, query: CatalogQuery) -> PublicProductLis
         if status in availability:
             availability[str(status)] = int(count)
     return PublicProductList(
-        items=[public_card(product, index) for product in rows],
+        items=[public_card(product, index, badges.get(product.id, ())) for product in rows],
         total=total,
         page=query.page,
         page_size=query.page_size,
@@ -787,6 +1135,13 @@ async def read_public(db: AsyncSession, product_id: uuid.UUID) -> PublicProductD
 
 
 async def read_public_by_slug(db: AsyncSession, slug: str) -> PublicProductDetail:
+    if await db.scalar(select(Product.id).where(Product.slug == slug).limit(1)) is None:
+        # A slug the product used before: answer with the product (its current slug).
+        moved = await db.scalar(
+            select(ProductSlugRedirect.product_id).where(ProductSlugRedirect.slug == slug)
+        )
+        if moved is not None:
+            return await _public_detail(db, Product.id == moved)
     return await _public_detail(db, Product.slug == slug)
 
 
@@ -815,4 +1170,6 @@ async def _public_detail(db: AsyncSession, match: Any) -> PublicProductDetail:
         .all()
     )
     variants = await variant_service.list_variants(db, product.id) if product.has_variants else []
-    return public_detail(product, related, index, variants)
+    badges = await badge_service.for_products(db, [product.id, *(item.id for item in related)])
+    rules = await pricing_service.store_rules(db)
+    return public_detail(product, related, index, variants, badges, rules)
