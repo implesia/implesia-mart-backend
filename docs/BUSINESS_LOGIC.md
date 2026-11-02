@@ -86,6 +86,26 @@ Code: `app/services/badge_service.py`, `app/schemas/badge.py`, `app/models/badge
 - Delivery fees come from the delivery zones (district/area).
 - Public order lookup does not expose the delivery address.
 
+## Prices and discounts
+
+- Each product has a **regular price** and a **base discount %**. The quantity-1 selling price is `round(regular × (1 − base/100))`, whole taka, half up.
+- **Quantity tiers** add an extra % (on the regular price) for buying more pieces in one line: the highest tier with `min_quantity ≤ quantity` counts. Defaults: 2 → 0.25, 3 → 0.5, 4 → 0.75, 5 → 1, 6 → 1.25, 7 → 1.5, 8+ → 2.
+- `total % = min(base + extra, max %, 99.99 %)`; a discount never reaches 100 %. Unit price = quantity-1 price − round(regular × (total − base)/100), so the quantity-1 price is always exactly the stored `price`. If the max % is below a product's base, the unit price is the regular price at the max %.
+- Store settings (`pricing_settings`, Admin › Discounts): tiers on/off, max %, tier list. Turning tiers off affects products on store-wide tiers only; products with custom tiers keep them. The max % applies to every product. No settings row = defaults (on, 90 %, default tiers).
+- Per product: `tier_mode = global` (store tiers) or `custom` (its own `tiers`).
+- Field mapping:
+
+  | Concept | Column / field |
+  | --- | --- |
+  | Regular price | `compare_at_price` when it is above `price`, else `price` (API: `regular_price`) |
+  | Quantity-1 selling price | `price` |
+  | Base % | `base_discount` (hundredths, 2800 = 28 %); NULL = derived from price/compare_at (older rows). API: `base_discount_percent` |
+  | Variants | always derived from the variant's price/compare_at; product tiers apply |
+  | Order snapshot | `order_items.regular_price`, `base_discount`, `quantity_discount`, `total_discount` (hundredths) + `unit_price`, `line_total` |
+
+- One function prices everything (`pricing_service.price_product`): product page block, cart, quote and order. Orders store the snapshot, so later rule or price changes never change a placed order.
+- Saving a product with `regular_price` (+ `base_discount_percent`) sets `price` and `compare_at_price`. Saving only `price`/`compare_at_price` keeps the saved base % when they are unchanged and clears it (derived) when they change. A base % above the max % is refused.
+
 ## Categories
 
 - Categories form a tree with a maximum depth (`MAX_DEPTH`) and a database cycle guard.

@@ -81,6 +81,17 @@ Generated from the FastAPI routers (`app/api/v1/router.py` and `app/api/v1/endpo
 | GET | `/api/v1/admin/delivery` | any signed-in staff | — | `DeliveryRatesRead` |
 | PATCH | `/api/v1/admin/delivery` | admin (editor, superadmin) | `DeliveryRatesUpdate` | `DeliveryRatesRead` |
 
+## `admin/pricing`
+
+| Method | Path | Access | Request body | Response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/v1/admin/pricing` | any signed-in staff | — | `PricingSettingsRead` |
+| PUT | `/api/v1/admin/pricing` | admin (editor, superadmin) | `PricingSettingsUpdate` | `PricingSettingsRead` |
+
+Body/response: `{"tiers_enabled": true, "max_discount_percent": 90, "tiers": [{"min_quantity": 2, "extra_percent": 0.25}, ...]}`. Percents 0–99.99 (two decimals), `min_quantity` 2–1000, at most 20 tiers, no duplicate quantities (422). `Cache-Control: no-store`.
+
+Product admin create/update also take `regular_price`, `base_discount_percent`, `tier_mode` (`global`/`custom`) and `tiers`; `AdminProductRead` returns them. `GET /products/by-slug/{slug}` and `/products/{id}` return `pricing` (`regular_price`, `selling_price`, `base_discount_percent`, `max_discount_percent`, `tiers` in force). Cart and quote lines return `regular_price`, `base_discount_percent`, `quantity_discount_percent`, `total_discount_percent`; admin order items return the stored snapshot.
+
 ## `admin/home/banner`
 
 | Method | Path | Access | Request body | Response |

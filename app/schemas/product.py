@@ -1,6 +1,7 @@
 import re
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal, Self
 from urllib.parse import unquote, urlsplit
 
@@ -9,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validat
 from app.models.product import ProductBadge, SpecGroup, StockStatus
 from app.schemas.badge import MAX_PER_PRODUCT, BadgeRef, PublicBadge
 from app.schemas.category import CategoryRef
+from app.schemas.pricing import MAX_TIERS, Percent, ProductPricing, QuantityTier, clean_tiers
 
 _ROW_ID = re.compile(r"[a-z0-9-]{1,40}")
 _SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
@@ -486,6 +488,13 @@ class ProductCreate(BaseModel):
     # Required to publish. A draft (`published: false`) may leave it out; it is stored as 0.
     price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     compare_at_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
+    # Preferred over price/compare_at_price: the regular price and the base discount %.
+    # The server works out the selling price (`price`) and keeps `compare_at_price` = regular.
+    regular_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
+    base_discount_percent: Percent | None = None
+    # Quantity discounts: the store-wide tiers, or this product's own `tiers`.
+    tier_mode: Literal["global", "custom"] = "global"
+    tiers: list[QuantityTier] = Field(default_factory=list, max_length=MAX_TIERS)
     quantity: int | None = Field(default=None, ge=0, le=MAX_QUANTITY)
     status: StockStatus = StockStatus.AVAILABLE
     # Legacy single badge. Prefer `badge_ids`; when only `badge_ids` is sent, `badge` is
@@ -539,10 +548,20 @@ class ProductCreate(BaseModel):
     def _prices(self) -> Self:
         # A draft needs only its name. Price and category are required to publish; values
         # that were given are still checked, since the table's own constraints need them.
+        self.tiers = clean_tiers(self.tiers)
         price = self.price if self.price is not None else 0
-        if self.compare_at_price is not None and self.compare_at_price < price:
+        if (
+            self.regular_price is None
+            and self.compare_at_price is not None
+            and self.compare_at_price < price
+        ):
             raise ValueError("Compare-at price must be at least the selling price")
-        if self.published and self.price is None and not self.variants:
+        if (
+            self.published
+            and self.price is None
+            and self.regular_price is None
+            and not self.variants
+        ):
             raise ValueError("Price is required")
         if self.published and self.category_id is None and self.category is None:
             raise ValueError("Choose a category")
@@ -563,6 +582,10 @@ class ProductUpdate(BaseModel):
     category: str | None = Field(default=None, max_length=80)
     price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     compare_at_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
+    regular_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
+    base_discount_percent: Percent | None = None
+    tier_mode: Literal["global", "custom"] | None = None
+    tiers: list[QuantityTier] | None = Field(default=None, max_length=MAX_TIERS)
     quantity: int | None = Field(default=None, ge=0, le=MAX_QUANTITY)
     status: StockStatus | None = None
     badge: ProductBadge | None = None
@@ -607,6 +630,11 @@ class ProductUpdate(BaseModel):
     def _category(cls, value: str | None) -> str | None:
         return _category_slug(value)
 
+    @field_validator("tiers")
+    @classmethod
+    def _tiers(cls, value: list[QuantityTier] | None) -> list[QuantityTier] | None:
+        return None if value is None else clean_tiers(value)
+
 
 class AdminProductCard(BaseModel):
     id: uuid.UUID
@@ -637,6 +665,12 @@ class AdminProductCard(BaseModel):
 
 class AdminProductRead(AdminProductCard):
     content: ProductContent
+    # The regular price, the base % (saved, or derived from price/compare_at_price) and the
+    # quantity tier choice. `tiers` is the product's own list (used when tier_mode is custom).
+    regular_price: int = 0
+    base_discount_percent: Percent = Decimal("0.00")
+    tier_mode: Literal["global", "custom"] = "global"
+    tiers: list[QuantityTier] = Field(default_factory=list)
     min_order_quantity: int = 1
     max_order_quantity: int | None = None
     variants: list[VariantRead] = Field(default_factory=list)
@@ -773,6 +807,9 @@ class PublicProductDetail(PublicProductCard):
     variants: list[PublicVariant] = Field(default_factory=list)
     min_per_order: int = 1
     max_per_order: int = 5
+    # Regular price, base % and the quantity tiers in force, so the page can show the price
+    # for any quantity. Display only: the cart and checkout price on the server.
+    pricing: ProductPricing | None = None
     related: list[PublicProductCard]
 
 

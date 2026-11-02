@@ -319,11 +319,12 @@ async def test_cart_prices_come_from_the_variant_and_lines_are_per_variant(
     assert len(body["items"]) == 2
     lines = {row["variant_id"]: row for row in body["items"]}
     assert lines[red_m["id"]]["quantity"] == 3
-    assert lines[red_m["id"]]["unit_price"] == 1000
+    # 3 units get the default +0.5% quantity tier: 1000 - 5 = 995.
+    assert lines[red_m["id"]]["unit_price"] == 995
     assert lines[red_l["id"]]["unit_price"] == 1200
     assert lines[red_m["id"]]["sku"] == red_m["sku"]
     assert [item["name"] for item in lines[red_m["id"]]["selection"]] == ["কালার", "সাইজ"]
-    assert body["subtotal"] == 3 * 1000 + 1200
+    assert body["subtotal"] == 3 * 995 + 1200
     assert second.status_code == 200
 
 
@@ -421,7 +422,8 @@ async def test_order_total_comes_from_the_database_and_the_client_cannot_overrid
         },
     )
     assert quote.status_code == 200, quote.text
-    assert quote.json()["items"][0]["unit_price"] == 1200
+    # 2 units get the default +0.25% quantity tier: 1200 - 3 = 1197.
+    assert quote.json()["items"][0]["unit_price"] == 1197
     assert quote.json()["items"][0]["variant_id"] == target["id"]
     placed = await _order(
         client, [{"product_id": product["id"], "variant_id": target["id"], "quantity": 2}]
@@ -430,8 +432,8 @@ async def test_order_total_comes_from_the_database_and_the_client_cannot_overrid
     body = placed.json()
     line = body["items"][0]
     assert line["variant_id"] == target["id"] and line["sku"] == target["sku"]
-    assert line["unit_price"] == 1200 and line["line_total"] == 2400
-    assert body["subtotal"] == 2400
+    assert line["unit_price"] == 1197 and line["line_total"] == 2394
+    assert body["subtotal"] == 2394
     after = await _read(client, auth_headers, product["id"])
     assert _variant(after, "navy", "l")["quantity"] == 1
     assert after["quantity"] == 10  # roll-up follows the claim
@@ -508,7 +510,7 @@ async def test_cart_checkout_with_two_variants_of_one_product(
     assert placed.status_code == 201, placed.text
     body = placed.json()
     assert len(body["items"]) == 2
-    assert body["subtotal"] == 1000 + 2 * 1200
+    assert body["subtotal"] == 1000 + 2 * 1197
     after = await _read(client, auth_headers, product["id"])
     assert _variant(after, "red", "m")["quantity"] == 2
     assert _variant(after, "red", "l")["quantity"] == 1

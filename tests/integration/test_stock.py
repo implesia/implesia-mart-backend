@@ -13,6 +13,7 @@ from app.models.product import Product, ProductVariant, StockStatus
 from app.schemas.order import OrderCreate, OrderLineInput
 from app.services import order_service
 from app.services.cart_service import Shopper
+from app.services.pricing_service import Line, Rules
 from tests.integration.helpers import product
 
 pytestmark = pytest.mark.postgres
@@ -45,10 +46,14 @@ async def test_one_unit_can_be_bought_only_once(
     real_claim = order_service._claim
 
     async def gated(
-        db: AsyncSession, item: Product, variant: ProductVariant | None, quantity: int
-    ) -> tuple[int, str, str, str, str]:
+        db: AsyncSession,
+        item: Product,
+        variant: ProductVariant | None,
+        quantity: int,
+        rules: Rules,
+    ) -> tuple[Line, str, str, str, str]:
         await started.wait()
-        return await real_claim(db, item, variant, quantity)
+        return await real_claim(db, item, variant, quantity, rules)
 
     monkeypatch.setattr(order_service, "_claim", gated)
 

@@ -1,12 +1,14 @@
 import re
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.order import OrderStatus
 from app.schemas.common import page_count
+from app.schemas.pricing import Percent
 from app.schemas.product import OptionChoice, SelectedOption
 
 _PHONE = re.compile(r"^01\d{9}$")
@@ -88,6 +90,10 @@ class QuoteLineRead(BaseModel):
     available: bool
     max_quantity: int
     selection: list[SelectedOption] = Field(default_factory=list)
+    regular_price: int = 0
+    base_discount_percent: Percent = Decimal("0.00")
+    quantity_discount_percent: Percent = Decimal("0.00")
+    total_discount_percent: Percent = Decimal("0.00")
 
 
 class QuoteRead(BaseModel):
@@ -112,6 +118,11 @@ class OrderItemRead(BaseModel):
     quantity: int
     line_total: int
     selection: list[SelectedOption] = Field(default_factory=list)
+    # Price snapshot from when the order was placed. None on orders placed before it existed.
+    regular_price: int | None = None
+    base_discount_percent: Percent | None = None
+    quantity_discount_percent: Percent | None = None
+    total_discount_percent: Percent | None = None
 
 
 class OrderLookup(BaseModel):

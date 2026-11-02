@@ -51,6 +51,7 @@ from app.services import (
     audit_service,
     badge_service,
     category_service,
+    pricing_service,
     search_text,
     variant_service,
 )
@@ -64,6 +65,7 @@ from app.services.image_storage import (
     store_image,
     store_video,
 )
+from app.services.pricing_service import CEILING
 
 _SLUG = re.compile(SLUG_PATTERN)
 _logger = get_logger("products")
@@ -85,6 +87,59 @@ def slug_from_title(title: str) -> str:
 def _prices_ok(price: int, compare_at_price: int | None) -> None:
     if compare_at_price is not None and compare_at_price < price:
         raise UnprocessableError("Compare-at price must be at least the selling price")
+
+
+# Only the price columns matter: quantity 1, no cap below the 99.99 % ceiling.
+_NO_RULES = pricing_service.Rules(tiers=(), max_percent=CEILING)
+_PRICING_KEYS = frozenset({"regular_price", "base_discount_percent", "tier_mode", "tiers"})
+
+
+def _same_prices(fields: dict[str, Any], current: pricing_service.Line | None) -> bool:
+    """True when a form re-sends the prices it was shown, so the saved base % is kept."""
+    if current is None:
+        return False
+    price = int(fields.get("price", current.unit_price))
+    if "compare_at_price" in fields:
+        compare = fields["compare_at_price"]
+    else:
+        compare = current.regular_price if current.regular_price > current.unit_price else None
+    regular = int(compare) if compare is not None and int(compare) > price else price
+    return price == current.unit_price and regular == current.regular_price
+
+
+def _priced(
+    fields: dict[str, Any],
+    payload: ProductCreate | ProductUpdate,
+    current: pricing_service.Line | None,
+    rules: pricing_service.Rules,
+) -> dict[str, Any]:
+    """Turn the admin's regular price + base % into the stored price columns.
+
+    `price` becomes the quantity-1 selling price and `compare_at_price` the regular price
+    (None when there is no discount). Sending only price/compare_at_price (the older form)
+    clears the saved base %, which is then derived from the two prices.
+    """
+    out = {key: value for key, value in fields.items() if key not in _PRICING_KEYS}
+    regular = fields.get("regular_price")
+    sent_base = fields.get("base_discount_percent")
+    if regular is None and sent_base is not None and current is not None:
+        regular = current.regular_price
+    if regular is not None:
+        if sent_base is None and current is not None:
+            sent_base = current.base_percent
+        base = pricing_service.percent(sent_base or 0)
+        if base > pricing_service.cap_of(rules):
+            raise UnprocessableError("Base discount cannot be more than the maximum discount")
+        out["price"] = pricing_service.selling_price(int(regular), base)
+        out["compare_at_price"] = int(regular) if out["price"] < int(regular) else None
+        out["base_discount"] = pricing_service.to_hundredths(base)
+    elif ("price" in fields or "compare_at_price" in fields) and not _same_prices(fields, current):
+        out["base_discount"] = None
+    if payload.tier_mode is not None and "tier_mode" in payload.model_fields_set:
+        out["tier_mode"] = payload.tier_mode
+    if payload.tiers is not None and "tiers" in payload.model_fields_set:
+        out["tiers"] = pricing_service.tiers_to_json(payload.tiers)
+    return out
 
 
 def _split_content(content: ProductContent, *, title: str) -> tuple[str, str, dict[str, Any]]:
@@ -312,13 +367,25 @@ async def _insert_product(db: AsyncSession, payload: ProductCreate) -> Product:
         # The chosen badges decide; `badge` follows the built-in ones among them.
         legacy = badge_service.legacy_value(badges)
     sort_order = int(await db.scalar(select(func.max(Product.sort_order))) or 0) + 1
+    priced = _priced(
+        payload.model_dump(
+            include={"price", "compare_at_price", "regular_price", "base_discount_percent"},
+            exclude_none=True,
+        ),
+        payload,
+        None,
+        await pricing_service.store_rules(db),
+    )
     product = Product(
         slug=slug,
         title=payload.title,
         subtitle=payload.subtitle,
         category_id=category.id if category is not None else None,
-        price=payload.price if payload.price is not None else 0,
-        compare_at_price=payload.compare_at_price,
+        price=priced.get("price", 0),
+        compare_at_price=priced.get("compare_at_price"),
+        base_discount=priced.get("base_discount"),
+        tier_mode=payload.tier_mode,
+        tiers=pricing_service.tiers_to_json(payload.tiers),
         quantity=payload.quantity,
         status=payload.status.value,
         badge=legacy,
@@ -340,6 +407,8 @@ async def _insert_product(db: AsyncSession, payload: ProductCreate) -> Product:
             await variant_service.save_variants(
                 db, product, payload.content, payload.variants, explicit_status=True
             )
+            # Variants carry their own prices; the base % is derived per variant.
+            product.base_discount = None
         if payload.badge_ids is not None:
             await badge_service.replace_links(db, product.id, badges)
         elif legacy is not None:
@@ -432,6 +501,12 @@ async def _apply_update(
             db, category_id=payload.category_id, legacy_slug=payload.category
         )
         product.category_id = target.id
+    fields = _priced(
+        fields,
+        payload,
+        pricing_service.price_product(product, None, 1, _NO_RULES),
+        await pricing_service.store_rules(db),
+    )
     price = fields.get("price", product.price)
     if "compare_at_price" in fields:
         compare_at_price = fields["compare_at_price"]
@@ -482,6 +557,9 @@ async def _apply_update(
     elif "badge" in fields:
         await badge_service.apply_legacy(db, product.id, product.badge)
 
+    if product.has_variants:
+        # Variants carry their own prices; the base % is derived per variant.
+        product.base_discount = None
     _publishable(product)
     await _audit_catalog_changes(db, product, actor, before)
     await db.commit()
@@ -807,11 +885,17 @@ def admin_read(
     index: CategoryIndex,
     variants: list[ProductVariant] | None = None,
     badges: Sequence[Badge] = (),
+    rules: pricing_service.Rules | None = None,
 ) -> AdminProductRead:
     content = content_of(product)
+    line = pricing_service.price_product(product, None, 1, rules or _NO_RULES)
     return AdminProductRead(
         **admin_card(product, index, badges).model_dump(),
         content=content,
+        regular_price=line.regular_price,
+        base_discount_percent=line.base_percent,
+        tier_mode="custom" if product.tier_mode == "custom" else "global",
+        tiers=list(pricing_service.tiers_from_json(product.tiers)),
         min_order_quantity=product.min_order_quantity,
         max_order_quantity=product.max_order_quantity,
         variants=variant_service.admin_read(content, variants or []),
@@ -823,7 +907,13 @@ async def admin_read_full(
     db: AsyncSession, product: Product, index: CategoryIndex
 ) -> AdminProductRead:
     badges = (await badge_service.for_products(db, [product.id])).get(product.id, [])
-    return admin_read(product, index, await variant_service.list_variants(db, product.id), badges)
+    return admin_read(
+        product,
+        index,
+        await variant_service.list_variants(db, product.id),
+        badges,
+        await pricing_service.store_rules(db),
+    )
 
 
 def public_card(
@@ -854,6 +944,7 @@ def public_detail(
     index: CategoryIndex,
     variants: list[ProductVariant] | None = None,
     badges: dict[uuid.UUID, list[Badge]] | None = None,
+    rules: pricing_service.Rules | None = None,
 ) -> PublicProductDetail:
     badges = badges or {}
     content = content_of(product)
@@ -910,6 +1001,7 @@ def public_detail(
         variants=variant_service.public_read(product, content, variants or []),
         min_per_order=variant_service.order_limits(product)[0],
         max_per_order=variant_service.order_limits(product)[1],
+        pricing=pricing_service.product_pricing(product, rules) if rules is not None else None,
         related=[public_card(item, index, badges.get(item.id, ())) for item in related],
     )
 
@@ -1020,4 +1112,5 @@ async def _public_detail(db: AsyncSession, match: Any) -> PublicProductDetail:
     )
     variants = await variant_service.list_variants(db, product.id) if product.has_variants else []
     badges = await badge_service.for_products(db, [product.id, *(item.id for item in related)])
-    return public_detail(product, related, index, variants, badges)
+    rules = await pricing_service.store_rules(db)
+    return public_detail(product, related, index, variants, badges, rules)

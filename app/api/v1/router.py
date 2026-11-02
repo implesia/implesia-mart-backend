@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     admin_cart,
     admin_delivery,
     admin_orders,
+    admin_pricing,
     admin_products,
     auth,
     cart,
@@ -119,6 +120,9 @@ api_router.include_router(
 )
 api_router.include_router(
     admin_delivery.router, prefix="/admin/delivery", tags=["admin:delivery"], dependencies=_AUDITED
+)
+api_router.include_router(
+    admin_pricing.router, prefix="/admin/pricing", tags=["admin:pricing"], dependencies=_AUDITED
 )
 api_router.include_router(admin_cart.router, prefix="/admin/carts", tags=["admin:carts"])
 api_router.include_router(

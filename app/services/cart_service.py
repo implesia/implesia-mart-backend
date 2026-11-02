@@ -27,7 +27,7 @@ from app.schemas.cart import (
     cart_page_count,
 )
 from app.schemas.product import OptionChoice
-from app.services import delivery_service, variant_service
+from app.services import delivery_service, pricing_service, variant_service
 from app.services.product_options import resolve_selection, selection_of
 from app.services.product_service import content_of
 
@@ -110,7 +110,7 @@ def _empty(anonymous: bool, rates: delivery_service.StoreFees) -> CartRead:
     )
 
 
-def _lines(cart: Cart) -> tuple[list[CartItemRead], int, int]:
+def _lines(cart: Cart, rules: pricing_service.Rules) -> tuple[list[CartItemRead], int, int]:
     items: list[CartItemRead] = []
     subtotal = 0
     count = 0
@@ -118,9 +118,11 @@ def _lines(cart: Cart) -> tuple[list[CartItemRead], int, int]:
         product = item.product
         variant = item.variant
         available = _purchasable(product, variant)
-        unit_price = variant.price if variant is not None else product.price
+        # The one pricing rule (base % + quantity tiers, capped), worked out on the server.
+        line = pricing_service.price_product(product, variant, item.quantity, rules)
+        unit_price = line.unit_price
         minimum, maximum = variant_service.order_limits(product)
-        line_total = unit_price * item.quantity if available else 0
+        line_total = line.line_total if available else 0
         if available:
             subtotal += line_total
             count += item.quantity
@@ -139,14 +141,24 @@ def _lines(cart: Cart) -> tuple[list[CartItemRead], int, int]:
                 quantity=item.quantity,
                 line_total=line_total,
                 available=available,
+                regular_price=line.regular_price,
+                base_discount_percent=line.base_percent,
+                quantity_discount_percent=line.quantity_percent,
+                total_discount_percent=line.total_percent,
+                pricing=pricing_service.product_pricing(product, rules, variant),
                 selection=selection_of(item.selection),
             )
         )
     return items, subtotal, count
 
 
-def _read(cart: Cart, token: str | None, rates: delivery_service.StoreFees) -> CartRead:
-    items, subtotal, count = _lines(cart)
+def _read(
+    cart: Cart,
+    token: str | None,
+    rates: delivery_service.StoreFees,
+    rules: pricing_service.Rules,
+) -> CartRead:
+    items, subtotal, count = _lines(cart, rules)
     shipping = delivery_service.preview_shipping(count, rates)
     anonymous = cart.user_id is None
     return CartRead(
@@ -179,8 +191,10 @@ def _owner(cart: Cart) -> CartOwnerRead:
     )
 
 
-def _admin(cart: Cart, rates: delivery_service.StoreFees) -> AdminCartRead:
-    items, subtotal, count = _lines(cart)
+def _admin(
+    cart: Cart, rates: delivery_service.StoreFees, rules: pricing_service.Rules
+) -> AdminCartRead:
+    items, subtotal, count = _lines(cart, rules)
     shipping = delivery_service.preview_shipping(count, rates)
     detailed = [
         AdminCartItemRead(
@@ -309,10 +323,11 @@ async def _rates(db: AsyncSession) -> delivery_service.StoreFees:
 
 async def get_cart(db: AsyncSession, shopper: Shopper) -> CartRead:
     rates = await _rates(db)
+    rules = await pricing_service.store_rules(db)
     cart, token = await _open(db, shopper, create=False)
     if cart is None:
         return _empty(shopper.user is None, rates)
-    return _read(cart, token, rates)
+    return _read(cart, token, rates, rules)
 
 
 async def _product(db: AsyncSession, product_id: uuid.UUID) -> Product:
@@ -385,7 +400,8 @@ async def add_item(
     _touch(cart)
     await db.commit()
     rates = await _rates(db)
-    return _read(await _reload(db, cart.id), token, rates)
+    rules = await pricing_service.store_rules(db)
+    return _read(await _reload(db, cart.id), token, rates, rules)
 
 
 async def _owned(db: AsyncSession, shopper: Shopper) -> tuple[Cart, str | None]:
@@ -407,7 +423,8 @@ async def set_quantity(
     _touch(cart)
     await db.commit()
     rates = await _rates(db)
-    return _read(await _reload(db, cart.id), token, rates)
+    rules = await pricing_service.store_rules(db)
+    return _read(await _reload(db, cart.id), token, rates, rules)
 
 
 async def remove_item(db: AsyncSession, shopper: Shopper, item_id: uuid.UUID) -> CartRead:
@@ -419,18 +436,20 @@ async def remove_item(db: AsyncSession, shopper: Shopper, item_id: uuid.UUID) ->
     _touch(cart)
     await db.commit()
     rates = await _rates(db)
-    return _read(await _reload(db, cart.id), token, rates)
+    rules = await pricing_service.store_rules(db)
+    return _read(await _reload(db, cart.id), token, rates, rules)
 
 
 async def clear_cart(db: AsyncSession, shopper: Shopper) -> CartRead:
     rates = await _rates(db)
+    rules = await pricing_service.store_rules(db)
     cart, token = await _open(db, shopper, create=False)
     if cart is None:
         return _empty(shopper.user is None, rates)
     cart.items.clear()
     _touch(cart)
     await db.commit()
-    return _read(await _reload(db, cart.id), token, rates)
+    return _read(await _reload(db, cart.id), token, rates, rules)
 
 
 def _like(term: str) -> str:
@@ -491,8 +510,9 @@ async def list_carts(db: AsyncSession, query: AdminCartQuery) -> AdminCartList:
     )
     metrics = await _metrics(db)
     rates = await _rates(db)
+    rules = await pricing_service.store_rules(db)
     return AdminCartList(
-        items=[_admin(cart, rates) for cart in rows],
+        items=[_admin(cart, rates, rules) for cart in rows],
         total=total,
         page=query.page,
         page_size=query.page_size,
@@ -528,4 +548,5 @@ async def get_admin_cart(db: AsyncSession, cart_id: uuid.UUID) -> AdminCartRead:
     if cart is None:
         raise NotFoundError("Cart not found")
     rates = await _rates(db)
-    return _admin(cart, rates)
+    rules = await pricing_service.store_rules(db)
+    return _admin(cart, rates, rules)

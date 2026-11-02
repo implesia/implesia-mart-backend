@@ -10,6 +10,9 @@ Open items found in the code and in recent work. Remove an item when it is done.
 - **Gallery order after save**: newly uploaded files are appended after existing gallery items, so the order the admin arranged can change after save.
 - **Bulk delete and orders**: deleting products that appear in past orders is allowed (order lines keep name and price, lose the product link). Decide whether that should need extra confirmation.
 
+- **Quantity cap vs discount tiers**: a cart line is capped at 5 pieces (`MAX_QTY`, `PLATFORM_MAX_QTY`, DB CHECKs, frontend `ORDER_QTY_CAP`), so the 6, 7 and 8+ tiers cannot be bought. Raising the cap needs the constants plus a migration relaxing the CHECKs.
+- **Product cards**: list/card discount badges still come from `compare_at_price` (= base %); they do not show quantity tiers.
+
 ## Code comments
 
 - No `TODO` / `FIXME` comments in `app/`, `tests/` or `scripts/` as of 2026-11-02.

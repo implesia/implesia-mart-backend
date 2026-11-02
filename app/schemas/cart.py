@@ -1,10 +1,12 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.common import page_count
+from app.schemas.pricing import Percent, ProductPricing
 from app.schemas.product import OptionChoice, SelectedOption
 
 
@@ -39,6 +41,14 @@ class CartItemRead(BaseModel):
     line_total: int
     available: bool
     selection: list[SelectedOption] = Field(default_factory=list)
+    # How unit_price was worked out: regular price less the total discount
+    # (base % + quantity %, capped). Display only; the server prices every line.
+    regular_price: int = 0
+    base_discount_percent: Percent = Decimal("0.00")
+    quantity_discount_percent: Percent = Decimal("0.00")
+    total_discount_percent: Percent = Decimal("0.00")
+    # Lets the cart show a new quantity's price at once, before the server answers.
+    pricing: ProductPricing | None = None
 
 
 class CartRead(BaseModel):

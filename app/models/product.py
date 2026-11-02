@@ -79,6 +79,11 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "(max_order_quantity >= min_order_quantity AND max_order_quantity <= 5)",
             name="max_qty_range",
         ),
+        CheckConstraint(
+            "base_discount IS NULL OR (base_discount >= 0 AND base_discount <= 9999)",
+            name="base_discount_range",
+        ),
+        CheckConstraint("tier_mode IN ('global', 'custom')", name="tier_mode_known"),
         Index(conv("ix_products_storefront"), "published", "category", "status", "price"),
         Index(
             conv("ix_products_category_storefront"), "category_id", "published", "status", "price"
@@ -104,6 +109,21 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     category: Mapped[str | None] = mapped_column(String(32), nullable=True)
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     compare_at_price: Mapped[int | None] = mapped_column(Integer)
+    # Base discount the admin set, in hundredths of a percent (2800 = 28 %). `price` is then
+    # the quantity-1 selling price and `compare_at_price` the regular price. NULL = a price set
+    # directly (older rows, variant products): the base % is derived from the two prices.
+    base_discount: Mapped[int | None] = mapped_column(Integer)
+    # Quantity discounts: "global" follows pricing_settings, "custom" uses `tiers` below
+    # ({"min_quantity", "extra"} with `extra` in hundredths of a percent).
+    tier_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="global", server_default="global"
+    )
+    tiers: Mapped[list[Any]] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"),
+        nullable=False,
+        default=list,
+        server_default="[]",
+    )
     # Null means made to order. Never returned on the public API.
     quantity: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(32), nullable=False)

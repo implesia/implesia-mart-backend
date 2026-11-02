@@ -2,6 +2,19 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Dynamic discounts: regular price, base %, quantity tiers, order price snapshot.**
+  - One pricing function (`app/services/pricing_service.py`) prices the product page block, cart lines, the quote and the order. The browser never sends a price (`unit_price` in a cart/order body is still a 422).
+  - Rule: `total % = min(base % + extra % of the highest tier reached, max %, 99.99 %)`. Unit price = quantity-1 price − round(regular × (total − base) / 100), Decimal, half up, whole taka. So 28 % + 2 % at 8 pieces = 30 %; ৳1,000 → ৳700.
+  - Default tiers: 2 → +0.25, 3 → +0.5, 4 → +0.75, 5 → +1, 6 → +1.25, 7 → +1.5, 8+ → +2. Default max 90 %.
+  - New table `pricing_settings` (singleton: `tiers_enabled`, `max_discount` in hundredths, `tiers` JSON), seeded with the defaults. `GET` (staff) / `PUT` (editor+) `/api/v1/admin/pricing`, `Cache-Control: no-store`.
+  - `products`: `base_discount` (hundredths, NULL = derived from price/compare_at), `tier_mode` (`global`/`custom`), `tiers` (JSON). Admin create/update accept `regular_price`, `base_discount_percent`, `tier_mode`, `tiers`; the API then stores `price` = quantity-1 selling price and `compare_at_price` = regular price (None without a discount). Re-sending the same price/compare_at keeps a saved base %; changing them clears it (derived again).
+  - `order_items`: `regular_price`, `base_discount`, `quantity_discount`, `total_discount` snapshot (nullable; older orders stay NULL). Order lines are priced from the locked product row.
+  - Responses: `AdminProductRead` + `regular_price`, `base_discount_percent`, `tier_mode`, `tiers`; `PublicProductDetail.pricing`; cart lines + `regular_price`, `base/quantity/total_discount_percent`, `pricing`; quote lines + `regular_price` and the % fields; `OrderRead` items + snapshot fields. Public order lookup unchanged.
+  - Migration `0086_dynamic_discounts` (additive; existing prices untouched — verified on the dev DB: same row count, price sums and checksum before/after).
+  - Existing tests that buy 2+ pieces now expect the default tier discount (`tests/test_cart.py`, `tests/test_orders.py`, `tests/test_variants.py`); `tests/integration/test_stock.py` follows the new `_claim` signature; `tests/test_catalog_categories.py` ignores the `pricing` block's `min_quantity` when checking that stock is never exposed.
+  - Files: `alembic/versions/0086_dynamic_discounts.py`, `app/models/pricing.py`, `app/models/product.py`, `app/models/order.py`, `app/models/__init__.py`, `app/schemas/pricing.py`, `app/schemas/product.py`, `app/schemas/cart.py`, `app/schemas/order.py`, `app/services/pricing_service.py`, `app/services/product_service.py`, `app/services/cart_service.py`, `app/services/order_service.py`, `app/api/v1/endpoints/admin_pricing.py`, `app/api/v1/endpoints/admin_products.py`, `app/api/v1/router.py`, `tests/test_pricing.py` and the tests above.
+  - Frontend (same day): admin product form (regular price, base %, live selling price, global/custom tiers), `/admin/pricing` settings page, product page and cart show the total % for the quantity, admin order shows the snapshot.
+  - Limitation: one cart line is capped at 5 pieces (`MAX_QTY`), so the 6/7/8+ tiers cannot be reached yet. They are stored and unit-tested; raising the cap is a separate change.
 ## 2026-11-02 (summary of today's work)
 
 - **Showcase:** test that a pinned product drops out of `GET /home/showcase` once it is hidden (admin view still lists it). No API change. File: `tests/test_home_showcase.py`.

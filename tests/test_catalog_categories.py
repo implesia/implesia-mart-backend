@@ -510,8 +510,10 @@ async def test_public_catalog_never_exposes_the_inventory_count(
     card = listing["items"][0]
     detail = (await client.get(f"/api/v1/products/by-slug/{product['slug']}")).json()
     for body in (card, detail):
-        assert "quantity" not in body
-        assert "quantity" not in json.dumps(body)
+        # The pricing block lists quantity tiers (min_quantity), not stock.
+        public = {key: value for key, value in body.items() if key != "pricing"}
+        assert "quantity" not in public
+        assert "quantity" not in json.dumps(public)
         assert body["status"] == "available"
     assert "unit_label" in card
 

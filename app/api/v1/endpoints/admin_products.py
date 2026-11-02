@@ -123,6 +123,10 @@ _FIELD_KEYS: Mapping[str, str] = {
     "category_id": "category",
     "price": "price",
     "compare_at_price": "compareAtPrice",
+    "regular_price": "regularPrice",
+    "base_discount_percent": "baseDiscount",
+    "tier_mode": "quantityTiers",
+    "tiers": "quantityTiers",
     "quantity": "quantity",
     "status": "status",
     "badge": "badges",
@@ -153,6 +157,9 @@ _LABELS = {
     "category": "ক্যাটাগরি",
     "price": "দাম",
     "compareAtPrice": "আগের দাম (compare-at)",
+    "regularPrice": "রেগুলার দাম",
+    "baseDiscount": "বেস ডিসকাউন্ট (%)",
+    "quantityTiers": "পরিমাণভিত্তিক ছাড়",
     "quantity": "স্টকের পরিমাণ",
     "status": "স্টক স্ট্যাটাস",
     "badges": "ব্যাজ",
@@ -176,6 +183,16 @@ _KNOWN: Mapping[str, FieldError] = {
         "compareAtPrice",
         "আগের দাম বিক্রির দামের চেয়ে কম হতে পারে না",
         "বিক্রির দামের সমান বা বেশি একটা দাম লিখুন, অথবা ঘরটা খালি রাখুন",
+    ),
+    "Base discount cannot be more than the maximum discount": _err(
+        "baseDiscount",
+        "বেস ডিসকাউন্ট সর্বোচ্চ ছাড়ের সীমার চেয়ে বেশি",
+        "কম শতাংশ দিন, অথবা সেটিংসে সর্বোচ্চ ছাড়ের সীমা বাড়ান",
+    ),
+    "Each quantity tier needs a different quantity": _err(
+        "quantityTiers",
+        "একই পরিমাণ দুইবার দেওয়া হয়েছে",
+        "প্রতিটা ধাপে আলাদা পরিমাণ দিন",
     ),
     "Choose a category": _err("category", "ক্যাটাগরি বাছাই করতে হবে", "তালিকা থেকে একটা ক্যাটাগরি বাছাই করুন"),
     "Category not found": _err(
@@ -391,7 +408,7 @@ def _cross_field(payload: str) -> list[FieldError]:
     if not isinstance(raw, dict) or raw.get("published") is not True:
         return []  # A draft needs only its name.
     errors: list[FieldError] = []
-    if "price" not in raw and not raw.get("variants"):
+    if "price" not in raw and "regular_price" not in raw and not raw.get("variants"):
         errors.append(_KNOWN["Price is required"])
     if not raw.get("category_id") and not raw.get("category"):
         errors.append(_KNOWN["Choose a category"])
