@@ -31,7 +31,6 @@ from app.services import delivery_service, pricing_service, variant_service
 from app.services.product_options import resolve_selection, selection_of
 from app.services.product_service import content_of
 
-MAX_QTY = 5
 _TOKEN = re.compile(r"^[A-Za-z0-9_-]{20,128}$")
 _CART_LOAD = (
     selectinload(Cart.items).selectinload(CartItem.product),
@@ -46,20 +45,20 @@ class Shopper:
     guest_token: str | None = None
 
 
-def _cap(product: Product, variant: ProductVariant | None = None) -> int:
-    return variant_service.stock_cap(product, variant)
+def _cap(product: Product, variant: ProductVariant | None, limit: int) -> int:
+    return variant_service.stock_cap(product, variant, limit)
 
 
-def _purchasable(product: Product, variant: ProductVariant | None = None) -> bool:
+def _purchasable(product: Product, variant: ProductVariant | None, limit: int) -> bool:
     if variant is not None and not variant.is_active:
         return False
     if variant is None and product.has_variants:
         return False  # a variant product is only sold through one of its variants
-    minimum = variant_service.order_limits(product)[0]
+    minimum = variant_service.order_limits(product, limit)[0]
     return bool(
         product.published
         and product.status == StockStatus.AVAILABLE
-        and _cap(product, variant) >= max(1, minimum)
+        and _cap(product, variant, limit) >= max(1, minimum)
     )
 
 
@@ -117,11 +116,13 @@ def _lines(cart: Cart, rules: pricing_service.Rules) -> tuple[list[CartItemRead]
     for item in cart.items:
         product = item.product
         variant = item.variant
-        available = _purchasable(product, variant)
+        available = _purchasable(product, variant, rules.max_quantity)
         # The one pricing rule (base % + quantity tiers, capped), worked out on the server.
         line = pricing_service.price_product(product, variant, item.quantity, rules)
         unit_price = line.unit_price
-        minimum, maximum = variant_service.order_limits(product)
+        minimum, maximum = variant_service.order_limits(product, rules.max_quantity)
+        if available:
+            maximum = _cap(product, variant, rules.max_quantity)
         line_total = line.line_total if available else 0
         if available:
             subtotal += line_total
@@ -250,6 +251,7 @@ def _touch(cart: Cart) -> None:
 
 
 async def _merge(db: AsyncSession, user_cart: Cart, guest: Cart) -> None:
+    limit = (await pricing_service.store_rules(db)).max_quantity
     for item in list(guest.items):
         existing = next(
             (
@@ -260,10 +262,15 @@ async def _merge(db: AsyncSession, user_cart: Cart, guest: Cart) -> None:
             None,
         )
         product = item.product
-        room = _cap(product, item.variant) if _purchasable(product, item.variant) else item.quantity
+        maximum = variant_service.order_limits(product, limit)[1]
+        room = (
+            _cap(product, item.variant, limit)
+            if _purchasable(product, item.variant, limit)
+            else item.quantity
+        )
         combined = item.quantity + (existing.quantity if existing else 0)
         quantity = min(room, combined)
-        quantity = max(1, min(MAX_QTY, quantity))
+        quantity = max(1, min(maximum, quantity))
         if existing is None:
             user_cart.items.append(
                 CartItem(
@@ -337,20 +344,19 @@ async def _product(db: AsyncSession, product_id: uuid.UUID) -> Product:
     return product
 
 
-def _ensure_room(product: Product, variant: ProductVariant | None, next_quantity: int) -> None:
-    if not _purchasable(product, variant):
+def _ensure_room(
+    product: Product, variant: ProductVariant | None, next_quantity: int, limit: int
+) -> None:
+    """Refuse a line above min(order limit, stock) or below the product's minimum."""
+    if not _purchasable(product, variant, limit):
         raise UnprocessableError("This product cannot be added to the cart")
-    minimum, maximum = variant_service.order_limits(product)
+    minimum, maximum = variant_service.order_limits(product, limit)
     if next_quantity < minimum:
         raise UnprocessableError(f"The minimum order for this product is {minimum}")
-    cap = _cap(product, variant)
-    if next_quantity > cap:
-        stock = variant.quantity if variant is not None else product.quantity
-        if stock is not None and stock < maximum:
-            raise UnprocessableError(
-                "There is not enough stock for that quantity. Please choose fewer."
-            )
-        raise UnprocessableError(f"A product can have at most {maximum} in the cart")
+    if next_quantity > maximum:
+        raise UnprocessableError(variant_service.over_limit_message(maximum))
+    if next_quantity > _cap(product, variant, limit):
+        raise UnprocessableError(variant_service.NOT_ENOUGH_STOCK)
 
 
 async def add_item(
@@ -383,7 +389,8 @@ async def add_item(
         None,
     )
     next_quantity = quantity + (existing.quantity if existing else 0)
-    _ensure_room(product, variant, next_quantity)
+    limit = (await pricing_service.store_rules(db)).max_quantity
+    _ensure_room(product, variant, next_quantity, limit)
     if existing is None:
         cart.items.append(
             CartItem(
@@ -418,7 +425,8 @@ async def set_quantity(
     item = next((row for row in cart.items if row.id == item_id), None)
     if item is None:
         raise NotFoundError("Cart item not found")
-    _ensure_room(item.product, item.variant, quantity)
+    limit = (await pricing_service.store_rules(db)).max_quantity
+    _ensure_room(item.product, item.variant, quantity, limit)
     item.quantity = quantity
     _touch(cart)
     await db.commit()

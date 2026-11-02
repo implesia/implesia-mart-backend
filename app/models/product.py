@@ -72,11 +72,11 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="badge_known",
         ),
         CheckConstraint(
-            "min_order_quantity >= 1 AND min_order_quantity <= 5", name="min_qty_range"
+            "min_order_quantity >= 1 AND min_order_quantity <= 1000", name="min_qty_range"
         ),
         CheckConstraint(
             "max_order_quantity IS NULL OR "
-            "(max_order_quantity >= min_order_quantity AND max_order_quantity <= 5)",
+            "(max_order_quantity >= min_order_quantity AND max_order_quantity <= 1000)",
             name="max_qty_range",
         ),
         CheckConstraint(

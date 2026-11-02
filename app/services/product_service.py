@@ -947,6 +947,7 @@ def public_detail(
     rules: pricing_service.Rules | None = None,
 ) -> PublicProductDetail:
     badges = badges or {}
+    limit = (rules or _NO_RULES).max_quantity
     content = content_of(product)
     gallery = [
         PublicGalleryImage(
@@ -998,9 +999,15 @@ def public_detail(
             )
             for group in content.options
         ],
-        variants=variant_service.public_read(product, content, variants or []),
-        min_per_order=variant_service.order_limits(product)[0],
-        max_per_order=variant_service.order_limits(product)[1],
+        variants=variant_service.public_read(product, content, variants or [], limit),
+        min_per_order=variant_service.order_limits(product, limit)[0],
+        # Plain product: min(order limit, stock). With variants: the order limit (each variant
+        # carries its own `max_quantity`).
+        max_per_order=(
+            variant_service.order_limits(product, limit)[1]
+            if product.has_variants
+            else variant_service.stock_cap(product, None, limit)
+        ),
         pricing=pricing_service.product_pricing(product, rules) if rules is not None else None,
         related=[public_card(item, index, badges.get(item.id, ())) for item in related],
     )

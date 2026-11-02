@@ -43,7 +43,7 @@ async def test_every_invalid_field_is_reported_with_form_keys(
         quantity="many",
         category=None,
         compare_at_price=10_000_001,
-        max_order_quantity=9,
+        max_order_quantity=1001,
         status="gone",
         badge_ids=["not-a-uuid"],
     )

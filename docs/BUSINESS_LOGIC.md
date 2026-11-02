@@ -79,9 +79,10 @@ Code: `app/services/badge_service.py`, `app/schemas/badge.py`, `app/models/badge
 
 ## Cart and orders
 
-- At most 5 of one product in a cart line (`MAX_QTY`); variant/product minimum and maximum order limits apply.
+- Max pieces of one product (or one option) per order: the store-wide limit (Admin › Discounts, `pricing_settings.max_quantity`, default 10) or the product's custom `max_order_quantity`, which replaces it. Stock caps it further: the allowed maximum is min(limit, stock). Hard ceiling 1000 (`QUANTITY_CEILING`). The product minimum order quantity still applies.
+- Over the limit, cart and order return "এই পণ্যটি এক অর্ডারে সর্বোচ্চ Nটি নেওয়া যাবে।"; the quote marks the line unavailable.
 - A product with options needs an option chosen before ordering.
-- Stock refusals use a generic message that never reveals the remaining count.
+- Stock refusals use a generic message that never reveals the remaining count. The exposed maximum (`max_per_order`, variant/cart `max_quantity`) is min(limit, stock), so stock below the limit can be inferred from it.
 - Order creation accepts an `Idempotency-Key` (8–80 letters, numbers, `_` or `-`).
 - Delivery fees come from the delivery zones (district/area).
 - Public order lookup does not expose the delivery address.

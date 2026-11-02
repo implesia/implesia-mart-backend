@@ -142,9 +142,9 @@ async def test_public_detail_lists_variants_without_stock_counts(
     by_label = {row["label"]: row for row in detail["variants"]}
     assert by_label["লাল / M"]["available"] is False
     assert by_label["নেভি / M"]["available"] is True
-    assert "quantity" not in json.dumps(detail["variants"])
+    assert '"quantity"' not in json.dumps(detail["variants"])
     assert "sku" not in json.dumps(detail["variants"]).lower()
-    assert detail["min_per_order"] == 1 and detail["max_per_order"] == 5
+    assert detail["min_per_order"] == 1 and detail["max_per_order"] == 10
     assert detail["has_variants"] is True if "has_variants" in detail else True
 
 
@@ -283,7 +283,7 @@ async def test_min_and_max_order_quantity_are_validated(
     bad = await _post(client, auth_headers, min_order_quantity=3, max_order_quantity=2)
     assert bad.status_code == 400
     assert bad.json()["errors"][0]["field"] == "orderLimits"
-    over = await _post(client, auth_headers, max_order_quantity=9)
+    over = await _post(client, auth_headers, max_order_quantity=1001)
     assert over.status_code == 400
     assert over.json()["errors"][0]["field"] == "orderLimits"
     product = await _create(client, auth_headers, min_order_quantity=2, max_order_quantity=3)

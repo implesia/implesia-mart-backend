@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.common import page_count
-from app.schemas.pricing import Percent, ProductPricing
+from app.schemas.pricing import DEFAULT_MAX_QUANTITY, QUANTITY_CEILING, Percent, ProductPricing
 from app.schemas.product import OptionChoice, SelectedOption
 
 
@@ -16,14 +16,14 @@ class CartItemCreate(BaseModel):
     product_id: uuid.UUID
     # Required for a product that has variants, rejected for one that does not.
     variant_id: uuid.UUID | None = None
-    quantity: int = Field(1, ge=1, le=5)
+    quantity: int = Field(1, ge=1, le=QUANTITY_CEILING)
     selection: list[OptionChoice] = Field(default_factory=list, max_length=6)
 
 
 class CartItemUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    quantity: int = Field(ge=1, le=5)
+    quantity: int = Field(ge=1, le=QUANTITY_CEILING)
 
 
 class CartItemRead(BaseModel):
@@ -32,7 +32,8 @@ class CartItemRead(BaseModel):
     variant_id: uuid.UUID | None = None
     sku: str = ""
     min_quantity: int = 1
-    max_quantity: int = 5
+    # min(order limit, stock): the most this line can hold right now.
+    max_quantity: int = DEFAULT_MAX_QUANTITY
     title: str
     slug: str
     image_src: str

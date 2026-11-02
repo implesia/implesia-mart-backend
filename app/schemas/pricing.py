@@ -10,6 +10,10 @@ Percent = Annotated[
     PlainSerializer(float, return_type=float, when_used="json"),
 ]
 MAX_TIERS = 20
+# Most of one product per cart/order line: the store-wide default and the hard ceiling for
+# the store-wide setting and a product's own limit.
+DEFAULT_MAX_QUANTITY = 10
+QUANTITY_CEILING = 1000
 
 
 class QuantityTier(BaseModel):
@@ -31,6 +35,7 @@ def _clean_tiers(tiers: list[QuantityTier]) -> list[QuantityTier]:
 class PricingSettingsRead(BaseModel):
     tiers_enabled: bool
     max_discount_percent: Percent
+    max_quantity_per_order: int
     tiers: list[QuantityTier]
 
 
@@ -39,6 +44,8 @@ class PricingSettingsUpdate(BaseModel):
 
     tiers_enabled: bool
     max_discount_percent: Percent
+    # Omitted = keep the saved limit.
+    max_quantity_per_order: int | None = Field(default=None, ge=1, le=QUANTITY_CEILING)
     tiers: list[QuantityTier] = Field(max_length=MAX_TIERS)
 
     @model_validator(mode="after")

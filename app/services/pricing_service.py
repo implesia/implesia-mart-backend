@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.pricing import PricingSettings
 from app.schemas.pricing import (
+    DEFAULT_MAX_QUANTITY,
     PricingSettingsRead,
     PricingSettingsUpdate,
     ProductPricing,
@@ -43,12 +44,14 @@ _ROW_ID = 1
 
 @dataclass(frozen=True)
 class Rules:
-    """Store-wide settings: the global tiers (empty when switched off) and the cap."""
+    """Store-wide settings: the global tiers (empty when switched off), the cap and the most of
+    one product per cart/order line (`max_quantity`, unless the product sets its own)."""
 
     tiers: tuple[QuantityTier, ...]
     max_percent: Decimal
     tiers_enabled: bool = True
     saved_tiers: tuple[QuantityTier, ...] = ()
+    max_quantity: int = DEFAULT_MAX_QUANTITY
 
 
 @dataclass(frozen=True)
@@ -179,6 +182,7 @@ def _rules(row: PricingSettings | None) -> Rules:
         max_percent=from_hundredths(row.max_discount),
         tiers_enabled=row.tiers_enabled,
         saved_tiers=saved,
+        max_quantity=row.max_quantity or DEFAULT_MAX_QUANTITY,
     )
 
 
@@ -227,6 +231,7 @@ def read_settings(rules: Rules) -> PricingSettingsRead:
     return PricingSettingsRead(
         tiers_enabled=rules.tiers_enabled,
         max_discount_percent=percent(rules.max_percent),
+        max_quantity_per_order=rules.max_quantity,
         tiers=list(rules.saved_tiers),
     )
 
@@ -238,8 +243,16 @@ async def get_settings(db: AsyncSession) -> PricingSettingsRead:
 async def set_settings(db: AsyncSession, payload: PricingSettingsUpdate) -> PricingSettingsRead:
     row = await db.get(PricingSettings, _ROW_ID)
     if row is None:
-        row = PricingSettings(id=_ROW_ID, tiers_enabled=True, max_discount=0, tiers=[])
+        row = PricingSettings(
+            id=_ROW_ID,
+            tiers_enabled=True,
+            max_discount=0,
+            max_quantity=DEFAULT_MAX_QUANTITY,
+            tiers=[],
+        )
         db.add(row)
+    if payload.max_quantity_per_order is not None:
+        row.max_quantity = payload.max_quantity_per_order
     row.tiers_enabled = payload.tiers_enabled
     row.max_discount = to_hundredths(payload.max_discount_percent)
     row.tiers = tiers_to_json(payload.tiers)

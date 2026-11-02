@@ -99,6 +99,7 @@ async def test_admin_pricing_settings(client: AsyncClient, auth_headers: dict[st
     body = seen.json()
     assert body["tiers_enabled"] is True
     assert body["max_discount_percent"] == 90
+    assert body["max_quantity_per_order"] == 10
     assert body["tiers"][-1] == {"min_quantity": 8, "extra_percent": 2.0}
 
     duplicate = await client.put(
@@ -137,6 +138,7 @@ async def test_admin_pricing_settings(client: AsyncClient, auth_headers: dict[st
     assert saved.json() == {
         "tiers_enabled": False,
         "max_discount_percent": 45.5,
+        "max_quantity_per_order": 10,  # omitted = kept
         "tiers": [
             {"min_quantity": 2, "extra_percent": 0.5},
             {"min_quantity": 4, "extra_percent": 1.5},
@@ -259,3 +261,88 @@ async def test_order_keeps_its_price_snapshot(
     assert kept["unit_price"] == 712
     assert kept["total_discount_percent"] == 28.75
     assert stored.json()["subtotal"] == 2848
+
+
+async def test_order_quantity_limit_is_admin_configurable(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    product = await _create(
+        client, auth_headers, regular_price=1000, base_discount_percent=28, quantity=50
+    )
+    detail = (await client.get(f"/api/v1/products/by-slug/{product['slug']}")).json()
+    assert detail["max_per_order"] == 10  # the store-wide default
+
+    # 8 pieces reach the 8+ tier: 28 % + 2 % = 30 %.
+    added = await client.post(
+        "/api/v1/cart/items", json={"product_id": product["id"], "quantity": 8}
+    )
+    assert added.status_code == 200, added.text
+    line = added.json()["items"][0]
+    assert (line["unit_price"], line["total_discount_percent"]) == (700, 30)
+    assert line["max_quantity"] == 10
+    token = {"X-Cart-Token": added.json()["cart_token"]}
+    over = await client.patch(
+        f"/api/v1/cart/items/{line['id']}", headers=token, json={"quantity": 11}
+    )
+    assert over.status_code == 422
+    assert over.json()["error"]["message"] == "এই পণ্যটি এক অর্ডারে সর্বোচ্চ ১০টি নেওয়া যাবে।"
+
+    # The admin lowers the store-wide limit: it applies at once.
+    lowered = await client.put(
+        "/api/v1/admin/pricing",
+        headers=auth_headers,
+        json={
+            "tiers_enabled": True,
+            "max_discount_percent": 90,
+            "max_quantity_per_order": 6,
+            "tiers": [tier.model_dump(mode="json") for tier in DEFAULTS],
+        },
+    )
+    assert lowered.status_code == 200, lowered.text
+    assert lowered.json()["max_quantity_per_order"] == 6
+    detail = (await client.get(f"/api/v1/products/by-slug/{product['slug']}")).json()
+    assert detail["max_per_order"] == 6
+    order = {"source": "direct", "items": [{"product_id": product["id"], "quantity": 7}]}
+    placed = await client.post(
+        "/api/v1/orders", headers={"Idempotency-Key": _key()}, json={**order, **SHIPPING}
+    )
+    assert placed.status_code == 422
+    assert "সর্বোচ্চ ৬টি" in placed.json()["error"]["message"]
+
+    # A product's own limit replaces the store-wide one; stock still caps it.
+    custom = await client.patch(
+        f"/api/v1/admin/products/{product['id']}",
+        headers=auth_headers,
+        files=_parts({"max_order_quantity": 12, "quantity": 9}),
+    )
+    assert custom.status_code == 200, custom.text
+    assert custom.json()["max_order_quantity"] == 12
+    detail = (await client.get(f"/api/v1/products/by-slug/{product['slug']}")).json()
+    assert detail["max_per_order"] == 9  # min(12, stock 9)
+    quoted = await client.post(
+        "/api/v1/orders/quote",
+        json={
+            "source": "direct",
+            "items": [{"product_id": product["id"], "quantity": 9}],
+            "district": SHIPPING["district"],
+        },
+    )
+    assert quoted.json()["items"][0]["available"] is True
+    assert quoted.json()["items"][0]["max_quantity"] == 9
+    short = await client.patch(
+        f"/api/v1/cart/items/{line['id']}", headers=token, json={"quantity": 10}
+    )
+    assert short.status_code == 422
+    assert not any(ch.isdigit() for ch in short.json()["error"]["message"])  # stock hidden
+
+    too_big = await client.put(
+        "/api/v1/admin/pricing",
+        headers=auth_headers,
+        json={
+            "tiers_enabled": True,
+            "max_discount_percent": 90,
+            "max_quantity_per_order": 0,
+            "tiers": [tier.model_dump(mode="json") for tier in DEFAULTS],
+        },
+    )
+    assert too_big.status_code == 422

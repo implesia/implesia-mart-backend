@@ -10,7 +10,15 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validat
 from app.models.product import ProductBadge, SpecGroup, StockStatus
 from app.schemas.badge import MAX_PER_PRODUCT, BadgeRef, PublicBadge
 from app.schemas.category import CategoryRef
-from app.schemas.pricing import MAX_TIERS, Percent, ProductPricing, QuantityTier, clean_tiers
+from app.schemas.pricing import (
+    DEFAULT_MAX_QUANTITY,
+    MAX_TIERS,
+    QUANTITY_CEILING,
+    Percent,
+    ProductPricing,
+    QuantityTier,
+    clean_tiers,
+)
 
 _ROW_ID = re.compile(r"[a-z0-9-]{1,40}")
 _SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
@@ -467,7 +475,8 @@ class VariantRead(BaseModel):
 
 
 class PublicVariant(BaseModel):
-    """What a shopper may see. No stock count: only whether it can be bought now."""
+    """What a shopper may see: whether it can be bought now and the most per order line
+    (min(order limit, stock); stock shows only when it is below the limit)."""
 
     id: uuid.UUID
     options: dict[str, str]
@@ -475,6 +484,7 @@ class PublicVariant(BaseModel):
     price: int
     compare_at_price: int | None
     available: bool
+    max_quantity: int
 
 
 class ProductCreate(BaseModel):
@@ -507,8 +517,8 @@ class ProductCreate(BaseModel):
     published: bool = False
     slug: str | None = None
     content: ProductContent = Field(default_factory=ProductContent)
-    min_order_quantity: int = Field(1, ge=1, le=5)
-    max_order_quantity: int | None = Field(default=None, ge=1, le=5)
+    min_order_quantity: int = Field(1, ge=1, le=QUANTITY_CEILING)
+    max_order_quantity: int | None = Field(default=None, ge=1, le=QUANTITY_CEILING)
     variants: list[VariantInput] = Field(default_factory=list, max_length=MAX_VARIANTS)
 
     @field_validator("title")
@@ -595,8 +605,8 @@ class ProductUpdate(BaseModel):
     featured: bool | None = None
     published: bool | None = None
     content: ProductContent | None = None
-    min_order_quantity: int | None = Field(default=None, ge=1, le=5)
-    max_order_quantity: int | None = Field(default=None, ge=1, le=5)
+    min_order_quantity: int | None = Field(default=None, ge=1, le=QUANTITY_CEILING)
+    max_order_quantity: int | None = Field(default=None, ge=1, le=QUANTITY_CEILING)
     # Omitted = leave variants as they are. [] = remove them all (price and stock go back
     # to the product row).
     variants: list[VariantInput] | None = Field(default=None, max_length=MAX_VARIANTS)
@@ -806,7 +816,9 @@ class PublicProductDetail(PublicProductCard):
     options: list[PublicOptionGroup]
     variants: list[PublicVariant] = Field(default_factory=list)
     min_per_order: int = 1
-    max_per_order: int = 5
+    # min(order limit, stock) for a plain product; the order limit for one with variants
+    # (each variant has its own `max_quantity`).
+    max_per_order: int = DEFAULT_MAX_QUANTITY
     # Regular price, base % and the quantity tiers in force, so the page can show the price
     # for any quantity. Display only: the cart and checkout price on the server.
     pricing: ProductPricing | None = None

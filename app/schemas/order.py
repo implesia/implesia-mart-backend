@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.models.order import OrderStatus
 from app.schemas.common import page_count
-from app.schemas.pricing import Percent
+from app.schemas.pricing import QUANTITY_CEILING, Percent
 from app.schemas.product import OptionChoice, SelectedOption
 
 _PHONE = re.compile(r"^01\d{9}$")
@@ -22,7 +22,7 @@ class OrderLineInput(BaseModel):
 
     product_id: uuid.UUID
     variant_id: uuid.UUID | None = None
-    quantity: int = Field(ge=1, le=5)
+    quantity: int = Field(ge=1, le=QUANTITY_CEILING)
     selection: list[OptionChoice] = Field(default_factory=list, max_length=6)
 
 

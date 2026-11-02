@@ -108,7 +108,7 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class OrderItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "order_items"
     __table_args__ = (
-        CheckConstraint("quantity >= 1 AND quantity <= 5", name="quantity_in_range"),
+        CheckConstraint("quantity >= 1 AND quantity <= 1000", name="quantity_in_range"),
         CheckConstraint("unit_price >= 0 AND line_total >= 0", name="money_non_negative"),
     )
 

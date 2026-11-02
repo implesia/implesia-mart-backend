@@ -2,6 +2,16 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Admin-configurable max quantity per order (replaces the hardcoded 5).**
+  - `pricing_settings.max_quantity` (default 10, 1–1000): the store-wide limit of pieces of one product (or one option) per order. `GET`/`PUT /api/v1/admin/pricing` read/write it as `max_quantity_per_order`; omitting it on `PUT` keeps the stored value.
+  - A product's `max_order_quantity` is now "custom limit": NULL = use the store-wide limit, a number (1–1000) replaces it for that product (higher or lower).
+  - Cart add/update, quote and order check the quantity against min(effective limit, stock). Over the limit: 422 "এই পণ্যটি এক অর্ডারে সর্বোচ্চ Nটি নেওয়া যাবে।" (Bengali digits). Over stock: "স্টকে এতগুলো নেই। পরিমাণ কমিয়ে আবার চেষ্টা করুন।" (no count). The quote marks such a line `available: false` as before.
+  - Removed every hardcoded 5: `cart_service.MAX_QTY`, `variant_service.PLATFORM_MAX_QTY`, `le=5` in the cart/order/product schemas and the DB CHECKs. The hard ceiling is now `QUANTITY_CEILING = 1000` (`app/schemas/pricing.py`).
+  - API: `PublicProductDetail.max_per_order` and the new `PublicVariant.max_quantity` = min(effective limit, stock); cart lines' `max_quantity` the same. So 8 pieces (30 % with the default tiers) can be bought when the limit allows.
+  - Migration `0087_order_quantity_limit` (non-destructive): adds the column (server default 10) with a 1–1000 CHECK, widens the product min/max and cart/order line quantity CHECKs from 5 to 1000. Applied to the local dev DB only; products, prices and the row count unchanged.
+  - Files: `alembic/versions/0087_order_quantity_limit.py`, `app/models/pricing.py`, `app/models/product.py`, `app/models/cart.py`, `app/models/order.py`, `app/schemas/pricing.py`, `app/schemas/product.py`, `app/schemas/cart.py`, `app/schemas/order.py`, `app/services/pricing_service.py`, `app/services/variant_service.py`, `app/services/cart_service.py`, `app/services/order_service.py`, `app/services/product_service.py`, `tests/test_pricing.py`, `tests/test_variants.py`, `tests/test_product_create_errors.py`, `tests/integration/test_stock.py`, `tests/integration/test_variants.py`.
+  - Note: because the exposed maximum is min(limit, stock), a product whose stock is below the limit reveals that stock count through `max_per_order` / `max_quantity`.
+  - Frontend (same day): Admin › Discounts field, product form "store-wide / custom" limit, quantity selectors and messages up to the new limit.
 - **Dynamic discounts: regular price, base %, quantity tiers, order price snapshot.**
   - One pricing function (`app/services/pricing_service.py`) prices the product page block, cart lines, the quote and the order. The browser never sends a price (`unit_price` in a cart/order body is still a 422).
   - Rule: `total % = min(base % + extra % of the highest tier reached, max %, 99.99 %)`. Unit price = quantity-1 price − round(regular × (total − base) / 100), Decimal, half up, whole taka. So 28 % + 2 % at 8 pieces = 30 %; ৳1,000 → ৳700.
@@ -14,7 +24,7 @@ Newest first. Every task adds an entry: date, what changed, files touched, and a
   - Existing tests that buy 2+ pieces now expect the default tier discount (`tests/test_cart.py`, `tests/test_orders.py`, `tests/test_variants.py`); `tests/integration/test_stock.py` follows the new `_claim` signature; `tests/test_catalog_categories.py` ignores the `pricing` block's `min_quantity` when checking that stock is never exposed.
   - Files: `alembic/versions/0086_dynamic_discounts.py`, `app/models/pricing.py`, `app/models/product.py`, `app/models/order.py`, `app/models/__init__.py`, `app/schemas/pricing.py`, `app/schemas/product.py`, `app/schemas/cart.py`, `app/schemas/order.py`, `app/services/pricing_service.py`, `app/services/product_service.py`, `app/services/cart_service.py`, `app/services/order_service.py`, `app/api/v1/endpoints/admin_pricing.py`, `app/api/v1/endpoints/admin_products.py`, `app/api/v1/router.py`, `tests/test_pricing.py` and the tests above.
   - Frontend (same day): admin product form (regular price, base %, live selling price, global/custom tiers), `/admin/pricing` settings page, product page and cart show the total % for the quantity, admin order shows the snapshot.
-  - Limitation: one cart line is capped at 5 pieces (`MAX_QTY`), so the 6/7/8+ tiers cannot be reached yet. They are stored and unit-tested; raising the cap is a separate change.
+  - Limitation: one cart line is capped at 5 pieces (`MAX_QTY`), so the 6/7/8+ tiers cannot be reached yet. (Fixed by the max-quantity entry above.)
 ## 2026-11-02 (summary of today's work)
 
 - **Showcase:** test that a pinned product drops out of `GET /home/showcase` once it is hidden (admin view still lists it). No API change. File: `tests/test_home_showcase.py`.

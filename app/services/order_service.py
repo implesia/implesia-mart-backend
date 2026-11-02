@@ -37,8 +37,9 @@ from app.schemas.order import (
     QuoteRead,
     order_page_count,
 )
+from app.schemas.pricing import QUANTITY_CEILING
 from app.services import audit_service, delivery_service, pricing_service, variant_service
-from app.services.cart_service import MAX_QTY, Shopper, _cap, _purchasable, open_cart, shopper_actor
+from app.services.cart_service import Shopper, _cap, _purchasable, open_cart, shopper_actor
 from app.services.product_options import resolve_selection, selection_of
 from app.services.product_service import content_of
 
@@ -76,8 +77,9 @@ def _merge(items: list[Requested]) -> list[Requested]:
         else:
             merged[key] = item._replace(quantity=previous.quantity + item.quantity)
     for item in merged.values():
-        if item.quantity > MAX_QTY:
-            raise UnprocessableError("A product can have at most 5 in an order")
+        # Per-product limits are checked when the line is priced or claimed.
+        if item.quantity > QUANTITY_CEILING:
+            raise UnprocessableError(variant_service.over_limit_message(QUANTITY_CEILING))
     return list(merged.values())
 
 
@@ -205,9 +207,10 @@ def _line(
     selection: list[dict],
     rules: pricing_service.Rules,
 ) -> QuoteLineRead:
-    available = _purchasable(product, variant)
-    cap = _cap(product, variant) if available else 0
-    minimum = variant_service.order_limits(product)[0]
+    limit = rules.max_quantity
+    available = _purchasable(product, variant, limit)
+    cap = _cap(product, variant, limit) if available else 0
+    minimum = variant_service.order_limits(product, limit)[0]
     line = pricing_service.price_product(product, variant, quantity, rules)
     unit_price = line.unit_price
     counted = available and max(1, minimum) <= quantity <= max(cap, 0)
@@ -280,9 +283,9 @@ async def _claim(
     rules: pricing_service.Rules,
 ) -> tuple[pricing_service.Line, str, str, str, str]:
     """Take stock in one conditional update. The line is priced from the locked row."""
-    minimum, maximum = variant_service.order_limits(product)
+    minimum, maximum = variant_service.order_limits(product, rules.max_quantity)
     if quantity > maximum:
-        raise UnprocessableError(f"A product can have at most {maximum} in an order")
+        raise UnprocessableError(variant_service.over_limit_message(maximum))
     if quantity < minimum:
         raise UnprocessableError(f"The minimum order for this product is {minimum}")
     if variant is not None:
@@ -316,9 +319,7 @@ async def _claim(
     ).one_or_none()
     if row is None:
         if product.quantity is not None and 0 < product.quantity < quantity:
-            raise UnprocessableError(
-                "There is not enough stock for that quantity. Please choose fewer."
-            )
+            raise UnprocessableError(variant_service.NOT_ENOUGH_STOCK)
         raise UnprocessableError("This product cannot be ordered")
     price, title, slug, image_src, left, compare_at, base = row
     if left == 0:
@@ -377,9 +378,7 @@ async def _claim_variant(
     ).one_or_none()
     if row is None:
         if variant.quantity is not None and 0 < variant.quantity < quantity:
-            raise UnprocessableError(
-                "There is not enough stock for that quantity. Please choose fewer."
-            )
+            raise UnprocessableError(variant_service.NOT_ENOUGH_STOCK)
         raise UnprocessableError("This product cannot be ordered")
     await variant_service.rollup_by_id(db, product.id)
     price, sku, compare_at = row
