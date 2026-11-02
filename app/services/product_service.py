@@ -582,6 +582,8 @@ async def _apply_update(
     if product.has_variants:
         # Variants carry their own prices; the base % is derived per variant.
         product.base_discount = None
+        # Card price and compare-at always follow the variants, whatever price fields were sent.
+        await variant_service.sync_price(db, product)
     _publishable(product)
     await _audit_catalog_changes(db, product, actor, before)
     await db.commit()

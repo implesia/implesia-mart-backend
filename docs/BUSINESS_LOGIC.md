@@ -115,6 +115,8 @@ Code: `app/services/badge_service.py`, `app/schemas/badge.py`, `app/models/badge
   | Order snapshot | `order_items.regular_price`, `base_discount`, `quantity_discount`, `total_discount` (hundredths) + `unit_price`, `line_total` |
 
 - One function prices everything (`pricing_service.price_product`): product page block, cart, quote and order. Orders store the snapshot, so later rule or price changes never change a placed order.
+- Product cards (list endpoints) show the discount from `price` and `compare_at_price`: struck-through regular price and `-X%` only when `compare_at_price > price`. Quantity tiers are never shown on cards.
+- Variant products: `products.price` / `products.compare_at_price` always equal the cheapest active variant's (lowest `sort_order` on a tie; all variants when none is active). Every save re-syncs them from the variants, so `price` / `compare_at_price` sent for a variant product are ignored (the dashboard sends `compare_at_price: null` for them). Migration 0090 repaired rows saved before this rule (2026-11-03).
 - Saving a product with `regular_price` (+ `base_discount_percent`) sets `price` and `compare_at_price`. Saving only `price`/`compare_at_price` keeps the saved base % when they are unchanged and clears it (derived) when they change. A base % above the max % is refused.
 
 ## Categories
