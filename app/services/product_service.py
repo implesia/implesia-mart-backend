@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import UploadFile
 from pydantic import ValidationError
 from slugify import slugify
-from sqlalchemy import case, func, literal, or_, select
+from sqlalchemy import case, delete, func, literal, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
@@ -18,7 +18,13 @@ from app.core.logging import get_logger
 from app.models.audit_event import AuditAction
 from app.models.badge import Badge
 from app.models.category import Category
-from app.models.product import Product, ProductBadge, ProductVariant, StockStatus
+from app.models.product import (
+    Product,
+    ProductBadge,
+    ProductSlugRedirect,
+    ProductVariant,
+    StockStatus,
+)
 from app.models.user import User
 from app.schemas.common import page_count
 from app.schemas.product import (
@@ -352,6 +358,8 @@ async def _insert_product(db: AsyncSession, payload: ProductCreate) -> Product:
         slug = payload.slug
     else:
         slug = await allocate_slug(db, payload.title)
+    # A slug in use now wins over another product's old slug.
+    await db.execute(delete(ProductSlugRedirect).where(ProductSlugRedirect.slug == slug))
 
     category = (
         await category_service.resolve_for_product(
@@ -398,6 +406,9 @@ async def _insert_product(db: AsyncSession, payload: ProductCreate) -> Product:
         content=stored,
         min_order_quantity=payload.min_order_quantity,
         max_order_quantity=payload.max_order_quantity,
+        seo_title=payload.seo_title,
+        seo_description=payload.seo_description,
+        seo_keywords=payload.seo_keywords,
     )
     db.add(product)
     try:
@@ -514,6 +525,14 @@ async def _apply_update(
         compare_at_price = product.compare_at_price
     _prices_ok(int(price), compare_at_price)
 
+    if fields.get("slug") is None or fields["slug"] == product.slug:
+        fields.pop("slug", None)
+    else:
+        await _change_slug(db, product, str(fields.pop("slug")))
+    for field in ("seo_title", "seo_description", "seo_keywords"):
+        if field in fields and fields[field] is None:
+            fields.pop(field)
+
     title = str(fields.get("title", product.title))
     for field, value in fields.items():
         if isinstance(value, StockStatus | ProductBadge):
@@ -564,6 +583,22 @@ async def _apply_update(
     await _audit_catalog_changes(db, product, actor, before)
     await db.commit()
     await db.refresh(product)
+
+
+async def _change_slug(db: AsyncSession, product: Product, slug: str) -> None:
+    """Give the product a new slug; its old slug keeps resolving to it."""
+    taken = await db.scalar(
+        select(Product.id).where(Product.slug == slug, Product.id != product.id).limit(1)
+    )
+    if taken is not None:
+        raise ConflictError("A product with this slug already exists")
+    await db.execute(delete(ProductSlugRedirect).where(ProductSlugRedirect.slug == slug))
+    old = await db.get(ProductSlugRedirect, product.slug)
+    if old is None:
+        db.add(ProductSlugRedirect(slug=product.slug, product_id=product.id))
+    else:
+        old.product_id = product.id
+    product.slug = slug
 
 
 def _publishable(product: Product) -> None:
@@ -898,6 +933,9 @@ def admin_read(
         tiers=list(pricing_service.tiers_from_json(product.tiers)),
         min_order_quantity=product.min_order_quantity,
         max_order_quantity=product.max_order_quantity,
+        seo_title=product.seo_title,
+        seo_description=product.seo_description,
+        seo_keywords=product.seo_keywords,
         variants=variant_service.admin_read(content, variants or []),
         updated_at=product.updated_at,
     )
@@ -967,6 +1005,9 @@ def public_detail(
     return PublicProductDetail(
         **public_card(product, index, badges.get(product.id, ())).model_dump(),
         category_path=category_service.refs(index, product.category_id),
+        seo_title=product.seo_title,
+        seo_description=product.seo_description,
+        seo_keywords=product.seo_keywords,
         tagline=content.tagline,
         description=content.description,
         stock_label=content.stock_label,
@@ -1090,6 +1131,13 @@ async def read_public(db: AsyncSession, product_id: uuid.UUID) -> PublicProductD
 
 
 async def read_public_by_slug(db: AsyncSession, slug: str) -> PublicProductDetail:
+    if await db.scalar(select(Product.id).where(Product.slug == slug).limit(1)) is None:
+        # A slug the product used before: answer with the product (its current slug).
+        moved = await db.scalar(
+            select(ProductSlugRedirect.product_id).where(ProductSlugRedirect.slug == slug)
+        )
+        if moved is not None:
+            return await _public_detail(db, Product.id == moved)
     return await _public_detail(db, Product.slug == slug)
 
 

@@ -2,6 +2,13 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Product SEO fields and editable slug (2026-11-02).**
+  - `products.seo_title` (max 120), `seo_description` (max 320), `seo_keywords` (max 500, comma separated, trimmed and de-duplicated), all default `""`. Accepted on `POST`/`PATCH /admin/products` (on PATCH, omitted or `null` = keep) and returned in `AdminProductRead` and `PublicProductDetail`.
+  - `PATCH /admin/products/{id}` accepts `slug` (lowercased; `^[a-z0-9]+(-[a-z0-9]+)*$`, max 160). A slug used by another product returns 409 `{"errors": [{"field": "slug", "message", "fix"}]}` (Bengali); a bad format is 422.
+  - Old slugs keep working: on a slug change the old slug is stored in the new table `product_slug_redirects` (slug PK, product_id FK ON DELETE CASCADE). `GET /products/by-slug/{slug}` falls back to it (published products only). Changing back to an old slug, or a new product taking an old slug, removes that redirect row.
+  - Migration `0088_product_seo_fields` (additive: 3 columns with server default `''` and the new table; has a downgrade). Applied to the local dev DB only; products, published count and price sum unchanged.
+  - Files: `alembic/versions/0088_product_seo_fields.py`, `app/models/product.py`, `app/models/__init__.py`, `app/schemas/product.py`, `app/services/product_service.py`, `app/api/v1/endpoints/admin_products.py`, `tests/test_product_seo.py`.
+  - Frontend (same day): admin SEO section (preview, counters, slug), storefront metadata and JSON-LD use the fields, `htmlLimitedBots` head-metadata fix and per-page share cards.
 - **Admin-configurable max quantity per order (replaces the hardcoded 5).**
   - `pricing_settings.max_quantity` (default 10, 1–1000): the store-wide limit of pieces of one product (or one option) per order. `GET`/`PUT /api/v1/admin/pricing` read/write it as `max_quantity_per_order`; omitting it on `PUT` keeps the stored value.
   - A product's `max_order_quantity` is now "custom limit": NULL = use the store-wide limit, a number (1–1000) replaces it for that product (higher or lower).

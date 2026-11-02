@@ -137,13 +137,24 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     unit_label: Mapped[str] = mapped_column(
         String(40), nullable=False, default="", server_default=""
     )
+    # Search snippet overrides. Empty = the storefront falls back to the title and a trimmed
+    # description. `seo_keywords` is comma-separated.
+    seo_title: Mapped[str] = mapped_column(
+        String(120), nullable=False, default="", server_default=""
+    )
+    seo_description: Mapped[str] = mapped_column(
+        String(320), nullable=False, default="", server_default=""
+    )
+    seo_keywords: Mapped[str] = mapped_column(
+        String(500), nullable=False, default="", server_default=""
+    )
     # True when the product sells through `product_variants`. Then price, compare_at_price and
     # quantity above are a roll-up of the active variants (see variant_service.rollup), so
     # sorting, filtering and dashboards keep reading one column.
     has_variants: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=false()
     )
-    # Per-order limits for this product. The platform cap of 5 still applies.
+    # Per-order limits for this product. Null max = the store-wide limit.
     min_order_quantity: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, server_default="1"
     )
@@ -162,6 +173,18 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     def __repr__(self) -> str:
         return f"<Product {self.slug}>"
+
+
+class ProductSlugRedirect(Base):
+    """A slug a product used before. Old links resolve to the product (the storefront 308s)."""
+
+    __tablename__ = "product_slug_redirects"
+    __table_args__ = (Index(conv("ix_product_slug_redirects_product_id"), "product_id"),)
+
+    slug: Mapped[str] = mapped_column(String(160), primary_key=True)
+    product_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("products.id", ondelete="CASCADE"), nullable=False
+    )
 
 
 class ProductVariant(UUIDPrimaryKeyMixin, TimestampMixin, Base):

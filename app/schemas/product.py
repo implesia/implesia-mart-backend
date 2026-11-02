@@ -85,6 +85,31 @@ def youtube_id(value: str) -> str:
     return found
 
 
+SEO_TITLE_MAX = 120
+SEO_DESCRIPTION_MAX = 320
+SEO_KEYWORDS_MAX = 500
+
+
+def clean_slug(value: str) -> str:
+    text = value.strip().lower()
+    if not _SLUG.fullmatch(text) or len(text) > 160:
+        raise ValueError("Slug must use lowercase letters, numbers, and hyphens")
+    return text
+
+
+def clean_keywords(value: str) -> str:
+    """Comma-separated keywords: each one tidied, blanks and repeats dropped."""
+    seen: dict[str, str] = {}
+    for part in value.replace("،", ",").split(","):
+        word = clean_line(part, SEO_KEYWORDS_MAX)
+        if word and word.lower() not in seen:
+            seen[word.lower()] = word
+    text = ", ".join(seen.values())
+    if len(text) > SEO_KEYWORDS_MAX:
+        raise ValueError(f"Must be at most {SEO_KEYWORDS_MAX} characters")
+    return text
+
+
 def _category_slug(value: str | None) -> str | None:
     if value is None:
         return None
@@ -516,6 +541,10 @@ class ProductCreate(BaseModel):
     featured: bool = False
     published: bool = False
     slug: str | None = None
+    # Search snippet overrides. Empty = fall back to the title and the description.
+    seo_title: str = ""
+    seo_description: str = ""
+    seo_keywords: str = ""
     content: ProductContent = Field(default_factory=ProductContent)
     min_order_quantity: int = Field(1, ge=1, le=QUANTITY_CEILING)
     max_order_quantity: int | None = Field(default=None, ge=1, le=QUANTITY_CEILING)
@@ -542,12 +571,22 @@ class ProductCreate(BaseModel):
     @field_validator("slug")
     @classmethod
     def _slug(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        text = value.strip().lower()
-        if not _SLUG.fullmatch(text) or len(text) > 160:
-            raise ValueError("Slug must use lowercase letters, numbers, and hyphens")
-        return text
+        return None if value is None else clean_slug(value)
+
+    @field_validator("seo_title")
+    @classmethod
+    def _seo_title(cls, value: str) -> str:
+        return clean_line(value, SEO_TITLE_MAX)
+
+    @field_validator("seo_description")
+    @classmethod
+    def _seo_description(cls, value: str) -> str:
+        return clean_line(value, SEO_DESCRIPTION_MAX)
+
+    @field_validator("seo_keywords")
+    @classmethod
+    def _seo_keywords(cls, value: str) -> str:
+        return clean_keywords(value)
 
     @field_validator("category")
     @classmethod
@@ -604,6 +643,11 @@ class ProductUpdate(BaseModel):
     image_src: str | None = None
     featured: bool | None = None
     published: bool | None = None
+    # A new slug. The old one keeps resolving to this product (see product_slug_redirects).
+    slug: str | None = None
+    seo_title: str | None = None
+    seo_description: str | None = None
+    seo_keywords: str | None = None
     content: ProductContent | None = None
     min_order_quantity: int | None = Field(default=None, ge=1, le=QUANTITY_CEILING)
     max_order_quantity: int | None = Field(default=None, ge=1, le=QUANTITY_CEILING)
@@ -645,6 +689,26 @@ class ProductUpdate(BaseModel):
     def _tiers(cls, value: list[QuantityTier] | None) -> list[QuantityTier] | None:
         return None if value is None else clean_tiers(value)
 
+    @field_validator("slug")
+    @classmethod
+    def _slug(cls, value: str | None) -> str | None:
+        return None if value is None else clean_slug(value)
+
+    @field_validator("seo_title")
+    @classmethod
+    def _seo_title(cls, value: str | None) -> str | None:
+        return None if value is None else clean_line(value, SEO_TITLE_MAX)
+
+    @field_validator("seo_description")
+    @classmethod
+    def _seo_description(cls, value: str | None) -> str | None:
+        return None if value is None else clean_line(value, SEO_DESCRIPTION_MAX)
+
+    @field_validator("seo_keywords")
+    @classmethod
+    def _seo_keywords(cls, value: str | None) -> str | None:
+        return None if value is None else clean_keywords(value)
+
 
 class AdminProductCard(BaseModel):
     id: uuid.UUID
@@ -683,6 +747,9 @@ class AdminProductRead(AdminProductCard):
     tiers: list[QuantityTier] = Field(default_factory=list)
     min_order_quantity: int = 1
     max_order_quantity: int | None = None
+    seo_title: str = ""
+    seo_description: str = ""
+    seo_keywords: str = ""
     variants: list[VariantRead] = Field(default_factory=list)
     updated_at: datetime
 
@@ -796,6 +863,10 @@ class PublicProductCard(BaseModel):
 
 class PublicProductDetail(PublicProductCard):
     category_path: list[CategoryRef]
+    # Search snippet overrides; "" = use the title / description.
+    seo_title: str = ""
+    seo_description: str = ""
+    seo_keywords: str = ""
     tagline: str
     description: str
     stock_label: str

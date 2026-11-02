@@ -135,6 +135,9 @@ _FIELD_KEYS: Mapping[str, str] = {
     "featured": "publishing",
     "published": "publishing",
     "slug": "slug",
+    "seo_title": "seo",
+    "seo_description": "seo",
+    "seo_keywords": "seo",
     "min_order_quantity": "orderLimits",
     "max_order_quantity": "orderLimits",
     "variants": "variants",
@@ -166,6 +169,7 @@ _LABELS = {
     "images": "ছবি",
     "publishing": "পাবলিশ সেটিং",
     "slug": "স্লাগ",
+    "seo": "সার্চ (SEO)",
     "orderLimits": "অর্ডারের সীমা",
     "variants": "ভ্যারিয়েন্ট",
     "content": "প্রোডাক্টের বিস্তারিত",
@@ -302,8 +306,9 @@ _KNOWN: Mapping[str, FieldError] = {
     ),
 }
 
+_SLUG_TAKEN = "A product with this slug already exists"
 _CONFLICTS: Mapping[str, FieldError] = {
-    "A product with this slug already exists": _err(
+    _SLUG_TAKEN: _err(
         "title",
         "এই নামের (একই slug) একটা প্রোডাক্ট আগে থেকেই আছে",
         "নামটা একটু বদলে দিন, যেমন রং বা সাইজ যোগ করুন",
@@ -506,7 +511,11 @@ async def read_product(db: DbSession, product_id: uuid.UUID) -> AdminProductRead
     return await product_service.admin_read_full(db, product, await category_service.load_index(db))
 
 
-@router.patch("/{product_id}", response_model=AdminProductRead)
+@router.patch(
+    "/{product_id}",
+    response_model=AdminProductRead,
+    responses={409: {"description": "Slug edit clashes: {errors: [{field: slug, ...}]}"}},
+)
 @limiter.limit(settings.rate_limit_product_writes)
 async def update_product(
     request: Request,
@@ -522,25 +531,31 @@ async def update_product(
     video_alts: Annotated[str, Form()] = "[]",
     thumbnails: Annotated[list[UploadFile] | None, File()] = None,
     thumbnail_targets: Annotated[str, Form()] = "[]",
-) -> AdminProductRead:
+) -> AdminProductRead | JSONResponse:
     del request
     data = _model(payload, ProductUpdate)
     assert isinstance(data, ProductUpdate)
     product = await product_service.get_by_id(db, product_id)
-    updated = await product_service.update_product(
-        db,
-        product,
-        data,
-        images,
-        _alts(image_alts),
-        quality_image,
-        quality_image_alt,
-        actor=actor,
-        videos=videos,
-        video_alts=_alts(video_alts),
-        thumbnails=thumbnails,
-        thumbnail_targets=_thumb_targets(thumbnail_targets),
-    )
+    try:
+        updated = await product_service.update_product(
+            db,
+            product,
+            data,
+            images,
+            _alts(image_alts),
+            quality_image,
+            quality_image_alt,
+            actor=actor,
+            videos=videos,
+            video_alts=_alts(video_alts),
+            thumbnails=thumbnails,
+            thumbnail_targets=_thumb_targets(thumbnail_targets),
+        )
+    except ConflictError as exc:
+        if data.slug is None or exc.message != _SLUG_TAKEN:
+            raise
+        # A slug edit that clashes: point the admin form at the slug field.
+        return _errors_response(409, [_from_app_error(exc, slug_sent=True)])
     return await product_service.admin_read_full(db, updated, await category_service.load_index(db))
 
 

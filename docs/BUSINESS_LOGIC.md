@@ -16,7 +16,7 @@ Rules enforced by the API, per feature. Code locations are given so the rule can
   - 400 for invalid fields (every invalid field is listed),
   - 409 for conflicts (for example a duplicate slug),
   - 500 for an unexpected failure (generic message, no internals).
-- Admin product update (`PATCH`) still uses the default envelope with English messages (status 422). See TODO.md.
+- Admin product update (`PATCH`) still uses the default envelope with English messages (status 422), except a taken `slug`, which returns 409 `{"errors": [{"field": "slug", ...}]}`. See TODO.md.
 
 ## Products: drafts and published
 
@@ -28,6 +28,12 @@ Rules enforced by the API, per feature. Code locations are given so the rule can
 - Every storefront query filters `published = true`. Drafts never appear in public lists, search, detail, home sections or carts/orders.
 - Limits: price 0–10,000,000; quantity 0–1,000,000; at most 100 variants; at most 8 badges.
 - The main image falls back to the first gallery photo, never a video.
+
+## Product SEO and slugs
+
+- `seo_title` (≤120), `seo_description` (≤320), `seo_keywords` (≤500, comma separated, de-duplicated) are optional; empty means the storefront falls back to the title and description.
+- The slug is generated on create; on update it may be changed (format `^[a-z0-9]+(-[a-z0-9]+)*$`, ≤160, unique across products → 409 on field `slug`).
+- A replaced slug is kept in `product_slug_redirects`, so `GET /products/by-slug/{old}` still returns the product (published only). A product taking a slug that is a redirect removes that redirect. Uniqueness is checked in the service; there is no DB constraint between `products.slug` and redirect slugs.
 
 ## Product media (gallery, video, YouTube)
 
