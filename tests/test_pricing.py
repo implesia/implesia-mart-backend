@@ -30,12 +30,14 @@ def test_base_discount_gives_the_quantity_one_price() -> None:
     assert line.quantity_percent == Decimal("0.00")
 
 
-def test_eight_units_add_two_percent_on_the_regular_price() -> None:
+def test_eight_units_take_two_percent_off_the_line_total() -> None:
     line = _line(1000, "28", 8)
     assert line.total_percent == Decimal("30.00")
     assert line.quantity_percent == Decimal("2.00")
-    assert line.unit_price == 700
-    assert line.line_total == 5600
+    assert line.unit_price == 720
+    # 720 x 8 = 5760, less 2 % = 5644.8, rounded up.
+    assert line.line_total == 5645
+    assert line.discount_amount == 115
     # Beyond the last tier the extra stays at +2 %.
     assert _line(1000, "28", 20).total_percent == Decimal("30.00")
 
@@ -44,14 +46,14 @@ def test_each_default_tier() -> None:
     expected = {1: "28", 2: "28.25", 3: "28.5", 4: "28.75", 5: "29", 6: "29.25", 7: "29.5"}
     for quantity, total in expected.items():
         assert _line(1000, "28", quantity).total_percent == Decimal(total), quantity
-    # 0.25 % of 1000 is 2.5 taka: rounded half up to 3.
-    assert _line(1000, "28", 2).unit_price == 717
+    # 1440 less 0.25 % = 1436.4: rounded up to 1437.
+    assert _line(1000, "28", 2).line_total == 1437
 
 
 def test_cap_limits_the_total_and_never_reaches_100() -> None:
     capped = pricing.Rules(tiers=DEFAULTS, max_percent=Decimal("29"))
     assert _line(1000, "28", 8, capped).total_percent == Decimal("29.00")
-    assert _line(1000, "28", 8, capped).unit_price == 710
+    assert _line(1000, "28", 8, capped).line_total == 5703  # 5760 less 1 % = 5702.4
     # A cap below the base discount wins over the base.
     low = pricing.Rules(tiers=DEFAULTS, max_percent=Decimal("20"))
     assert _line(1000, "28", 1, low).unit_price == 800
@@ -62,7 +64,7 @@ def test_cap_limits_the_total_and_never_reaches_100() -> None:
     )
     line = _line(1000, "50", 2, greedy)
     assert line.total_percent == Decimal("99.99")
-    assert line.unit_price >= 0
+    assert line.line_total == 501  # 1000 less 49.99 % = 500.1, rounded up
 
 
 def test_tiers_switched_off_and_custom_tiers() -> None:
@@ -73,7 +75,7 @@ def test_tiers_switched_off_and_custom_tiers() -> None:
         regular=1000, price=720, stored_base=2800, quantity=3, tiers=custom, rules=off
     )
     assert line.total_percent == Decimal("33.00")
-    assert line.unit_price == 670
+    assert (line.unit_price, line.line_total) == (720, 2052)  # 2160 less 5 %
 
 
 def test_older_prices_keep_their_quantity_one_price() -> None:
@@ -88,6 +90,56 @@ def test_older_prices_keep_their_quantity_one_price() -> None:
     )
     assert plain.unit_price == 15000
     assert plain.total_percent == Decimal("0.00")
+
+
+def _plain(quantity: int, tiers: tuple[QuantityTier, ...]) -> pricing.Line:
+    return pricing.price_line(
+        regular=700, price=700, stored_base=None, quantity=quantity, tiers=tiers, rules=RULES
+    )
+
+
+EXAMPLE_TIERS = (
+    QuantityTier(min_quantity=2, extra_percent=Decimal("0.25")),
+    QuantityTier(min_quantity=3, extra_percent=Decimal("0.75")),
+    QuantityTier(min_quantity=4, extra_percent=Decimal("1")),
+)
+
+
+def test_owner_examples_round_the_line_total_up() -> None:
+    assert _plain(1, EXAMPLE_TIERS).line_total == 700
+    assert _plain(2, EXAMPLE_TIERS).line_total == 1397  # 1396.5
+    assert _plain(3, EXAMPLE_TIERS).line_total == 2085  # 2084.25
+    four = _plain(4, EXAMPLE_TIERS)
+    assert four.line_total == 2772  # exact: never bumped to 2773
+    assert four.discount_amount == 28
+    assert _plain(2, EXAMPLE_TIERS).discount_amount == 3
+
+
+def test_missing_quantity_uses_the_nearest_lower_tier() -> None:
+    gaps = (
+        QuantityTier(min_quantity=2, extra_percent=Decimal("0.25")),
+        QuantityTier(min_quantity=5, extra_percent=Decimal("1")),
+    )
+    assert _plain(4, gaps).quantity_percent == Decimal("0.25")
+    assert _plain(4, gaps).line_total == 2793  # 2800 less 0.25 % = 2793
+    assert _plain(9, gaps).line_total == 6237  # 6300 less 1 %
+    # Below the first tier there is no discount.
+    assert _plain(1, gaps).line_total == 700
+    assert _plain(1, gaps).discount_amount == 0
+
+
+def test_no_tiers_means_price_times_quantity() -> None:
+    line = _plain(7, ())
+    assert line.quantity_percent == Decimal("0.00")
+    assert line.line_total == 4900
+    assert line.discount_amount == 0
+
+
+def test_discounted_total_is_exact_integer_maths() -> None:
+    assert pricing.discounted_total(2800, Decimal("1")) == 2772
+    assert pricing.discounted_total(1400, Decimal("0.25")) == 1397
+    assert pricing.discounted_total(0, Decimal("5")) == 0
+    assert pricing.discounted_total(999, Decimal("0")) == 999
 
 
 async def test_admin_pricing_settings(client: AsyncClient, auth_headers: dict[str, str]) -> None:
@@ -194,8 +246,8 @@ async def test_product_regular_price_and_base_discount(
     )
     assert added.status_code == 200, added.text
     line = added.json()["items"][0]
-    assert line["unit_price"] == 850
-    assert line["line_total"] == 2550
+    assert line["unit_price"] == 900
+    assert line["line_total"] == 2565  # 2700 less 5 %
     assert line["total_discount_percent"] == 15
     assert line["regular_price"] == 1000
 
@@ -236,7 +288,8 @@ async def test_order_keeps_its_price_snapshot(
         json={"source": "direct", "items": order["items"], "district": SHIPPING["district"]},
     )
     assert quoted.status_code == 200, quoted.text
-    assert quoted.json()["items"][0]["unit_price"] == 712  # 28.75 % off 1000, rounded
+    assert quoted.json()["items"][0]["unit_price"] == 720
+    assert quoted.json()["items"][0]["line_total"] == 2859  # 2880 less 0.75 % = 2858.4, up
 
     placed = await client.post("/api/v1/orders", headers={"Idempotency-Key": _key()}, json=order)
     assert placed.status_code == 201, placed.text
@@ -245,8 +298,8 @@ async def test_order_keeps_its_price_snapshot(
     assert item["base_discount_percent"] == 28
     assert item["quantity_discount_percent"] == 0.75
     assert item["total_discount_percent"] == 28.75
-    assert item["unit_price"] == 712
-    assert item["line_total"] == 2848
+    assert item["unit_price"] == 720
+    assert item["line_total"] == 2859
 
     # Changing the rules later does not touch the order already placed.
     changed = await client.put(
@@ -258,9 +311,9 @@ async def test_order_keeps_its_price_snapshot(
     stored = await client.get(f"/api/v1/admin/orders/{placed.json()['id']}", headers=auth_headers)
     assert stored.status_code == 200, stored.text
     kept = stored.json()["items"][0]
-    assert kept["unit_price"] == 712
+    assert kept["unit_price"] == 720
     assert kept["total_discount_percent"] == 28.75
-    assert stored.json()["subtotal"] == 2848
+    assert stored.json()["subtotal"] == 2859
 
 
 async def test_order_quantity_limit_is_admin_configurable(
@@ -278,7 +331,8 @@ async def test_order_quantity_limit_is_admin_configurable(
     )
     assert added.status_code == 200, added.text
     line = added.json()["items"][0]
-    assert (line["unit_price"], line["total_discount_percent"]) == (700, 30)
+    assert (line["unit_price"], line["total_discount_percent"]) == (720, 30)
+    assert line["line_total"] == 5645
     assert line["max_quantity"] == 10
     token = {"X-Cart-Token": added.json()["cart_token"]}
     over = await client.patch(

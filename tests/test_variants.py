@@ -319,12 +319,13 @@ async def test_cart_prices_come_from_the_variant_and_lines_are_per_variant(
     assert len(body["items"]) == 2
     lines = {row["variant_id"]: row for row in body["items"]}
     assert lines[red_m["id"]]["quantity"] == 3
-    # 3 units get the default +0.5% quantity tier: 1000 - 5 = 995.
-    assert lines[red_m["id"]]["unit_price"] == 995
+    # 3 units get the default 0.5% quantity tier on the line: 3000 - 15 = 2985.
+    assert lines[red_m["id"]]["unit_price"] == 1000
+    assert lines[red_m["id"]]["line_total"] == 2985
     assert lines[red_l["id"]]["unit_price"] == 1200
     assert lines[red_m["id"]]["sku"] == red_m["sku"]
     assert [item["name"] for item in lines[red_m["id"]]["selection"]] == ["কালার", "সাইজ"]
-    assert body["subtotal"] == 3 * 995 + 1200
+    assert body["subtotal"] == 2985 + 1200
     assert second.status_code == 200
 
 
@@ -422,8 +423,8 @@ async def test_order_total_comes_from_the_database_and_the_client_cannot_overrid
         },
     )
     assert quote.status_code == 200, quote.text
-    # 2 units get the default +0.25% quantity tier: 1200 - 3 = 1197.
-    assert quote.json()["items"][0]["unit_price"] == 1197
+    # 2 units get the default 0.25% quantity tier on the line: 2400 - 6 = 2394.
+    assert quote.json()["items"][0]["unit_price"] == 1200
     assert quote.json()["items"][0]["variant_id"] == target["id"]
     placed = await _order(
         client, [{"product_id": product["id"], "variant_id": target["id"], "quantity": 2}]
@@ -432,7 +433,7 @@ async def test_order_total_comes_from_the_database_and_the_client_cannot_overrid
     body = placed.json()
     line = body["items"][0]
     assert line["variant_id"] == target["id"] and line["sku"] == target["sku"]
-    assert line["unit_price"] == 1197 and line["line_total"] == 2394
+    assert line["unit_price"] == 1200 and line["line_total"] == 2394
     assert body["subtotal"] == 2394
     after = await _read(client, auth_headers, product["id"])
     assert _variant(after, "navy", "l")["quantity"] == 1

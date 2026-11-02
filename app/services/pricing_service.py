@@ -5,10 +5,14 @@ Money is whole taka. Percentages are `Decimal` with two places; the database kee
 integers in hundredths of a percent (2800 = 28.00 %). Rounding is ROUND_HALF_UP to whole taka.
 
 For quantity `q`:
-  total %  = min(base % + extra %(q), max discount %, 99.99 %)
-  unit     = selling price - round(regular x (total % - base %) / 100)
+  tier %   = extra % of the nearest tier at or below q (0 when none), capped so that
+             base % + tier % <= min(max discount %, 99.99 %)
+  total    = selling price x q
+  line     = ceil(total - total x tier % / 100)      (whole taka, always rounded UP)
+  discount = total - line
 The quantity-1 selling price (`products.price`) is the anchor, so a product's stored price
-never moves; only the extra quantity discount is taken off it, worked out on the regular price.
+never moves. The tier % is taken off the line total; the result is worked out in integers
+(percent in hundredths), so there is no float error and an exact value is never bumped up.
 """
 
 from dataclasses import dataclass
@@ -60,9 +64,13 @@ class Line:
     base_percent: Decimal
     quantity_percent: Decimal
     total_percent: Decimal
-    unit_price: int
+    unit_price: int  # quantity-1 selling price (before the quantity discount)
     quantity: int
-    line_total: int
+    line_total: int  # ceil(unit_price x quantity x (1 - quantity % / 100))
+
+    @property
+    def discount_amount(self) -> int:
+        return self.unit_price * self.quantity - self.line_total
 
 
 def percent(value: Decimal | int | float | str) -> Decimal:
@@ -124,21 +132,26 @@ def price_line(
     base = base_percent_of(regular, price, stored_base)
     cap = cap_of(rules)
     total = min(base + extra_for(quantity, tiers), cap)
-    if total >= base:
-        unit = price - taka(Decimal(regular) * (total - base) / HUNDRED)
-    else:
-        # The cap was lowered below this product's base discount: the cap wins.
-        unit = selling_price(regular, total)
-    unit = max(unit, 0)
+    # A cap lowered below this product's base discount wins over the base.
+    unit = max(price if total >= base else selling_price(regular, total), 0)
+    extra = max(total - base, Decimal("0.00"))
     return Line(
         regular_price=regular,
         base_percent=base,
-        quantity_percent=max(total - base, Decimal("0.00")),
+        quantity_percent=extra,
         total_percent=total,
         unit_price=unit,
         quantity=quantity,
-        line_total=unit * quantity,
+        line_total=discounted_total(unit * quantity, extra),
     )
+
+
+def discounted_total(total: int, extra_percent: Decimal) -> int:
+    """`total` less `extra_percent` %, rounded UP to whole taka, in exact integer maths."""
+    keep = 10000 - to_hundredths(extra_percent)  # hundredths of a percent kept
+    if total <= 0 or keep >= 10000:
+        return max(total, 0)
+    return max(-((-total * keep) // 10000), 0)
 
 
 def tiers_from_json(raw: list[Any] | None) -> tuple[QuantityTier, ...]:
