@@ -1,0 +1,96 @@
+# Business logic
+
+Rules enforced by the API, per feature. Code locations are given so the rule can be checked. Update this file whenever a rule changes.
+
+## Roles and access
+
+- Staff roles: `superadmin` > `editor` > `viewer` (`app/api/deps.py`, `require_role`).
+- Admin writes need `editor` or higher. `viewer` can sign in but gets 403 on admin routers guarded by `require_editor`.
+- Users and audit events need `superadmin`.
+- Shoppers are anonymous. Guest carts use the `X-Cart-Token` header.
+
+## Errors contract
+
+- Default error body: `{"error": {"code", "message", "details"}}`.
+- **Admin product create (`POST /admin/products`)** returns `{"errors": [{"field", "message", "fix"}]}` with Bengali text:
+  - 400 for invalid fields (every invalid field is listed),
+  - 409 for conflicts (for example a duplicate slug),
+  - 500 for an unexpected failure (generic message, no internals).
+- Admin product update (`PATCH`) still uses the default envelope with English messages (status 422). See TODO.md.
+
+## Products: drafts and published
+
+- `published` defaults to `false`. A draft needs only a `name`.
+- Publishing (create or update with `published: true`) requires:
+  - a price, unless the product has variants,
+  - a category,
+  - a main image (an uploaded image or a gallery photo).
+- Every storefront query filters `published = true`. Drafts never appear in public lists, search, detail, home sections or carts/orders.
+- Limits: price 0–10,000,000; quantity 0–1,000,000; at most 100 variants; at most 8 badges.
+- The main image falls back to the first gallery photo, never a video.
+
+## Product media (gallery, video, YouTube)
+
+Code: `app/services/image_storage.py`, `app/services/product_service.py`, `app/schemas/product.py`.
+
+- Gallery holds at most 12 items. At most 12 uploaded images per request.
+- Gallery item kinds: `image`, `video` (uploaded file), `youtube` (stored as an 11-character video id).
+- Images: JPEG, PNG, WEBP or GIF, checked by file signature (magic bytes), max 5 MB.
+- Videos: MP4 or WEBM, checked by extension and signature, max 50 MB each.
+- YouTube: accepts a bare id or a `youtube.com` / `youtu.be` / `youtube-nocookie.com` link (`watch`, `shorts`, `embed`, `live`, `v`); anything else is rejected.
+- Files are stored under the media root in folder `products` with a random UUID filename and served from `/media/products/<file>`. A replaced file always gets a new URL.
+- New uploads are appended after the gallery items already in the payload, so after save the order is: existing items first, then new uploads.
+- Media files owned by a product are deleted from disk when the product is deleted or when the file is no longer referenced after an update.
+
+## Product badges
+
+Code: `app/services/badge_service.py`, `app/schemas/badge.py`, `app/models/badge.py`.
+
+- Admin-managed badges with a name (max 32 characters, unique), a slug (generated), a tone and an on/off switch (`is_active`).
+- Tones: `primary`, `gold`, `dark`, `alert`, `soft`, `soft-gold`.
+- A product can carry at most 8 badges, in the order chosen.
+- Built-in system badges (Best Seller, New, Limited) cannot be deleted; switch them off instead.
+- A badge that is on any product cannot be deleted (409); switch it off instead.
+- The storefront shows only active badges.
+- The legacy single `badge` field is kept in sync with the system badges for older clients.
+
+## Delete a product
+
+`DELETE /admin/products/{id}` (editor+):
+
+1. Collect the product's media references.
+2. Unlink its badges, delete the product and commit.
+3. Delete the owned media files from disk.
+
+- Past orders are kept: order items lose the product link (`ON DELETE SET NULL`) but keep their saved name and price.
+- Cart lines, featured/showcase entries, badge links and variants are removed with the product (cascade).
+
+## Bulk delete products
+
+`DELETE /admin/products/bulk` (editor+), body `{"ids": [...]}`:
+
+- Ids are de-duplicated. 1 to 100 ids per request.
+- 422 errors: "Choose at least one product to delete" (empty), "Some product ids are not valid" (`details.invalid_ids`), "Delete at most 100 products at a time".
+- Each product is deleted with the same steps as single delete and commits on its own. One failure does not stop the rest (partial success).
+- Response: `requested`, `deleted`, `deleted_ids`, `skipped` (`reason: "not_found"`), `failed` (`reason: "error"`).
+
+## Cart and orders
+
+- At most 5 of one product in a cart line (`MAX_QTY`); variant/product minimum and maximum order limits apply.
+- A product with options needs an option chosen before ordering.
+- Stock refusals use a generic message that never reveals the remaining count.
+- Order creation accepts an `Idempotency-Key` (8–80 letters, numbers, `_` or `-`).
+- Delivery fees come from the delivery zones (district/area).
+- Public order lookup does not expose the delivery address.
+
+## Categories
+
+- Categories form a tree with a maximum depth (`MAX_DEPTH`) and a database cycle guard.
+- At most 1000 categories.
+- A listing filtered by a hidden or missing category returns an empty list instead of leaking hidden products.
+
+## CMS content
+
+- Home sections (hero, categories, featured, showcase, promo, …), about, sustainability, shipping, privacy, FAQs, contact, blogs, site header/footer/contact are admin-edited and read publicly.
+- Admin href fields reject script schemes (`javascript:` and similar).
+- Blog and CMS writes name every invalid field in 422/409 errors.
