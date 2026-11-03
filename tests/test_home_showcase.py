@@ -139,7 +139,7 @@ async def test_editor_can_add_reorder_and_remove_a_showcase_product(
     scarf = await _create(
         client, auth_headers, title="Scarf", slug="showcase-scarf", category="gadgets"
     )
-    gown = await _create(
+    await _create(
         client, auth_headers, title="Gown", slug="showcase-gown", category="fashion"
     )
 
@@ -148,10 +148,18 @@ async def test_editor_can_add_reorder_and_remove_a_showcase_product(
     gadgets = _row(listed.json(), "gadgets")
     assert {item["product_id"] for item in gadgets["items"]} == {lamp["id"], scarf["id"]}
 
+    hidden = await _create(
+        client,
+        auth_headers,
+        title="Hidden lamp",
+        slug="showcase-hidden-lamp",
+        category="gadgets",
+        published=False,
+    )
     wrong = await client.post(
         "/api/v1/admin/home/showcase/rows/gadgets/items",
         headers=auth_headers,
-        json={"product_id": gown["id"]},
+        json={"product_id": hidden["id"]},
     )
     assert wrong.status_code == 422
 
@@ -232,3 +240,60 @@ async def test_editor_can_add_reorder_and_remove_a_showcase_product(
     public = await client.get("/api/v1/home/showcase")
     assert set(_row(public.json(), "gadgets")["product_ids"]) == {lamp["id"], scarf["id"]}
     assert _row(public.json(), "gadgets")["heading"] == "ট্রেন্ডিং গ্যাজেট"
+
+
+async def test_showcase_choices_are_published_products_from_any_category(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    """Rows are not tied to their key's category: on the live catalog the `gadgets`
+    category does not exist, which left the Trending row with no choices."""
+    gown = await _create(
+        client, auth_headers, title="Gown", slug="showcase-gown", category="fashion"
+    )
+    lamp = await _create(
+        client, auth_headers, title="Lamp", slug="showcase-lamp", category="gadgets"
+    )
+    hidden = await _create(
+        client,
+        auth_headers,
+        title="Hidden gown",
+        slug="showcase-hidden-gown",
+        category="fashion",
+        published=False,
+    )
+
+    listed = await client.get("/api/v1/admin/home/showcase", headers=auth_headers)
+    assert listed.status_code == 200, listed.text
+    for key in ("gadgets", "fashion"):
+        ids = {choice["id"] for choice in _row(listed.json(), key)["choices"]}
+        assert {gown["id"], lamp["id"]} <= ids
+        assert hidden["id"] not in ids
+        assert all(choice["published"] for choice in _row(listed.json(), key)["choices"])
+
+    gadgets_items = _row(listed.json(), "gadgets")["items"]
+    added = await client.post(
+        "/api/v1/admin/home/showcase/rows/gadgets/items",
+        headers=auth_headers,
+        json={"product_id": gown["id"]},
+    )
+    assert added.status_code == 201, added.text
+
+    # A pinned product that was hidden later can still be saved in its own slot.
+    pinned = gadgets_items[0]
+    await client.patch(
+        f"/api/v1/admin/products/{pinned['product_id']}",
+        headers=auth_headers,
+        files=[("payload", (None, json.dumps({"published": False})))],
+    )
+    kept = await client.patch(
+        f"/api/v1/admin/home/showcase/rows/gadgets/items/{pinned['id']}",
+        headers=auth_headers,
+        json={"product_id": pinned["product_id"]},
+    )
+    assert kept.status_code == 200, kept.text
+    swapped = await client.patch(
+        f"/api/v1/admin/home/showcase/rows/gadgets/items/{pinned['id']}",
+        headers=auth_headers,
+        json={"product_id": hidden["id"]},
+    )
+    assert swapped.status_code == 422

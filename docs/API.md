@@ -190,6 +190,8 @@ Product admin create/update also take `regular_price`, `base_discount_percent`, 
 | DELETE | `/api/v1/admin/home/showcase/rows/{key}/items/{item_id}` | admin (editor, superadmin) | — | `Message` |
 | PATCH | `/api/v1/admin/home/showcase/rows/{key}/items/{item_id}` | admin (editor, superadmin) | `ShowcaseItemWrite` | `ShowcaseItemRead` |
 
+`ShowcaseRowAdmin.choices` is every published product (any category). Item writes reject a hidden product with 422 "Choose a published product".
+
 ## `admin/home/trust`
 
 | Method | Path | Access | Request body | Response |
