@@ -102,10 +102,12 @@ async def _subtree(db: AsyncSession, slug: str) -> list[uuid.UUID]:
     return index.descendants(row.id) if row is not None else []
 
 
-async def _choices(db: AsyncSession, category: str) -> list[FeaturedProductCard]:
+async def _choices(db: AsyncSession) -> list[FeaturedProductCard]:
+    """Every published product. Rows are curated lists, not tied to a category slug:
+    a row key such as ``gadgets`` may not exist as a category in the live catalog."""
     result = await db.scalars(
         select(Product)
-        .where(Product.category_id.in_(await _subtree(db, category)))
+        .where(Product.published.is_(True))
         .options(defer(Product.content))
         .order_by(Product.title, Product.id)
     )
@@ -158,7 +160,11 @@ async def _seed_products(db: AsyncSession, category: str) -> list[Product]:
 
 
 async def _row_admin(
-    db: AsyncSession, row: HomeShowcaseRow, products: dict[uuid.UUID, Product] | None = None
+    db: AsyncSession,
+    row: HomeShowcaseRow,
+    products: dict[uuid.UUID, Product] | None = None,
+    *,
+    choices: list[FeaturedProductCard] | None = None,
 ) -> ShowcaseRowAdmin:
     items = await _items(db, row.id)
     if products is None:
@@ -169,14 +175,15 @@ async def _row_admin(
         heading=row.heading,
         href=row.href,
         items=[_present(item, products.get(item.product_id)) for item in items],
-        choices=await _choices(db, row.key),
+        choices=choices if choices is not None else await _choices(db),
     )
 
 
 async def admin_view(db: AsyncSession) -> ShowcaseAdmin:
     parent = await ensure_showcase(db)
     rows = await _rows(db, parent.id)
-    return ShowcaseAdmin(rows=[await _row_admin(db, row) for row in rows])
+    choices = await _choices(db)
+    return ShowcaseAdmin(rows=[await _row_admin(db, row, choices=choices) for row in rows])
 
 
 async def public_view(db: AsyncSession) -> ShowcasePublic:
@@ -235,13 +242,15 @@ async def get_item(db: AsyncSession, row: HomeShowcaseRow, item_id: uuid.UUID) -
 
 
 async def _require_product(
-    db: AsyncSession, row: HomeShowcaseRow, product_id: uuid.UUID
+    db: AsyncSession, product_id: uuid.UUID, *, keep: uuid.UUID | None = None
 ) -> Product:
+    """Only published products can be pinned. ``keep`` lets an edit save the product
+    already in that slot even if it was hidden since."""
     product = await db.get(Product, product_id)
     if product is None:
         raise UnprocessableError("Choose a product from the catalog")
-    if product.category_id not in await _subtree(db, row.key):
-        raise UnprocessableError("Choose a product from this category")
+    if not product.published and product.id != keep:
+        raise UnprocessableError("Choose a published product")
     return product
 
 
@@ -265,7 +274,7 @@ async def _reject_duplicate(
 async def create_item(
     db: AsyncSession, row: HomeShowcaseRow, payload: ShowcaseItemWrite
 ) -> ShowcaseItemRead:
-    await _require_product(db, row, payload.product_id)
+    await _require_product(db, payload.product_id)
     await _reject_duplicate(db, row.id, payload.product_id)
     count = await db.scalar(
         select(func.count()).select_from(HomeShowcaseItem).where(HomeShowcaseItem.row_id == row.id)
@@ -290,7 +299,7 @@ async def create_item(
 async def update_item(
     db: AsyncSession, row: HomeShowcaseRow, item: HomeShowcaseItem, payload: ShowcaseItemWrite
 ) -> ShowcaseItemRead:
-    await _require_product(db, row, payload.product_id)
+    await _require_product(db, payload.product_id, keep=item.product_id)
     await _reject_duplicate(db, row.id, payload.product_id, ignore=item.id)
     item.product_id = payload.product_id
     await db.commit()
