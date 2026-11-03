@@ -71,6 +71,7 @@ Names only. Values live in `.env` (see `.env.example`) and must never be committ
 - First superuser: `FIRST_SUPERUSER_EMAIL`, `FIRST_SUPERUSER_PASSWORD`
 - Mail: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_TLS`, `EMAIL_FROM`, `EMAIL_FROM_NAME`, `ORDER_NOTIFICATION_RECIPIENTS`
 - `TURNSTILE_SECRET_KEY`
+- Media, all empty or all set: `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `MEDIA_PUBLIC_BASE_URL`
 
 ## Connection to the frontend repo
 
@@ -78,4 +79,4 @@ Names only. Values live in `.env` (see `.env.example`) and must never be committ
 - The frontend reaches this API at the base URL in its `NEXT_PUBLIC_MART_API_URL` variable (local default `http://127.0.0.1:8001`).
 - Storefront pages call public `/api/v1/...` endpoints. The admin dashboard calls `/api/v1/admin/...` through the frontend's BFF proxy (`/api/proxy/...`), which attaches the staff token.
 - The frontend origin must be listed in `CORS_ORIGINS`.
-- Uploaded media is served from `/media/...` (files under the media root, folder `products` for product media).
+- Uploaded media is addressed as `/media/<folder>/<name>`. With the R2 settings set, that path redirects to `MEDIA_PUBLIC_BASE_URL` and the bytes live in the bucket. With the settings empty, the file is on the media root (`products` for product media).

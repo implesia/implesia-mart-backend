@@ -2,6 +2,14 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Uploaded media is stored in Cloudflare R2 (2026-11-03).**
+  - Photos and videos are uploaded to the S3-compatible bucket when `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, and `MEDIA_PUBLIC_BASE_URL` are all set. The object key is `<folder>/<name>` (the same layout as the old disk path). The database value stays `/media/<folder>/<name>`. `Content-Type` is set from the sniffed type.
+  - `GET` and `HEAD /media/<folder>/<name>` answer `307` to `MEDIA_PUBLIC_BASE_URL/<folder>/<name>` in that mode. Paths that leave the known folders, or that contain `..`, are `404`.
+  - Deleting an owned media reference deletes the object. When the five settings are empty, writes, reads, and deletes stay on `media_root` (local disk), which is what tests and local Compose use. A partial set of the five settings refuses to start.
+  - Existing files on the VPS volume are not moved by the app. The copy command (rclone or `aws s3 sync`, same keys) is in `docs/deploy-media-persistence.md`.
+  - Removed the committed Wrangler account cache and ignored `.wrangler/`.
+  - Files: `app/core/config.py`, `app/core/media_files.py`, `app/services/image_storage.py`, `app/main.py`, `pyproject.toml`, `uv.lock`, `tests/test_object_storage.py`, `tests/conftest.py`, `tests/test_deploy_config.py`, `.env.example`, `.gitignore`, `docker-compose.prod.yml`, `render.yaml`, `docs/deploy-media-persistence.md`, docs.
+  - Frontend: no API change. Keep using the `/media/...` values the API returns. The browser follows the redirect to `https://media.implesia.com/...`. If an image optimizer refuses a redirect to another host, allow `media.implesia.com` or load that host directly.
 - **Variant products keep their card discount after a save (2026-11-03).**
   - Bug: saving a variant product in the dashboard without changing its variants sends `price` + `compare_at_price: null`; the update wrote those on the product row and skipped the variant roll-up. Product cards read `products.compare_at_price`, so the struck-through price and the `-X%` badge vanished (live: every product had `compare_at_price: null` in `GET /api/v1/products` while its variants still had compare-at prices, e.g. ৳945 / ৳1,350).
   - Fix: `product_service.update_product` now calls `variant_service.sync_price` for variant products after every save, so `price` / `compare_at_price` always come from the cheapest active variant (same rule as `rollup`, shared helper `_copy_cheapest_price`).

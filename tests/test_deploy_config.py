@@ -120,3 +120,28 @@ def test_production_compose_keeps_media_on_a_named_volume() -> None:
     assert "127.0.0.1:" in text
     dockerfile = (ROOT / "Dockerfile").read_text()
     assert "chown appuser:appuser /srv/media" in dockerfile
+
+
+def test_object_storage_settings_are_documented() -> None:
+    names = (
+        "S3_ENDPOINT_URL",
+        "S3_BUCKET",
+        "S3_ACCESS_KEY_ID",
+        "S3_SECRET_ACCESS_KEY",
+        "MEDIA_PUBLIC_BASE_URL",
+    )
+    example = (ROOT / ".env.example").read_text()
+    compose = (ROOT / "docker-compose.prod.yml").read_text()
+    blueprint = (ROOT / "render.yaml").read_text()
+    guide = (ROOT / "docs" / "deploy-media-persistence.md").read_text()
+    for name in names:
+        assert name in example
+        assert name in compose
+        assert name in blueprint
+    assert "implesia-mart-media" in blueprint
+    assert "https://media.implesia.com" in blueprint
+    assert "rclone" in guide
+    assert "aws s3 sync" in guide
+    assert "same key" in guide
+    assert ".wrangler/" in (ROOT / ".gitignore").read_text()
+    assert not (ROOT / "cloudflare/api-hostname/.wrangler/cache/wrangler-account.json").exists()

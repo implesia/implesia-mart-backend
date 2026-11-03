@@ -35,6 +35,7 @@ Generated from the FastAPI routers (`app/api/v1/router.py` and `app/api/v1/endpo
 | GET | `/health/live` | public | liveness probe |
 | GET | `/health/ready` | public | checks the database and Redis |
 | GET | `/metrics` | metrics token (setting `METRICS_TOKEN`) | Prometheus metrics |
+| GET, HEAD | `/media/{folder}/{name}` | public | With R2 configured, `307` to `MEDIA_PUBLIC_BASE_URL/{folder}/{name}`. Otherwise the file on disk. Stored values stay `/media/...`. |
 
 ## `admin/audit-events`
 

@@ -37,6 +37,16 @@ Rules enforced by the API, per feature. Code locations are given so the rule can
 - Slug generation (new products only): Bengali letters are transliterated phonetically (`app/services/transliteration.py`; consonants carry an inherent "o" unless a vowel sign, hasanta or word end follows; Bengali digits → 0–9), then `python-slugify`. A title with nothing usable gives `product`; collisions get `-2`…`-99`, then `product-<random>`. Existing slugs are never regenerated.
 - `updated_at` on public product cards and category tree nodes is the row's last change; the storefront uses it as sitemap `lastmod`.
 
+## Uploaded media
+
+Code: `app/services/image_storage.py`, `app/core/media_files.py`, `app/core/config.py`.
+
+- Images are JPEG, PNG, WEBP, or GIF, checked by file signature, max 5 MB. Videos are MP4 or WEBM, checked by signature, max 50 MB. SVG, HTML, and any other type are rejected and nothing is stored.
+- The stored name is a random id. The database value is always `/media/<folder>/<name>` (`products`, `banners`, `categories`, `reviews`, `about`, `sustainability`, `blogs`, `promo`, `home-media`, `footer`).
+- When `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, and `MEDIA_PUBLIC_BASE_URL` are all set, the object key is `<folder>/<name>` in the bucket and `GET /media/<folder>/<name>` redirects to the public media URL. The object is stored with the matching image or video content type.
+- When those five are empty, the file is written under the media root and served from disk. A partial set refuses to start.
+- Deleting an owned `/media/<folder>/<name>` reference deletes that object in the bucket, or the file on disk when object storage is off. A reference outside that folder is left alone.
+
 ## Product media (gallery, video, YouTube)
 
 Code: `app/services/image_storage.py`, `app/services/product_service.py`, `app/schemas/product.py`.
@@ -46,12 +56,12 @@ Code: `app/services/image_storage.py`, `app/services/product_service.py`, `app/s
 - Images: JPEG, PNG, WEBP or GIF, checked by file signature (magic bytes), max 5 MB.
 - Videos: MP4 or WEBM, checked by extension and signature, max 50 MB each.
 - YouTube: accepts a bare id or a `youtube.com` / `youtu.be` / `youtube-nocookie.com` link (`watch`, `shorts`, `embed`, `live`, `v`); anything else is rejected.
-- Files are stored under the media root in folder `products` with a random UUID filename and served from `/media/products/<file>`. A replaced file always gets a new URL.
+- Files use a random UUID filename under the `products` folder and are stored as in "Uploaded media" above. The saved path is `/media/products/<file>`. A replaced file always gets a new URL.
 - New uploads are appended after the gallery items already in the payload, so after save the order is: existing items first, then new uploads.
 - Videos and YouTube items may carry a custom `thumbnail` image (stored like a gallery photo, same type and size checks). Photos never keep one. Without it the storefront uses the YouTube still or the video's first frame.
 - Thumbnail uploads use the `thumbnails` parts with `thumbnail_targets` (gallery item id, or `video:<n>` for a video uploaded in the same request). A target that is not a video/YouTube item is refused.
 - Every media URL is unique (UUID filename), so a changed video, thumbnail or photo always gets a new URL and no cache can serve the old one.
-- Media files owned by a product are deleted from disk when the product is deleted or when the file is no longer referenced after an update.
+- Media files owned by a product are deleted (bucket object, or disk file when object storage is off) when the product is deleted or when the file is no longer referenced after an update.
 
 ## Product badges
 
@@ -71,7 +81,7 @@ Code: `app/services/badge_service.py`, `app/schemas/badge.py`, `app/models/badge
 
 1. Collect the product's media references.
 2. Unlink its badges, delete the product and commit.
-3. Delete the owned media files from disk.
+3. Delete the owned media files (from the bucket, or from disk when object storage is off).
 
 - Past orders are kept: order items lose the product link (`ON DELETE SET NULL`) but keep their saved name and price.
 - Cart lines, featured/showcase entries, badge links and variants are removed with the product (cascade).
