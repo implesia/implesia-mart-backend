@@ -2,6 +2,9 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Order phone accepts +880 / 880 spellings (2026-11-03).**
+  - `OrderCreate.phone` and `OrderLookup.phone` now use the shared `normalize_phone` (`app/schemas/inquiry.py`): `01XXXXXXXXX`, `8801XXXXXXXXX` or `+8801XXXXXXXXX`, spaces, dashes, dots, brackets and Bengali digits ignored, stored as `01XXXXXXXXX` (same as existing rows). Before, `+8801…` was reduced to 13 digits and rejected with 422. Operator prefix must be 013–019 (as for inquiries and site contact); 010–012 are now refused. Error message unchanged.
+  - Files: `app/schemas/order.py`, `tests/test_order_phone.py`, docs. No migration. Frontend: checkout validation updated in the same task.
 - **Bangla QR payment: admin QR image and partial advance at checkout (2026-11-03).**
   - New table `payment_settings` (one row, slug `main`) with the Bangla QR image path. Public `GET /api/v1/site/payment` (`no-store`) → `{bangla_qr_src, bangla_qr_enabled}` (`null`/`false` when none). Admin (editor auth, audited, `no-store`): `GET /api/v1/admin/site/payment`, `POST …/qr` (multipart `image`, checked by bytes, 5 MB, rate-limited; replacing deletes the old file), `DELETE …/qr`. Files go to the new `media/payment/` folder.
   - Orders: `payment_method` may be `cod` or `bangla_qr`. New columns `advance_percent` (25/50/75/100), `advance_amount`, `due_amount`, `payment_reference` (transaction ID / sender number). The server computes `advance = ceil(total × % / 100)` and `due = total − advance`; the client never sends amounts. `bangla_qr` is refused (422) while no QR is set; percent and reference are validated. `QuoteRead.bangla_qr_options` gives the four choices for the quoted total (empty with no QR). `OrderRead` / `PublicOrderRead` return the payment fields; only `OrderRead` has `payment_reference`.

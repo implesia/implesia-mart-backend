@@ -8,11 +8,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.models.order import OrderStatus
 from app.schemas.common import page_count
+from app.schemas.inquiry import normalize_phone
 from app.schemas.payment import ADVANCE_PERCENTS, AdvanceOption, PaymentMethod
 from app.schemas.pricing import QUANTITY_CEILING, Percent
 from app.schemas.product import OptionChoice, SelectedOption
 
-_PHONE = re.compile(r"^01\d{9}$")
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _REFERENCE = re.compile(r"^[A-Za-z0-9+\-]{4,64}$")
 OrderSourceName = Literal["cart", "direct"]
@@ -89,10 +89,10 @@ class OrderCreate(OrderQuoteRequest):
     @field_validator("phone")
     @classmethod
     def _phone(cls, value: str) -> str:
-        digits = re.sub(r"\D", "", value)
-        if not _PHONE.fullmatch(digits):
+        phone = normalize_phone(value)
+        if phone is None:
             raise ValueError("Phone must be an 11-digit Bangladesh mobile number")
-        return digits
+        return phone
 
     @field_validator("email")
     @classmethod
@@ -172,12 +172,10 @@ class OrderLookup(BaseModel):
     @field_validator("phone")
     @classmethod
     def _phone(cls, value: str) -> str:
-        digits = re.sub(r"\D", "", value)
-        if digits.startswith("880") and len(digits) == 13:
-            digits = f"0{digits[3:]}"
-        if not _PHONE.fullmatch(digits):
+        phone = normalize_phone(value)
+        if phone is None:
             raise ValueError("Phone must be an 11-digit Bangladesh mobile number")
-        return digits
+        return phone
 
 
 class PublicOrderItemRead(BaseModel):

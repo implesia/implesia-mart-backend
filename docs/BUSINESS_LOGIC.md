@@ -102,6 +102,7 @@ Code: `app/services/badge_service.py`, `app/schemas/badge.py`, `app/models/badge
 - A product with options needs an option chosen before ordering.
 - Stock refusals use a generic message that never reveals the remaining count. The exposed maximum (`max_per_order`, variant/cart `max_quantity`) is min(limit, stock), so stock below the limit can be inferred from it.
 - Order creation accepts an `Idempotency-Key` (8–80 letters, numbers, `_` or `-`).
+- Order and lookup phone: Bangladesh mobile `01[3-9]XXXXXXXX`, also written as `880…` or `+880…`, with spaces, dashes, dots, brackets or Bengali digits; always stored and compared as `01XXXXXXXXX`.
 - Delivery fees come from the delivery zones (district/area).
 - Public order lookup does not expose the delivery address.
 
