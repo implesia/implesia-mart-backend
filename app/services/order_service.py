@@ -38,7 +38,13 @@ from app.schemas.order import (
     order_page_count,
 )
 from app.schemas.pricing import QUANTITY_CEILING
-from app.services import audit_service, delivery_service, pricing_service, variant_service
+from app.services import (
+    audit_service,
+    delivery_service,
+    payment_service,
+    pricing_service,
+    variant_service,
+)
 from app.services.cart_service import Shopper, _cap, _purchasable, open_cart, shopper_actor
 from app.services.product_options import resolve_selection, selection_of
 from app.services.product_service import content_of
@@ -97,13 +103,27 @@ def _snapshot(item: OrderItem) -> dict[str, Any]:
     }
 
 
+def _payment(order: Order) -> dict[str, Any]:
+    """Payment fields for a response. Older orders (no due recorded) owe the whole total."""
+    method = order.payment_method if order.payment_method == "bangla_qr" else "cod"
+    advance = order.advance_amount or 0
+    due = order.due_amount if order.due_amount is not None else max(order.total - advance, 0)
+    return {
+        "payment_method": method,
+        "advance_percent": order.advance_percent,
+        "advance_amount": advance,
+        "due_amount": due,
+    }
+
+
 def _read(order: Order) -> OrderRead:
     return OrderRead(
         id=order.id,
         number=order.number,
         source=order.source,
         status=order.status,
-        payment_method="cod",
+        **_payment(order),
+        payment_reference=order.payment_reference or "",
         anonymous=order.user_id is None,
         customer_name=order.customer_name,
         phone=order.phone,
@@ -272,7 +292,10 @@ async def quote(db: AsyncSession, shopper: Shopper, payload: OrderQuoteRequest) 
         for row in requested
     ]
     rates = await delivery_service.fees(db)
-    return _totals(lines, payload.district, payload.area, payload.delivery_zone, rates)
+    totals = _totals(lines, payload.district, payload.area, payload.delivery_zone, rates)
+    if totals.total > 0 and await payment_service.bangla_qr_src(db) is not None:
+        totals.bangla_qr_options = payment_service.advance_options(totals.total)
+    return totals
 
 
 async def _claim(
@@ -452,12 +475,27 @@ async def create_order(
 
     subtotal = sum(line.line_total for _row, line, *_rest in priced)
     shipping = fee if priced else 0
+    total = subtotal + shipping
+    # The advance and the amount due are computed here from the server total, never taken
+    # from the request. Bangla QR is refused while no QR image is set.
+    advance_percent: int | None = None
+    advance, due, reference = 0, total, ""
+    if payload.payment_method == "bangla_qr":
+        if await payment_service.bangla_qr_src(db) is None:
+            raise UnprocessableError("Bangla QR পেমেন্ট এখন চালু নেই। ক্যাশ অন ডেলিভারি বেছে নিন।")
+        advance_percent = payload.advance_percent
+        advance, due = payment_service.advance_split(total, advance_percent or 0)
+        reference = payload.payment_reference
     order = Order(
         number=await _number(db),
         user_id=shopper.user.id if shopper.user is not None else None,
         source=payload.source,
         status=OrderStatus.NEW.value,
-        payment_method="cod",
+        payment_method=payload.payment_method,
+        advance_percent=advance_percent,
+        advance_amount=advance,
+        due_amount=due,
+        payment_reference=reference,
         customer_name=payload.customer_name,
         phone=payload.phone,
         email=payload.email,
@@ -468,7 +506,7 @@ async def create_order(
         delivery_zone=zone,
         subtotal=subtotal,
         shipping=shipping,
-        total=subtotal + shipping,
+        total=total,
         inventory_held=True,
     )
     for row, line, title, slug, image_src, sku in priced:
@@ -625,7 +663,7 @@ def _public(order: Order) -> PublicOrderRead:
         total=order.total,
         courier_name=order.courier_name,
         tracking_number=order.tracking_number,
-        payment_method="cod",
+        **_payment(order),
         items=[
             PublicOrderItemRead(
                 title=item.title,

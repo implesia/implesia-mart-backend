@@ -8,11 +8,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.models.order import OrderStatus
 from app.schemas.common import page_count
+from app.schemas.payment import ADVANCE_PERCENTS, AdvanceOption, PaymentMethod
 from app.schemas.pricing import QUANTITY_CEILING, Percent
 from app.schemas.product import OptionChoice, SelectedOption
 
 _PHONE = re.compile(r"^01\d{9}$")
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_REFERENCE = re.compile(r"^[A-Za-z0-9+\-]{4,64}$")
 OrderSourceName = Literal["cart", "direct"]
 DeliveryZone = Literal["inside", "suburban", "outside"]
 
@@ -54,6 +56,30 @@ class OrderCreate(OrderQuoteRequest):
     area: str = Field(min_length=2, max_length=120)
     address: str = Field(min_length=8, max_length=500)
     notes: str = Field("", max_length=500)
+    # "bangla_qr": pay advance_percent now by the admin's QR, the rest on delivery. The
+    # amounts are always computed by the server from the order total.
+    payment_method: PaymentMethod = "cod"
+    advance_percent: int | None = None
+    payment_reference: str = Field("", max_length=80)
+
+    @field_validator("payment_reference")
+    @classmethod
+    def _reference(cls, value: str) -> str:
+        return re.sub(r"\s+", "", value)
+
+    @model_validator(mode="after")
+    def payment_fields(self) -> "OrderCreate":
+        if self.payment_method == "cod":
+            if self.advance_percent is not None or self.payment_reference:
+                raise ValueError("ক্যাশ অন ডেলিভারিতে অগ্রিম বা ট্রানজেকশন আইডি লাগে না")
+            return self
+        if self.advance_percent not in ADVANCE_PERCENTS:
+            raise ValueError("অগ্রিম ২৫%, ৫০%, ৭৫% বা ১০০% বেছে নিন")
+        if not _REFERENCE.fullmatch(self.payment_reference):
+            raise ValueError(
+                "ট্রানজেকশন আইডি বা যে নম্বর থেকে পাঠিয়েছেন সেটি লিখুন (৪–৬৪ অক্ষর, ইংরেজি অক্ষর/সংখ্যা)"
+            )
+        return self
 
     @field_validator("customer_name", "district", "area", "address", "notes", "email")
     @classmethod
@@ -104,6 +130,8 @@ class QuoteRead(BaseModel):
     total: int
     delivery_zone: DeliveryZone
     delivery_available: bool
+    # Bangla QR advance choices for this total (empty when no QR is set or nothing to pay).
+    bangla_qr_options: list[AdvanceOption] = Field(default_factory=list)
 
 
 class OrderItemRead(BaseModel):
@@ -177,7 +205,10 @@ class PublicOrderRead(BaseModel):
     total: int
     courier_name: str
     tracking_number: str
-    payment_method: Literal["cod"]
+    payment_method: PaymentMethod
+    advance_percent: int | None = None
+    advance_amount: int = 0
+    due_amount: int = 0
     items: list[PublicOrderItemRead]
     created_at: datetime
 
@@ -187,7 +218,11 @@ class OrderRead(BaseModel):
     number: str
     source: OrderSourceName
     status: str
-    payment_method: Literal["cod"]
+    payment_method: PaymentMethod
+    advance_percent: int | None = None
+    advance_amount: int = 0
+    due_amount: int = 0
+    payment_reference: str = ""
     anonymous: bool
     customer_name: str
     phone: str

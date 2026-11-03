@@ -55,7 +55,12 @@ class OrderSource(StrEnum):
 
 
 class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """A cash-on-delivery order. Money columns are a snapshot from the server."""
+    """A cash-on-delivery or Bangla QR order. Money columns are a snapshot from the server.
+
+    Bangla QR: the shopper pays `advance_amount` (advance_percent of the total, rounded up to
+    whole taka) by QR and the rest, `due_amount`, in cash on delivery. COD: advance 0, due =
+    total. `due_amount` is NULL on orders placed before this was recorded (due = total).
+    """
 
     __tablename__ = "orders"
     __table_args__ = (
@@ -68,7 +73,15 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint(
             "subtotal >= 0 AND shipping >= 0 AND total >= 0", name="money_non_negative"
         ),
-        CheckConstraint("payment_method = 'cod'", name="payment_cod"),
+        CheckConstraint("payment_method IN ('cod', 'bangla_qr')", name="payment_known"),
+        CheckConstraint(
+            "advance_percent IS NULL OR advance_percent IN (25, 50, 75, 100)",
+            name="advance_percent_known",
+        ),
+        CheckConstraint(
+            "advance_amount >= 0 AND (due_amount IS NULL OR due_amount >= 0)",
+            name="advance_non_negative",
+        ),
         Index("ix_orders_phone", "phone"),
         Index("ix_orders_created_at", "created_at"),
     )
@@ -80,6 +93,15 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     source: Mapped[str] = mapped_column(String(16), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default=OrderStatus.NEW.value)
     payment_method: Mapped[str] = mapped_column(String(16), nullable=False, default="cod")
+    advance_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    advance_amount: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    due_amount: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Bangla QR transaction ID or sender number typed by the shopper. Empty for COD.
+    payment_reference: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="", server_default=""
+    )
     customer_name: Mapped[str] = mapped_column(String(160), nullable=False)
     phone: Mapped[str] = mapped_column(String(20), nullable=False)
     email: Mapped[str] = mapped_column(String(320), nullable=False, default="")
