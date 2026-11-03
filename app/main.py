@@ -3,7 +3,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.requests import Request
@@ -15,6 +14,7 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
+from app.core.media_files import MediaFiles
 from app.db.session import engine
 from app.middleware import RequestContextMiddleware, SecurityHeadersMiddleware
 from app.rate_limit import limiter
@@ -81,8 +81,11 @@ app.include_router(health.router, prefix="/health", tags=["health"])
 app.include_router(metrics.router, tags=["metrics"])
 app.include_router(api_router, prefix=settings.api_v1_prefix)
 
-settings.media_root.mkdir(parents=True, exist_ok=True)
-app.mount("/media", StaticFiles(directory=settings.media_root), name="media")
+# Local disk only. With R2 configured the container has nothing to create,
+# and /media redirects to the public bucket URL.
+if not settings.object_storage_enabled:
+    settings.media_root.mkdir(parents=True, exist_ok=True)
+app.mount("/media", MediaFiles(), name="media")
 
 
 @app.get("/", tags=["meta"])

@@ -11,6 +11,13 @@ os.environ.update(
         "CORS_ORIGINS": "http://testserver",
         "SMTP_HOST": "",
         "TURNSTILE_SECRET_KEY": "",
+        # Keep the suite on the local-disk media path even if a developer
+        # .env points uploads at R2.
+        "S3_ENDPOINT_URL": "",
+        "S3_BUCKET": "",
+        "S3_ACCESS_KEY_ID": "",
+        "S3_SECRET_ACCESS_KEY": "",
+        "MEDIA_PUBLIC_BASE_URL": "",
     }
 )
 

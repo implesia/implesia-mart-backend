@@ -3,8 +3,11 @@
 #
 #   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
 #
-# Uploads live on the named volume `media`, so rebuilding or recreating the
-# container keeps them. See docs/deploy-media-persistence.md.
+# Uploads go to Cloudflare R2 when .env.production sets S3_ENDPOINT_URL,
+# S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, and MEDIA_PUBLIC_BASE_URL
+# together. Leave all five empty to keep writing the named volume `media`
+# (the local fallback, and the source for the one-time copy into R2).
+# See docs/deploy-media-persistence.md.
 name: implesia-mart-prod
 
 services:

@@ -2,6 +2,14 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Uploaded media is stored in Cloudflare R2 (2026-11-03).**
+  - Photos and videos are uploaded to the S3-compatible bucket when `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, and `MEDIA_PUBLIC_BASE_URL` are all set. The object key is `<folder>/<name>` (the same layout as the old disk path). The database value stays `/media/<folder>/<name>`. `Content-Type` is set from the sniffed type.
+  - `GET` and `HEAD /media/<folder>/<name>` answer `307` to `MEDIA_PUBLIC_BASE_URL/<folder>/<name>` in that mode. Paths that leave the known folders, or that contain `..`, are `404`.
+  - Deleting an owned media reference deletes the object. When the five settings are empty, writes, reads, and deletes stay on `media_root` (local disk), which is what tests and local Compose use. A partial set of the five settings refuses to start.
+  - Existing files on the VPS volume are not moved by the app. The copy command (rclone or `aws s3 sync`, same keys) is in `docs/deploy-media-persistence.md`.
+  - Removed the committed Wrangler account cache and ignored `.wrangler/`.
+  - Files: `app/core/config.py`, `app/core/media_files.py`, `app/services/image_storage.py`, `app/main.py`, `pyproject.toml`, `uv.lock`, `tests/test_object_storage.py`, `tests/conftest.py`, `tests/test_deploy_config.py`, `.env.example`, `.gitignore`, `docker-compose.prod.yml`, `render.yaml`, `docs/deploy-media-persistence.md`, docs.
+  - Frontend: no API change. Keep using the `/media/...` values the API returns. The browser follows the redirect to `https://media.implesia.com/...`. If an image optimizer refuses a redirect to another host, allow `media.implesia.com` or load that host directly.
 - **Showcase choices: published products from any category (2026-11-03).**
   - Bug 1: `choices` in `GET /api/v1/admin/home/showcase` were "every product in the row key's category subtree", with no `published` filter. So the Add product modal listed hidden products (live: the `fashion` category holds only hidden products) and never the published ones (live: all 5 published products are in `electronics-2`).
   - Bug 2: the Trending row has key `gadgets`, but live has no `gadgets` category (`GET /categories/gadgets` → 404), so its `choices` were empty and the frontend disabled "Add product".

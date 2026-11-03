@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     project_name: str = "Implesia Mart Backend"
     api_v1_prefix: str = "/api/v1"
     media_root: Path = Path("media")
+    # Cloudflare R2 (S3-compatible). All five empty: files stay on media_root.
+    # A partial set is refused so a deploy cannot quietly write to the
+    # container disk and lose the files on the next restart.
+    s3_endpoint_url: str = ""
+    s3_bucket: str = ""
+    s3_access_key_id: SecretStr = SecretStr("")
+    s3_secret_access_key: SecretStr = SecretStr("")
+    media_public_base_url: str = ""
     cors_origins: CsvList = Field(default_factory=list)
 
     # Security
@@ -110,6 +118,29 @@ class Settings(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def _object_storage_config(self) -> Self:
+        endpoint = self.s3_endpoint_url.strip()
+        bucket = self.s3_bucket.strip()
+        access = self.s3_access_key_id.get_secret_value().strip()
+        secret = self.s3_secret_access_key.get_secret_value().strip()
+        public = self.media_public_base_url.strip()
+        filled = (endpoint, bucket, access, secret, public)
+        if not any(filled):
+            return self
+        if not all(filled):
+            raise ValueError(
+                "Object storage needs S3_ENDPOINT_URL, S3_BUCKET, S3_ACCESS_KEY_ID, "
+                "S3_SECRET_ACCESS_KEY, and MEDIA_PUBLIC_BASE_URL set together"
+            )
+        if "/" in bucket or "\\" in bucket or ".." in bucket:
+            raise ValueError("S3_BUCKET must be a single bucket name")
+        _require_origin(endpoint, "S3_ENDPOINT_URL", production=self.environment == "production")
+        _require_origin(
+            public, "MEDIA_PUBLIC_BASE_URL", production=self.environment == "production"
+        )
+        return self
+
     @field_validator(
         "cors_origins", "order_notification_recipients", "trusted_proxies", mode="before"
     )
@@ -147,6 +178,29 @@ class Settings(BaseSettings):
     @property
     def turnstile_enabled(self) -> bool:
         return bool(self.turnstile_secret_key)
+
+    @property
+    def object_storage_enabled(self) -> bool:
+        """True only when every R2 setting is present. Otherwise files stay on disk."""
+        return bool(
+            self.s3_endpoint_url.strip()
+            and self.s3_bucket.strip()
+            and self.s3_access_key_id.get_secret_value().strip()
+            and self.s3_secret_access_key.get_secret_value().strip()
+            and self.media_public_base_url.strip()
+        )
+
+
+def _require_origin(url: str, name: str, *, production: bool) -> None:
+    parts = urlsplit(url)
+    if parts.scheme not in {"https", "http"} or not parts.hostname:
+        raise ValueError(f"{name} must be an http(s) origin")
+    if parts.username or parts.password:
+        raise ValueError(f"{name} must not include credentials")
+    if parts.path not in {"", "/"} or parts.query or parts.fragment:
+        raise ValueError(f"{name} must not include a path, query, or fragment")
+    if production and parts.scheme != "https":
+        raise ValueError(f"{name} must use https in production")
 
 
 def _asyncpg_url(url: str) -> str:
