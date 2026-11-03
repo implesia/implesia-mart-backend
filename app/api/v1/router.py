@@ -21,6 +21,7 @@ from app.api.v1.endpoints import (
     site_contact,
     site_footer,
     site_header,
+    site_payment,
     users,
 )
 from app.api.v1.endpoints.about import cta as about_cta
@@ -207,6 +208,13 @@ api_router.include_router(
     site_contact.admin_router,
     prefix="/admin/site/contact",
     tags=["admin:site:contact"],
+    dependencies=_AUDITED,
+)
+api_router.include_router(site_payment.public_router, prefix="/site/payment", tags=["site:payment"])
+api_router.include_router(
+    site_payment.admin_router,
+    prefix="/admin/site/payment",
+    tags=["admin:site:payment"],
     dependencies=_AUDITED,
 )
 api_router.include_router(site_header.public_router, prefix="/site/header", tags=["site:header"])

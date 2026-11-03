@@ -402,6 +402,14 @@ Product admin create/update also take `regular_price`, `base_discount_percent`, 
 | GET | `/api/v1/admin/site/contact` | admin (editor, superadmin) | — | `SiteContactAdmin` |
 | PUT | `/api/v1/admin/site/contact` | admin (editor, superadmin) | `SiteContactWrite` | `SiteContactAdmin` |
 
+## `admin/site/payment`
+
+| Method | Path | Access | Request body | Response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/v1/admin/site/payment` | admin (editor, superadmin) | — | `PaymentSettingsAdmin` |
+| POST | `/api/v1/admin/site/payment/qr` | admin (editor, superadmin) | multipart `image` (JPEG/PNG/WEBP/GIF, 5 MB) | `PaymentSettingsAdmin` |
+| DELETE | `/api/v1/admin/site/payment/qr` | admin (editor, superadmin) | — | `PaymentSettingsAdmin` |
+
 ## `admin/site/footer`
 
 | Method | Path | Access | Request body | Response |
@@ -529,6 +537,8 @@ Product admin create/update also take `regular_price`, `base_discount_percent`, 
 | POST | `/api/v1/orders/lookup` | public | `OrderLookup` | `PublicOrderRead` |
 | POST | `/api/v1/orders/quote` | public | `OrderQuoteRequest` | `QuoteRead` |
 
+`OrderCreate` takes `payment_method` (`cod` default, or `bangla_qr`), `advance_percent` (25/50/75/100, only for `bangla_qr`) and `payment_reference` (transaction ID or sender number, required for `bangla_qr`; spaces removed, then 4–64 letters, digits, `+` or `-`). The amounts are never accepted from the client. `QuoteRead.bangla_qr_options` lists `{percent, advance, due}` for the total (empty when no QR is set). `OrderRead` and `PublicOrderRead` return `payment_method`, `advance_percent`, `advance_amount`, `due_amount`; `OrderRead` (placed order, admin) also returns `payment_reference`.
+
 ## `pages/about`
 
 | Method | Path | Access | Request body | Response |
@@ -632,6 +642,12 @@ Product admin create/update also take `regular_price`, `base_discount_percent`, 
 | Method | Path | Access | Request body | Response |
 | --- | --- | --- | --- | --- |
 | GET | `/api/v1/site/contact` | public | — | `SiteContactPublic` |
+
+## `site/payment`
+
+| Method | Path | Access | Request body | Response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/v1/site/payment` | public (`Cache-Control: no-store`) | — | `PaymentSettingsPublic` (`bangla_qr_src` or `null`, `bangla_qr_enabled`) |
 
 ## `site/footer`
 

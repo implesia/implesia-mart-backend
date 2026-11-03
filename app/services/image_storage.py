@@ -54,6 +54,7 @@ _FOLDERS = frozenset(
         "promo",
         "home-media",
         "footer",
+        "payment",
     }
 )
 

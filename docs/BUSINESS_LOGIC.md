@@ -102,8 +102,17 @@ Code: `app/services/badge_service.py`, `app/schemas/badge.py`, `app/models/badge
 - A product with options needs an option chosen before ordering.
 - Stock refusals use a generic message that never reveals the remaining count. The exposed maximum (`max_per_order`, variant/cart `max_quantity`) is min(limit, stock), so stock below the limit can be inferred from it.
 - Order creation accepts an `Idempotency-Key` (8–80 letters, numbers, `_` or `-`).
+- Order and lookup phone: Bangladesh mobile `01[3-9]XXXXXXXX`, also written as `880…` or `+880…`, with spaces, dashes, dots, brackets or Bengali digits; always stored and compared as `01XXXXXXXXX`.
 - Delivery fees come from the delivery zones (district/area).
 - Public order lookup does not expose the delivery address.
+
+## Bangla QR payment
+
+- One Bangla QR image for the whole store, in `payment_settings` (slug `main`, `bangla_qr_src`). Admin uploads, replaces (old file deleted) or deletes it at `admin/site/payment`. The public `GET /site/payment` is `no-store`, so a change shows at once.
+- No QR set → `bangla_qr_enabled: false`, the quote has no `bangla_qr_options`, and a `bangla_qr` order is refused with 422 "Bangla QR পেমেন্ট এখন চালু নেই। ক্যাশ অন ডেলিভারি বেছে নিন।".
+- Split (server only, from the order total incl. delivery): `advance = ceil(total × percent / 100)` in whole taka, `due = total − advance` (cash on delivery). Percent must be 25, 50, 75 or 100. Example: total 1001 → 25% = 251 + 750 due.
+- `bangla_qr` needs a transaction ID / sender number (`payment_reference`); COD must not send a percent or reference. COD orders store advance 0, due = total. Orders placed before migration 0091 have `due_amount` NULL and read as due = total.
+- The payment is not verified automatically: staff check the reference against the received payment before confirming the order.
 
 ## Prices and discounts
 
