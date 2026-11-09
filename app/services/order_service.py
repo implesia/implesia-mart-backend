@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import ConflictError, NotFoundError, UnprocessableError
 from app.models.audit_event import AuditAction
+from app.models.inventory import MovementType
 from app.models.order import (
     ORDER_TRANSITIONS,
     Order,
@@ -42,6 +43,7 @@ from app.schemas.pricing import QUANTITY_CEILING
 from app.services import (
     audit_service,
     delivery_service,
+    inventory_service,
     payment_service,
     pricing_service,
     variant_service,
@@ -348,6 +350,14 @@ async def _claim(
             raise UnprocessableError(variant_service.NOT_ENOUGH_STOCK)
         raise UnprocessableError("This product cannot be ordered")
     price, title, slug, image_src, left, compare_at, base = row
+    if not unlimited:
+        inventory_service.stage_sale(
+            db,
+            product_id=product.id,
+            variant_id=None,
+            quantity=-quantity,
+            unit_cost=product.cost_price,
+        )
     if left == 0:
         await db.execute(
             update(Product)
@@ -407,6 +417,14 @@ async def _claim_variant(
             raise UnprocessableError(variant_service.NOT_ENOUGH_STOCK)
         raise UnprocessableError("This product cannot be ordered")
     await variant_service.rollup_by_id(db, product.id)
+    if variant.quantity is not None:
+        inventory_service.stage_sale(
+            db,
+            product_id=product.id,
+            variant_id=variant.id,
+            quantity=-quantity,
+            unit_cost=product.cost_price,
+        )
     price, sku, compare_at = row
     line = pricing_service.price_line(
         regular=pricing_service.regular_of(int(price), compare_at),
@@ -454,6 +472,7 @@ async def create_order(
     replayed = await _replay(db, actor, key)
     if replayed is not None:
         return _read(replayed)
+    inventory_service.clear_pending_sales(db)
 
     requested = await _requested(db, shopper, payload)
     if not requested:
@@ -533,6 +552,7 @@ async def create_order(
         )
     db.add(order)
     await db.flush()
+    inventory_service.attach_pending_sales(db, order.id)
     db.add(OrderIdempotency(actor=actor, idempotency_key=key, order_id=order.id))
 
     if payload.source == "cart":
@@ -704,7 +724,13 @@ async def get_order(db: AsyncSession, order_id: uuid.UUID) -> OrderRead:
     return _read(await _load(db, order_id))
 
 
-async def _restore(db: AsyncSession, order: Order) -> None:
+async def _restore(
+    db: AsyncSession,
+    order: Order,
+    *,
+    stock_reason: str,
+    actor_id: uuid.UUID | None,
+) -> None:
     # Release the hold in one conditional update so two concurrent requests cannot both restock.
     released = (
         await db.execute(
@@ -716,17 +742,37 @@ async def _restore(db: AsyncSession, order: Order) -> None:
     ).one_or_none()
     if released is None:
         return
+    movement_type = (
+        MovementType.RETURN.value
+        if stock_reason == OrderStatus.RETURNED.value
+        else MovementType.CANCEL.value
+    )
     for item in order.items:
         if item.product_id is None:
             continue
         if item.variant_id is not None:
             await variant_service.lock_product(db, item.product_id)
+            variant_row = await db.get(ProductVariant, item.variant_id, populate_existing=True)
+            tracked = variant_row is not None and variant_row.quantity is not None
             await variant_service.release_stock(db, item.variant_id, item.quantity)
             await variant_service.rollup_by_id(db, item.product_id)
+            if tracked:
+                product = await db.get(Product, item.product_id)
+                inventory_service.add_movement(
+                    db,
+                    product_id=item.product_id,
+                    variant_id=item.variant_id,
+                    quantity=item.quantity,
+                    movement_type=movement_type,
+                    unit_cost=product.cost_price if product is not None else None,
+                    order_id=order.id,
+                    actor_id=actor_id,
+                )
             continue
-        owner = await db.get(Product, item.product_id)
+        owner = await db.get(Product, item.product_id, populate_existing=True)
         if owner is not None and owner.has_variants:
             continue  # the variant was deleted; its stock row is gone, nothing to give back
+        tracked = owner is not None and owner.quantity is not None
         await db.execute(
             update(Product)
             .where(Product.id == item.product_id, Product.quantity.is_not(None))
@@ -739,6 +785,17 @@ async def _restore(db: AsyncSession, order: Order) -> None:
             .where(Product.quantity > 0)
             .values(status=StockStatus.AVAILABLE.value)
         )
+        if tracked and owner is not None:
+            inventory_service.add_movement(
+                db,
+                product_id=item.product_id,
+                variant_id=None,
+                quantity=item.quantity,
+                movement_type=movement_type,
+                unit_cost=owner.cost_price,
+                order_id=order.id,
+                actor_id=actor_id,
+            )
 
 
 def _status_assignments(target: str) -> dict[str, Any]:
@@ -786,7 +843,7 @@ async def update_order(
             await db.rollback()
             raise ConflictError("This order was changed by someone else. Reload and try again.")
         if target in _RESTOCK:
-            await _restore(db, order)
+            await _restore(db, order, stock_reason=target, actor_id=actor_id)
         await audit_service.record(
             db,
             actor_id=actor_id,

@@ -96,6 +96,40 @@ Body/response: `{"tiers_enabled": true, "max_discount_percent": 90, "max_quantit
 
 Product admin create/update also take `regular_price`, `base_discount_percent`, `tier_mode` (`global`/`custom`) and `tiers`; `AdminProductRead` returns them. `GET /products/by-slug/{slug}` and `/products/{id}` return `pricing` (`regular_price`, `selling_price`, `base_discount_percent`, `max_discount_percent`, `tiers` in force). `max_order_quantity` on a product: `null` = store-wide limit, 1–1000 = custom limit. Public detail `max_per_order`, each `variants[].max_quantity` and each cart line's `max_quantity` = min(effective limit, stock). Cart add/update and order create return 422 "এই পণ্যটি এক অর্ডারে সর্বোচ্চ Nটি নেওয়া যাবে।" above the limit. Cart and quote lines return `regular_price`, `base_discount_percent`, `quantity_discount_percent`, `total_discount_percent`; admin order items return the stored snapshot.
 
+## `admin/inventory`
+
+Staff inventory. `viewer` can read. Writes need `editor` or `superadmin`. Every route is `Cache-Control: no-store`. `unit_cost` and `cost_price` appear only here and on the admin product API, never on a public route. Lists use `page` and `page_size` and return `{items, total, page, page_size, pages}`.
+
+| Method | Path | Access | Request body | Response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/v1/admin/inventory/suppliers` | any signed-in staff | — | `Page[SupplierRead]` |
+| POST | `/api/v1/admin/inventory/suppliers` | admin (editor, superadmin) | `SupplierCreate` | `SupplierRead` |
+| GET | `/api/v1/admin/inventory/suppliers/{supplier_id}` | any signed-in staff | — | `SupplierRead` |
+| PATCH | `/api/v1/admin/inventory/suppliers/{supplier_id}` | admin (editor, superadmin) | `SupplierUpdate` | `SupplierRead` |
+| GET | `/api/v1/admin/inventory/purchases` | any signed-in staff | — | `Page[PurchaseRead]` |
+| POST | `/api/v1/admin/inventory/purchases` | admin (editor, superadmin) | `PurchaseCreate` | `PurchaseRead` |
+| GET | `/api/v1/admin/inventory/purchases/{purchase_id}` | any signed-in staff | — | `PurchaseRead` |
+| GET | `/api/v1/admin/inventory/movements` | any signed-in staff | — | `Page[MovementRead]` |
+| POST | `/api/v1/admin/inventory/adjustments` | admin (editor, superadmin) | `AdjustmentCreate` | `MovementRead` |
+| POST | `/api/v1/admin/inventory/opening-stock` | admin (editor, superadmin) | — | `OpeningStockResult` |
+| GET | `/api/v1/admin/inventory/exports/{kind}` | any signed-in staff | — | `.xlsx` file |
+| GET | `/api/v1/admin/inventory/imports/templates/{kind}` | any signed-in staff | — | `.xlsx` template |
+| POST | `/api/v1/admin/inventory/imports/preview` | any signed-in staff | multipart | `ImportPreview` |
+| POST | `/api/v1/admin/inventory/imports/confirm` | admin (editor, superadmin) | multipart | `ImportResult` |
+
+- Supplier queries: `q` (name contains), `page`, `page_size`.
+- Purchase queries: `supplier_id`, `date_from`, `date_to` (inclusive dates), `page`, `page_size`.
+- Movement queries: `product_id`, `movement_type` (`opening`, `purchase`, `sale`, `return`, `cancel`, `adjustment`), `date_from`, `date_to`, `page`, `page_size`. `date_from` after `date_to` is 422.
+- `SupplierCreate`: `name` (required), `phone`, `address`, `note`.
+- `PurchaseCreate`: `supplier_id`, `purchased_on` (`YYYY-MM-DD`), `invoice_no`, `note`, `items` (1–100 of `product_id`, optional `variant_id`, `quantity` ≥ 1, `unit_cost` ≥ 0). Saving increases stock and sets `cost_price` to the weighted average. See BUSINESS_LOGIC.md.
+- `AdjustmentCreate`: `product_id`, optional `variant_id`, `quantity` (non-zero signed difference), `reason` (required). Editor or above.
+- `OpeningStockResult`: `created`, `already_recorded`, `untracked`. Does not change stock. The same action from the shell is `python -m scripts.opening_stock`.
+- Export `kind`: `products`, `purchases`, `movements`. Optional `date_from` and `date_to`. The body is an `.xlsx` download.
+- Import `kind` for the template path, and form field `import_type` for preview and confirm: `purchases`, `opening`, `stock_count`, `cost_price`.
+- Preview and confirm send multipart `file` plus `import_type`. Confirm also accepts `confirm_duplicate` (`true` / `false`, default false). Preview writes nothing. Confirm saves every valid row in one transaction and skips invalid rows. A file whose every row is invalid is 422 and saves nothing. The same file bytes imported again are 409 until `confirm_duplicate` is true. Non-`.xlsx` files, files over 2 MB, and sheets over 2,000 data rows are 422.
+- Preview `rows[]`: `row` (sheet row number), `valid`, `action`, `errors` (what is wrong, empty when valid), `summary`.
+- There is no route to update or delete a movement, a purchase, or a purchase line.
+
 ## `admin/home/banner`
 
 | Method | Path | Access | Request body | Response |
