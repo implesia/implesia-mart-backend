@@ -105,6 +105,8 @@ Code: `app/services/badge_service.py`, `app/schemas/badge.py`, `app/models/badge
 - Order and lookup phone: Bangladesh mobile `01[3-9]XXXXXXXX`, also written as `880…` or `+880…`, with spaces, dashes, dots, brackets or Bengali digits; always stored and compared as `01XXXXXXXXX`.
 - Delivery fees come from the delivery zones (district/area).
 - Public order lookup does not expose the delivery address.
+- `delivered_at` is set the first time the status becomes `delivered`, and `returned_at` the first time it becomes `returned` (`order_service.update_order`, the only status change). The clock is timezone-aware UTC. A later transition does not replace either value. Going to `returned` after `delivered` keeps `delivered_at` and sets `returned_at`. Admin order reads return both; public lookup does not.
+- Migration 0092 fills those columns only from the earliest `audit_events` row (`ORDER_STATUS_CHANGED`, `metadata.to`) for orders that are currently delivered or returned. There is no separate status-history table. No recorded event means NULL. `orders.created_at` and `orders.updated_at` are never used as a substitute.
 
 ## Bangla QR payment
 
@@ -117,6 +119,7 @@ Code: `app/services/badge_service.py`, `app/schemas/badge.py`, `app/models/badge
 ## Prices and discounts
 
 - Each product has a **regular price** and a **base discount %**. The quantity-1 selling price is `round(regular × (1 − base/100))`, whole taka, half up.
+- **Cost price** (`products.cost_price`, numeric, null or `>= 0`) is what the shop paid. It is read and written only by the admin product API (create, update, get, list), editor or above. Public product list, detail, search, category lists, and home product cards omit it. A change is stored on the product price audit row with the old and new value.
 - **Quantity tiers** give a discount % on the line total for buying more pieces in one line: the tier with the highest `min_quantity ≤ quantity` counts (a quantity with no tier of its own uses the nearest lower tier; below the first tier, or with no tiers, there is no quantity discount). Defaults: 2 → 0.25, 3 → 0.5, 4 → 0.75, 5 → 1, 6 → 1.25, 7 → 1.5, 8+ → 2.
 - Line price (since 2026-11-02): `total = selling price × quantity`; `final = ceil(total − total × tier % / 100)`, always rounded **up** to whole taka; `discount = total − final`. Example: ৳700 × 2 at 0.25 % = 1396.5 → ৳1,397; × 3 at 0.75 % = 2084.25 → ৳2,085; × 4 at 1 % = ৳2,772 exactly. Worked out in integers (percent in hundredths), so an exact result is never bumped up by float error (`pricing_service.discounted_total`).
 - The tier % is capped so `base + tier ≤ min(max %, 99.99 %)`; a discount never reaches 100 %. `total_discount_percent` = base + tier (capped) is a summary only. If the max % is below a product's base, the selling price is the regular price at the max % and no tier applies.

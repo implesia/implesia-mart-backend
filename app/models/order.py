@@ -1,10 +1,12 @@
 import uuid
+from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -84,6 +86,7 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         Index("ix_orders_phone", "phone"),
         Index("ix_orders_created_at", "created_at"),
+        Index("ix_orders_status", "status"),
     )
 
     number: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -115,6 +118,10 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     total: Mapped[int] = mapped_column(Integer, nullable=False)
     courier_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     tracking_number: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    # First time the status became delivered or returned. Kept forever; a later move does not
+    # replace it. NULL when that change was never recorded.
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    returned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     inventory_held: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=true()
     )

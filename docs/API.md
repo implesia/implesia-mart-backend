@@ -22,6 +22,7 @@ Generated from the FastAPI routers (`app/api/v1/router.py` and `app/api/v1/endpo
 - `POST /admin/products` (multipart): `payload` = JSON product (`ProductCreate`), `images` files with `image_alts` JSON list, optional `quality_image` + `quality_image_alt`, `videos` files with `video_alts` JSON list, `thumbnails` files with `thumbnail_targets` JSON list (gallery item id or `video:<n>`). New files are appended after the `content.gallery` items in the payload. Returns `AdminProductRead` (201).
 - `PATCH /admin/products/{id}` (multipart): same parts, `payload` = partial `ProductUpdate`. Errors use the default envelope (422, English); a taken `slug` returns 409 `{"errors": [{"field": "slug", "message", "fix"}]}`.
 - SEO: create/update take `seo_title` (≤120), `seo_description` (≤320), `seo_keywords` (≤500); update also takes `slug`. `AdminProductRead` and `PublicProductDetail` return the three SEO fields (`""` when unset).
+- `cost_price` (number, two decimal places, `>= 0`, or `null`) is accepted on `POST` and `PATCH /admin/products` and returned on admin product list, get, create, and update (`AdminProductCard` / `AdminProductRead`). Omitted on PATCH keeps the stored value; `null` clears it. A negative value is 400 on create (`errors[].field` = `costPrice`) and 422 on update. Editor or above only; a viewer gets 403. Public product responses never include `cost_price`.
 - `DELETE /admin/products/{id}`: 204.
 - `DELETE /admin/products/bulk`: body `{"ids": ["<uuid>", ...]}` (1–100 after de-duplication). Returns `{"requested", "deleted", "deleted_ids", "skipped": [{"id", "reason": "not_found", "message"}], "failed": [{"id", "reason": "error", "message"}]}`.
 - `GET /products/by-slug/{slug}` and `GET /products/{id}`: `PublicProductDetail`, published products only. `by-slug` also resolves a product's old slugs (`product_slug_redirects`). `gallery` items carry `kind` (`image`/`video`/`youtube`), `src`, `youtube_id`, `alt`, `thumbnail` (custom thumbnail or empty).
@@ -220,6 +221,8 @@ Product admin create/update also take `regular_price`, `base_discount_percent`, 
 | GET | `/api/v1/admin/orders` | admin (editor, superadmin) | — | `AdminOrderList` |
 | GET | `/api/v1/admin/orders/{order_id}` | admin (editor, superadmin) | — | `OrderRead` |
 | PATCH | `/api/v1/admin/orders/{order_id}` | admin (editor, superadmin) | `OrderUpdate` | `OrderRead` |
+
+`OrderRead` includes `delivered_at` and `returned_at` (ISO datetime or `null`). They are set the first time the status becomes `delivered` or `returned` and are not replaced later. `PublicOrderRead` (order lookup) does not include them. `POST /orders` returns them as `null` on a new order.
 
 ## `admin/pages/about`
 
@@ -537,7 +540,7 @@ Product admin create/update also take `regular_price`, `base_discount_percent`, 
 | POST | `/api/v1/orders/lookup` | public | `OrderLookup` | `PublicOrderRead` |
 | POST | `/api/v1/orders/quote` | public | `OrderQuoteRequest` | `QuoteRead` |
 
-`OrderCreate` takes `payment_method` (`cod` default, or `bangla_qr`), `advance_percent` (25/50/75/100, only for `bangla_qr`) and `payment_reference` (transaction ID or sender number, required for `bangla_qr`; spaces removed, then 4–64 letters, digits, `+` or `-`). The amounts are never accepted from the client. `QuoteRead.bangla_qr_options` lists `{percent, advance, due}` for the total (empty when no QR is set). `OrderRead` and `PublicOrderRead` return `payment_method`, `advance_percent`, `advance_amount`, `due_amount`; `OrderRead` (placed order, admin) also returns `payment_reference`.
+`OrderCreate` takes `payment_method` (`cod` default, or `bangla_qr`), `advance_percent` (25/50/75/100, only for `bangla_qr`) and `payment_reference` (transaction ID or sender number, required for `bangla_qr`; spaces removed, then 4–64 letters, digits, `+` or `-`). The amounts are never accepted from the client. `QuoteRead.bangla_qr_options` lists `{percent, advance, due}` for the total (empty when no QR is set). `OrderRead` and `PublicOrderRead` return `payment_method`, `advance_percent`, `advance_amount`, `due_amount`; `OrderRead` (placed order, admin) also returns `payment_reference`, `delivered_at`, and `returned_at`.
 
 ## `pages/about`
 

@@ -12,6 +12,7 @@ INTERNAL = {
     "sort_order",
     "created_at",
     "has_stock",
+    "cost_price",
 }
 # `updated_at` is public on purpose: the storefront sitemap uses it as lastmod.
 

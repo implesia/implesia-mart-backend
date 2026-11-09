@@ -237,6 +237,10 @@ class OrderRead(BaseModel):
     tracking_number: str
     items: list[OrderItemRead]
     created_at: datetime
+    # First time the order was delivered or returned. Null until that happens, and on orders
+    # whose change was never recorded. Public order lookup does not include these.
+    delivered_at: datetime | None = None
+    returned_at: datetime | None = None
     next_statuses: list[str] = Field(default_factory=list)
 
 

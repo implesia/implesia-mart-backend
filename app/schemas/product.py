@@ -2,10 +2,18 @@ import re
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 from urllib.parse import unquote, urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PlainSerializer,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from app.models.product import ProductBadge, SpecGroup, StockStatus
 from app.schemas.badge import MAX_PER_PRODUCT, BadgeRef, PublicBadge
@@ -27,6 +35,18 @@ _BIDI = dict.fromkeys(map(ord, "\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068
 SLUG_PATTERN = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
 MAX_PRICE = 10_000_000
 MAX_QUANTITY = 1_000_000
+
+
+def _cost_json(value: Decimal) -> float:
+    return float(value)
+
+
+# Wholesale cost in taka. Two decimal places, never negative. JSON number, or null when unset.
+CostPrice = Annotated[
+    Decimal,
+    Field(ge=0, max_digits=12, decimal_places=2),
+    PlainSerializer(_cost_json, return_type=float, when_used="json"),
+]
 
 DEFAULT_STOCK_LABEL = "স্টকে আছে"
 DEFAULT_QUALITY_TITLE = "কোয়ালিটি চেকড প্রোডাক্ট"
@@ -523,6 +543,8 @@ class ProductCreate(BaseModel):
     # Required to publish. A draft (`published: false`) may leave it out; it is stored as 0.
     price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     compare_at_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
+    # What the shop paid. Omitted or null = unknown. Editor and above only; never public.
+    cost_price: CostPrice | None = None
     # Preferred over price/compare_at_price: the regular price and the base discount %.
     # The server works out the selling price (`price`) and keeps `compare_at_price` = regular.
     regular_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
@@ -631,6 +653,8 @@ class ProductUpdate(BaseModel):
     category: str | None = Field(default=None, max_length=80)
     price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     compare_at_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
+    # Omitted = keep. Null clears it.
+    cost_price: CostPrice | None = None
     regular_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     base_discount_percent: Percent | None = None
     tier_mode: Literal["global", "custom"] | None = None
@@ -725,6 +749,7 @@ class AdminProductCard(BaseModel):
     category_path: list[CategoryRef]
     price: int
     compare_at_price: int | None
+    cost_price: CostPrice | None = None
     quantity: int | None
     status: StockStatus
     badge: ProductBadge | None
@@ -839,6 +864,8 @@ class PublicOptionGroup(BaseModel):
 
 
 class PublicProductCard(BaseModel):
+    """Storefront card. cost_price, quantity, and published stay off this model."""
+
     id: uuid.UUID
     slug: str
     title: str

@@ -123,6 +123,7 @@ _FIELD_KEYS: Mapping[str, str] = {
     "category_id": "category",
     "price": "price",
     "compare_at_price": "compareAtPrice",
+    "cost_price": "costPrice",
     "regular_price": "regularPrice",
     "base_discount_percent": "baseDiscount",
     "tier_mode": "quantityTiers",
@@ -160,6 +161,7 @@ _LABELS = {
     "category": "ক্যাটাগরি",
     "price": "দাম",
     "compareAtPrice": "আগের দাম (compare-at)",
+    "costPrice": "ক্রয়মূল্য",
     "regularPrice": "রেগুলার দাম",
     "baseDiscount": "বেস ডিসকাউন্ট (%)",
     "quantityTiers": "পরিমাণভিত্তিক ছাড়",
@@ -343,6 +345,18 @@ def _numeric(field: str, kind: str, ctx: Mapping[str, Any]) -> FieldError | None
     integer_fix = "শুধু পূর্ণ সংখ্যা লিখুন, যেমন ৫০০"
     if field in {"price", "compareAtPrice"}:
         integer_fix = "টাকার পরিমাণ পূর্ণ সংখ্যায় লিখুন, যেমন ৫০০"
+    if field == "costPrice" and kind in {
+        "float_parsing",
+        "decimal_parsing",
+        "decimal_type",
+        "decimal_max_places",
+        "decimal_max_digits",
+    }:
+        return _err(
+            field,
+            f"{label} সঠিক নয়",
+            "০ বা তার বেশি একটা দাম লিখুন, যেমন ২৫০ বা ২৫০.৫০",
+        )
     if kind in {"int_parsing", "int_type", "int_from_float", "float_parsing"}:
         return _err(field, f"{label} সংখ্যায় দিতে হবে", integer_fix)
     if kind == "greater_than_equal":
