@@ -394,6 +394,7 @@ async def _insert_product(db: AsyncSession, payload: ProductCreate) -> Product:
         category_id=category.id if category is not None else None,
         price=priced.get("price", 0),
         compare_at_price=priced.get("compare_at_price"),
+        cost_price=payload.cost_price,
         base_discount=priced.get("base_discount"),
         tier_mode=payload.tier_mode,
         tiers=pricing_service.tiers_to_json(payload.tiers),
@@ -493,6 +494,7 @@ async def _apply_update(
     before = {
         "price": product.price,
         "compare_at_price": product.compare_at_price,
+        "cost_price": product.cost_price,
         "quantity": product.quantity,
         "status": product.status,
     }
@@ -622,7 +624,7 @@ async def _audit_catalog_changes(
     actor: User,
     before: dict[str, Any],
 ) -> None:
-    price_changes = _field_changes(before, product, ("price", "compare_at_price"))
+    price_changes = _field_changes(before, product, ("price", "compare_at_price", "cost_price"))
     if price_changes:
         await audit_service.record(
             db,
@@ -901,6 +903,7 @@ def admin_card(
         category_path=category_service.refs(index, product.category_id),
         price=product.price,
         compare_at_price=product.compare_at_price,
+        cost_price=product.cost_price,
         quantity=product.quantity,
         status=StockStatus(product.status),
         badge=ProductBadge(product.badge) if product.badge else None,

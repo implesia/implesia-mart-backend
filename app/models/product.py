@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
@@ -8,6 +9,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     UniqueConstraint,
     false,
@@ -59,6 +61,10 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("price >= 0", name="price_non_negative"),
         CheckConstraint(
+            "cost_price IS NULL OR cost_price >= 0",
+            name="cost_price_non_negative",
+        ),
+        CheckConstraint(
             "compare_at_price IS NULL OR compare_at_price >= price",
             name="compare_at_gte_price",
         ),
@@ -109,6 +115,8 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     category: Mapped[str | None] = mapped_column(String(32), nullable=True)
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     compare_at_price: Mapped[int | None] = mapped_column(Integer)
+    # What the shop paid for the item. Admin product responses only; the storefront never sees it.
+    cost_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     # Base discount the admin set, in hundredths of a percent (2800 = 28 %). `price` is then
     # the quantity-1 selling price and `compare_at_price` the regular price. NULL = a price set
     # directly (older rows, variant products): the base % is derived from the two prices.

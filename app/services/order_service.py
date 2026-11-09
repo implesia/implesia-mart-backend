@@ -2,6 +2,7 @@ import hmac
 import re
 import secrets
 import uuid
+from datetime import UTC, datetime
 from typing import Any, NamedTuple
 
 from sqlalchemy import Select, func, or_, select, update
@@ -138,6 +139,8 @@ def _read(order: Order) -> OrderRead:
         total=order.total,
         courier_name=order.courier_name,
         tracking_number=order.tracking_number,
+        delivered_at=order.delivered_at,
+        returned_at=order.returned_at,
         items=[
             OrderItemRead(
                 id=item.id,
@@ -738,6 +741,21 @@ async def _restore(db: AsyncSession, order: Order) -> None:
         )
 
 
+def _status_assignments(target: str) -> dict[str, Any]:
+    """New status, plus the first delivery or return time.
+
+    `coalesce` keeps a time that is already stored. A later transition into the same
+    status does not replace it. The clock is timezone-aware UTC.
+    """
+    values: dict[str, Any] = {"status": target}
+    now = datetime.now(UTC)
+    if target == OrderStatus.DELIVERED.value:
+        values["delivered_at"] = func.coalesce(Order.delivered_at, now)
+    elif target == OrderStatus.RETURNED.value:
+        values["returned_at"] = func.coalesce(Order.returned_at, now)
+    return values
+
+
 async def update_order(
     db: AsyncSession, order_id: uuid.UUID, payload: OrderUpdate, *, actor: User | None = None
 ) -> OrderRead:
@@ -752,14 +770,18 @@ async def update_order(
                 f"Cannot change an order from {current} to {target}. Allowed: {allowed}"
             )
         # Compare-and-set on the status so a concurrent change is not silently overwritten.
+        # The delivery/return time is written in the same statement and only while still NULL,
+        # so every caller (admin, and any later bulk or courier path that uses this function)
+        # keeps the first timestamp.
         moved = (
             await db.execute(
                 update(Order)
                 .where(Order.id == order.id, Order.status == current)
-                .values(status=target)
+                .values(**_status_assignments(target))
                 .returning(Order.id)
             )
         ).one_or_none()
+        db.expire(order, ["status", "delivered_at", "returned_at"])
         if moved is None:
             await db.rollback()
             raise ConflictError("This order was changed by someone else. Reload and try again.")
