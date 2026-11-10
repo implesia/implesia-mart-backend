@@ -2,6 +2,10 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Testing branch: 0094 migration test survives the 0092 column cycle (2026-11-10).**
+  - On the shared Postgres integration database, `test_0092_migration` drops `orders.delivered_at` and `orders.returned_at` and adds them back. PostgreSQL drops `ix_orders_delivered_at` and `ix_orders_returned_at` with those columns. Migration 0092 does not recreate them; they belong to 0094. `test_0094_migration` treated a present `channel` column as "0094 is already applied" and its downgrade failed with `index "ix_orders_returned_at" does not exist`.
+  - The test now creates those two indexes when they are missing before it downgrades, and again in its cleanup. The migration files are unchanged.
+  - Files: `tests/integration/test_0094_migration.py`, docs. Frontend: no change.
 - **Admin sales reports (2026-11-10).** Depends on the unmerged inventory ledger (PR #9, migration 0093) and the cost-price work (PR #8, migration 0092). This branch is based on `cursor/inventory-ledger-2808` and its PR targets that branch. Do not merge it into `main` before those two.
   - Migration **0094** (`down_revision` **0093**), additive only. `orders.channel` (varchar 32, nullable, indexed, no server default) and `order_items.unit_cost` (numeric(12, 2), nullable, null or `>= 0`). Indexes on `orders.delivered_at` and `orders.returned_at`. No row is updated. Old orders stay `channel` NULL and old lines stay `unit_cost` NULL. `orders.source` and `ck_orders_source_known` are unchanged. Downgrade drops only the new indexes, the check, and the two columns.
   - New checkout orders store `channel = "website"` and copy `products.cost_price` onto each line as `unit_cost`. A later cost edit does not change the line. Neither field is on a public response.

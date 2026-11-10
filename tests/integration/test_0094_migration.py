@@ -40,6 +40,15 @@ async def _run(db: AsyncSession, direction: str) -> None:
     await db.commit()
 
 
+# Indexes 0094 creates on columns that already exist. 0092's integration test
+# drops delivered_at and returned_at and adds the columns back, and PostgreSQL
+# drops these indexes with the columns. 0092 does not recreate them.
+_TIMESTAMP_INDEXES = (
+    ("ix_orders_delivered_at", "delivered_at"),
+    ("ix_orders_returned_at", "returned_at"),
+)
+
+
 async def _columns(db: AsyncSession, table: str) -> set[str]:
     rows = await db.execute(
         text(
@@ -49,6 +58,40 @@ async def _columns(db: AsyncSession, table: str) -> set[str]:
         {"table": table},
     )
     return {row[0] for row in rows}
+
+
+async def _order_index_names(db: AsyncSession) -> set[str]:
+    rows = await db.execute(
+        text(
+            "SELECT indexname FROM pg_indexes "
+            "WHERE schemaname = 'public' AND tablename = 'orders'"
+        )
+    )
+    return {row[0] for row in rows}
+
+
+async def _restore_timestamp_indexes(db: AsyncSession) -> None:
+    """Put back indexes 0092's column cycle removes from the shared database."""
+    present = await _order_index_names(db)
+    missing = [(name, column) for name, column in _TIMESTAMP_INDEXES if name not in present]
+    if not missing:
+        return
+    for name, column in missing:
+        await db.execute(text(f'CREATE INDEX "{name}" ON orders ("{column}")'))
+    await db.commit()
+
+
+async def _ensure_0094_applied(db: AsyncSession) -> None:
+    """Start from the upgraded shape, including indexes create_all would have made.
+
+    `channel` is not enough to mean 0094 was applied. create_all adds that
+    column from the model, and the 0092 test can then remove the timestamp
+    indexes without touching `channel`.
+    """
+    if "channel" not in await _columns(db, "orders"):
+        await _run(db, "upgrade")
+        return
+    await _restore_timestamp_indexes(db)
 
 
 async def _snapshot(db: AsyncSession, product_id: uuid.UUID, order_id: uuid.UUID) -> tuple:
@@ -104,8 +147,7 @@ async def test_0094_adds_nullable_columns_and_leaves_existing_rows(
     item_id = uuid.uuid4()
 
     async with pg() as db:
-        if "channel" not in await _columns(db, "orders"):
-            await _run(db, "upgrade")
+        await _ensure_0094_applied(db)
 
     try:
         async with pg() as db:
@@ -227,3 +269,5 @@ async def test_0094_adds_nullable_columns_and_leaves_existing_rows(
         async with pg() as db:
             if "channel" not in await _columns(db, "orders"):
                 await _run(db, "upgrade")
+            else:
+                await _restore_timestamp_indexes(db)
