@@ -4,6 +4,8 @@ Open items found in the code and in recent work. Remove an item when it is done.
 
 ## Open
 
+- **Sales reports after migration 0094**: back up the database, merge PR #8 (migration 0092), then PR #9 (migration 0093), then the reports PR, and run `alembic upgrade head`. 0094 only adds nullable columns and indexes. It does not rewrite old orders. Do not run it against production from a laptop. There is no `cancelled_at`: the delivery report counts a cancellation by `updated_at` while the status is `cancelled`, so a later courier or tracking edit moves that day.
+- **Opening stock after migration 0093**: back up the database, merge the cost-price PR (#8) first, then this ledger, run `alembic upgrade head`, then run opening stock once (`POST /api/v1/admin/inventory/opening-stock` or `python -m scripts.opening_stock`). Running it twice does not duplicate rows. Do this while orders are quiet; the command locks each product row.
 - **PATCH product errors**: `PATCH /api/v1/admin/products/{id}` still returns the default 422 envelope with English messages. Create (`POST`) already returns the Bengali `{"errors": [{"field","message","fix"}]}` contract. Bring update in line and tell the frontend.
 - **Browser verification**: the admin bulk-delete UI has passed lint, type check, build and curl checks but has not had a full manual browser walkthrough.
 - **Upload size behind the production proxy**: videos are capped at 50 MB each by the API, and the frontend BFF allows request bodies up to 110 MB. Confirm the production reverse proxy / Cloudflare limit accepts a full gallery request of that size.

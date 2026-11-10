@@ -6,9 +6,11 @@ from app.api.v1.endpoints import (
     admin_badges,
     admin_cart,
     admin_delivery,
+    admin_inventory,
     admin_orders,
     admin_pricing,
     admin_products,
+    admin_reports,
     auth,
     cart,
     categories,
@@ -106,6 +108,7 @@ api_router.include_router(
 )
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(dashboard.router, prefix="/admin/dashboard", tags=["admin:dashboard"])
+api_router.include_router(admin_reports.router, prefix="/admin/reports", tags=["admin:reports"])
 api_router.include_router(admin_audit.router, prefix="/admin/audit-events", tags=["admin:audit"])
 api_router.include_router(
     admin_products.router, prefix="/admin/products", tags=["admin:products"], dependencies=_AUDITED
@@ -125,6 +128,12 @@ api_router.include_router(
 )
 api_router.include_router(
     admin_pricing.router, prefix="/admin/pricing", tags=["admin:pricing"], dependencies=_AUDITED
+)
+api_router.include_router(
+    admin_inventory.router,
+    prefix="/admin/inventory",
+    tags=["admin:inventory"],
+    dependencies=_AUDITED,
 )
 api_router.include_router(admin_cart.router, prefix="/admin/carts", tags=["admin:carts"])
 api_router.include_router(

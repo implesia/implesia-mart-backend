@@ -78,6 +78,38 @@ Generated from the FastAPI routers (`app/api/v1/router.py` and `app/api/v1/endpo
 | --- | --- | --- | --- | --- |
 | GET | `/api/v1/admin/dashboard` | admin (editor, superadmin) | — | `DashboardOverview` |
 
+Query: `range` is `today`, `yesterday`, `7d` (default), `30d`, `this-month`, `last-month`, or `custom`. Custom also needs `from` and `to` (`YYYY-MM-DD`, Asia/Dhaka). Longer than 366 days is 422. Revenue, orders, customers, pending, statuses, best sellers, areas, categories, and the chart follow `created_at` and leave cancelled and returned orders out of revenue. `delivered.value` counts orders whose `delivered_at` is in the window, including an order that was later returned. The figures are SQL aggregates. `Cache-Control: no-store`. Viewer is 403.
+
+## `admin/reports`
+
+Read-only sales and stock reports. Any signed-in staff, including `viewer`. There is no write route. Anonymous is 401. Every route is `Cache-Control: no-store`. Dates are inclusive Asia/Dhaka days. How each number is defined is in BUSINESS_LOGIC.md (Sales reports).
+
+Shared query: `preset` (`this_week`, `this_month`, `last_month`) or both `from` and `to` (`YYYY-MM-DD`). Sending both a preset and dates, sending neither, sending `from` after `to`, or a range longer than 366 days is 422. Optional `product_id`, `category_id` (that category and its descendants), and `channel` (at most 32 characters). An unknown product or category is 422. A channel does not match orders whose `channel` is NULL. `grain` (`day`, `week`, `month`) applies to the trend only.
+
+`cost_price` and `unit_cost` appear on the profit, product, and stock reports. They are not added to public product or order responses.
+
+| Method | Path | Access | Request body | Response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/v1/admin/reports/sales` | any signed-in staff | — | `SalesSummary` |
+| GET | `/api/v1/admin/reports/sales/export` | any signed-in staff | — | `.xlsx` |
+| GET | `/api/v1/admin/reports/profit` | any signed-in staff | — | `ProfitReport` |
+| GET | `/api/v1/admin/reports/profit/export` | any signed-in staff | — | `.xlsx` |
+| GET | `/api/v1/admin/reports/products` | any signed-in staff | — | `ProductReport` |
+| GET | `/api/v1/admin/reports/products/export` | any signed-in staff | — | `.xlsx` |
+| GET | `/api/v1/admin/reports/stock` | any signed-in staff | — | `StockReport` |
+| GET | `/api/v1/admin/reports/stock/export` | any signed-in staff | — | `.xlsx` |
+| GET | `/api/v1/admin/reports/movements` | any signed-in staff | — | `MovementReport` |
+| GET | `/api/v1/admin/reports/movements/export` | any signed-in staff | — | `.xlsx` |
+| GET | `/api/v1/admin/reports/delivery` | any signed-in staff | — | `DeliveryReport` |
+| GET | `/api/v1/admin/reports/delivery/export` | any signed-in staff | — | `.xlsx` |
+| GET | `/api/v1/admin/reports/trend` | any signed-in staff | — | `TrendReport` |
+| GET | `/api/v1/admin/reports/trend/export` | any signed-in staff | — | `.xlsx` |
+
+- Products and stock also take `page` (1–10000, default 1) and `page_size` (1–100, default 20). Export ignores the page and stops at 20,000 rows.
+- Stock on hand ignores the date window (`period_applies: false`) and the channel (`channel_applies: false`). Movements ignore the channel the same way.
+- The workbook states the report name, timezone, from, to, preset, product, category, and whether the channel filter applied. Money columns are numeric cells.
+- `MovementReport` uses the JSON key `return` for the return total. A sale quantity is negative.
+
 ## `admin/delivery`
 
 | Method | Path | Access | Request body | Response |
@@ -95,6 +127,40 @@ Generated from the FastAPI routers (`app/api/v1/router.py` and `app/api/v1/endpo
 Body/response: `{"tiers_enabled": true, "max_discount_percent": 90, "max_quantity_per_order": 10, "tiers": [{"min_quantity": 2, "extra_percent": 0.25}, ...]}`. `max_quantity_per_order` is 1–1000 (422 otherwise); omitted on `PUT` = keep the stored value. Percents 0–99.99 (two decimals), `min_quantity` 2–1000, at most 20 tiers, no duplicate quantities (422). `Cache-Control: no-store`.
 
 Product admin create/update also take `regular_price`, `base_discount_percent`, `tier_mode` (`global`/`custom`) and `tiers`; `AdminProductRead` returns them. `GET /products/by-slug/{slug}` and `/products/{id}` return `pricing` (`regular_price`, `selling_price`, `base_discount_percent`, `max_discount_percent`, `tiers` in force). `max_order_quantity` on a product: `null` = store-wide limit, 1–1000 = custom limit. Public detail `max_per_order`, each `variants[].max_quantity` and each cart line's `max_quantity` = min(effective limit, stock). Cart add/update and order create return 422 "এই পণ্যটি এক অর্ডারে সর্বোচ্চ Nটি নেওয়া যাবে।" above the limit. Cart and quote lines return `regular_price`, `base_discount_percent`, `quantity_discount_percent`, `total_discount_percent`; admin order items return the stored snapshot.
+
+## `admin/inventory`
+
+Staff inventory. `viewer` can read. Writes need `editor` or `superadmin`. Every route is `Cache-Control: no-store`. `unit_cost` and `cost_price` appear only here and on the admin product API, never on a public route. Lists use `page` and `page_size` and return `{items, total, page, page_size, pages}`.
+
+| Method | Path | Access | Request body | Response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/v1/admin/inventory/suppliers` | any signed-in staff | — | `Page[SupplierRead]` |
+| POST | `/api/v1/admin/inventory/suppliers` | admin (editor, superadmin) | `SupplierCreate` | `SupplierRead` |
+| GET | `/api/v1/admin/inventory/suppliers/{supplier_id}` | any signed-in staff | — | `SupplierRead` |
+| PATCH | `/api/v1/admin/inventory/suppliers/{supplier_id}` | admin (editor, superadmin) | `SupplierUpdate` | `SupplierRead` |
+| GET | `/api/v1/admin/inventory/purchases` | any signed-in staff | — | `Page[PurchaseRead]` |
+| POST | `/api/v1/admin/inventory/purchases` | admin (editor, superadmin) | `PurchaseCreate` | `PurchaseRead` |
+| GET | `/api/v1/admin/inventory/purchases/{purchase_id}` | any signed-in staff | — | `PurchaseRead` |
+| GET | `/api/v1/admin/inventory/movements` | any signed-in staff | — | `Page[MovementRead]` |
+| POST | `/api/v1/admin/inventory/adjustments` | admin (editor, superadmin) | `AdjustmentCreate` | `MovementRead` |
+| POST | `/api/v1/admin/inventory/opening-stock` | admin (editor, superadmin) | — | `OpeningStockResult` |
+| GET | `/api/v1/admin/inventory/exports/{kind}` | any signed-in staff | — | `.xlsx` file |
+| GET | `/api/v1/admin/inventory/imports/templates/{kind}` | any signed-in staff | — | `.xlsx` template |
+| POST | `/api/v1/admin/inventory/imports/preview` | any signed-in staff | multipart | `ImportPreview` |
+| POST | `/api/v1/admin/inventory/imports/confirm` | admin (editor, superadmin) | multipart | `ImportResult` |
+
+- Supplier queries: `q` (name contains), `page`, `page_size`.
+- Purchase queries: `supplier_id`, `date_from`, `date_to` (inclusive dates), `page`, `page_size`.
+- Movement queries: `product_id`, `movement_type` (`opening`, `purchase`, `sale`, `return`, `cancel`, `adjustment`), `date_from`, `date_to`, `page`, `page_size`. `date_from` after `date_to` is 422.
+- `SupplierCreate`: `name` (required), `phone`, `address`, `note`.
+- `PurchaseCreate`: `supplier_id`, `purchased_on` (`YYYY-MM-DD`), `invoice_no`, `note`, `items` (1–100 of `product_id`, optional `variant_id`, `quantity` ≥ 1, `unit_cost` ≥ 0). Saving increases stock and sets `cost_price` to the weighted average. See BUSINESS_LOGIC.md.
+- `AdjustmentCreate`: `product_id`, optional `variant_id`, `quantity` (non-zero signed difference), `reason` (required). Editor or above.
+- `OpeningStockResult`: `created`, `already_recorded`, `untracked`. Does not change stock. The same action from the shell is `python -m scripts.opening_stock`.
+- Export `kind`: `products`, `purchases`, `movements`. Optional `date_from` and `date_to`. The body is an `.xlsx` download.
+- Import `kind` for the template path, and form field `import_type` for preview and confirm: `purchases`, `opening`, `stock_count`, `cost_price`.
+- Preview and confirm send multipart `file` plus `import_type`. Confirm also accepts `confirm_duplicate` (`true` / `false`, default false). Preview writes nothing. Confirm saves every valid row in one transaction and skips invalid rows. A file whose every row is invalid is 422 and saves nothing. The same file bytes imported again are 409 until `confirm_duplicate` is true. Non-`.xlsx` files, files over 2 MB, and sheets over 2,000 data rows are 422.
+- Preview `rows[]`: `row` (sheet row number), `valid`, `action`, `errors` (what is wrong, empty when valid), `summary`.
+- There is no route to update or delete a movement, a purchase, or a purchase line.
 
 ## `admin/home/banner`
 
