@@ -106,6 +106,8 @@ Code: `app/services/badge_service.py`, `app/schemas/badge.py`, `app/models/badge
 - Delivery fees come from the delivery zones (district/area).
 - Public order lookup does not expose the delivery address.
 - `delivered_at` is set the first time the status becomes `delivered`, and `returned_at` the first time it becomes `returned` (`order_service.update_order`, the only status change). The clock is timezone-aware UTC. A later transition does not replace either value. Going to `returned` after `delivered` keeps `delivered_at` and sets `returned_at`. Admin order reads return both; public lookup does not.
+- New checkout orders store `orders.channel = "website"`. Orders placed before migration 0094 stay NULL. There is no database default, so a read of an old row is NULL. `orders.source` is still `cart` or `direct` and is not the channel.
+- Each new line stores `order_items.unit_cost`, a copy of `products.cost_price` at order time (NULL when the product has no cost). A later change to the product cost does not change the line. Lines placed before migration 0094 stay NULL. The value is not estimated from the current cost. It is not on any public order or product response.
 - Migration 0092 fills those columns only from the earliest `audit_events` row (`ORDER_STATUS_CHANGED`, `metadata.to`) for orders that are currently delivered or returned. There is no separate status-history table. No recorded event means NULL. `orders.created_at` and `orders.updated_at` are never used as a substitute.
 
 ## Bangla QR payment
@@ -161,6 +163,30 @@ On-hand stock stays on `products.quantity` or, when the product has options, on 
 - **Opening stock** (`POST /admin/inventory/opening-stock` or `python -m scripts.opening_stock`) writes one `opening` movement per product, or per variant when stock is per option, using the current count. It does not change the count. Made-to-order rows are skipped. Running it again adds nothing. A partial unique index blocks a second opening for the same product or variant.
 - **Excel (.xlsx).** Exports: products and stock, purchases, movements, each filterable by date. Imports: purchases, opening stock, stock count, and cost price. Each import type has a blank template. Import is two steps: a preview lists every row as valid or names what is wrong; confirm then saves the valid rows in one transaction. Invalid rows are not saved. Products are matched by `product_id`, `variant_id`, or `sku` only, never by name. Imports add movements or purchases; they do not overwrite old ones. A stock count becomes an adjustment for the difference between the counted quantity and the current count (zero difference saves nothing). An opening-stock row must equal the current count. The same file (SHA-256 of the bytes) imported again is refused until `confirm_duplicate` is sent. Files must be `.xlsx`, at most 2 MB and 2,000 data rows. Exports stop at 20,000 rows.
 - Cost and unit cost are admin-only. They are not on any public or storefront response.
+
+## Sales reports
+
+Code: `app/services/report_service.py`, `app/services/shop_sql.py`. The dashboard overview (`dashboard_service.overview`) uses the same SQL style.
+
+Dates are inclusive Asia/Dhaka calendar days. The window is half-open: from 00:00 on `from` through 00:00 on the day after `to`. Presets: `this_week` (Monday through today), `this_month` (the 1st through today), `last_month` (the whole previous calendar month). A preset and a from/to pair cannot be used together. `from` after `to` is refused. The longest range is 366 days. An optional product, category (that category and its descendants), or channel narrows sales. A channel filter does not match an order whose channel is NULL, including old orders and `channel=website`.
+
+Every total is a SQL aggregate. Python only turns those totals into a ratio (margin, return rate, net sales) and fills empty chart days. Order rows are not loaded.
+
+- **Sales** count an order on `delivered_at`, not on `created_at`. A later return keeps `delivered_at`, so the sale stays on the delivery day.
+  - Order count: delivered orders in the window.
+  - Units sold: sum of line quantities on those orders.
+  - Gross sales: sum of `coalesce(regular_price, unit_price) × quantity`.
+  - Discount: gross minus the sum of `line_total` (the list-price discount and the quantity discount). When `regular_price` is NULL, only the quantity discount remains.
+  - Delivery charge: sum of `orders.shipping`, once per delivered order. A product or category filter still counts the whole order's delivery charge, not a share of it.
+  - Net sales: merchandise (`line_total`) plus delivery, which is gross minus discount plus delivery. With no product, category, or channel filter this equals the sum of `orders.total`.
+- **Profit** uses only lines that have `unit_cost`. Revenue is the sum of those lines' `line_total`. Delivery is not included. Cost is `quantity × unit_cost`. Profit is revenue minus cost. Margin is profit ÷ that revenue × 100, half up to 2 decimals, and NULL when that revenue is 0. A line with no `unit_cost` is counted separately (`unknown_cost_lines`, `unknown_cost_units`, `unknown_cost_revenue`) and is not treated as zero cost. Profit and margin are NULL when every line in the window has an unknown cost.
+- **Products** list one row per product: units sold, revenue (`line_total`), cost, profit, margin, and a return count. Units and revenue count only when `delivered_at` is in the window. The return count is the number of distinct orders that contain the product and have `returned_at` in the window (orders, not units). A product with no `unit_cost` on its lines has a NULL cost, profit, and margin.
+- **Stock** is the stock right now. The date filter does not limit it, and channel is ignored. Stock value is `quantity × cost_price` where both are set. Units with no cost are `unknown_cost_units` and are not guessed. Low stock is `quantity` not NULL and `quantity ≤ 5` (zero counts; a NULL quantity, made to order, does not). "No sale in 30 days" means no line of that product on an order whose `delivered_at` falls in the 30 Dhaka days ending today (today and the 29 days before it).
+- **Movements** sum `stock_movements.quantity` (sale is negative). Opening balance is the sum of movements before the window. The period totals are opening, purchase, sale, return, cancel, and adjustment. Closing stock is the sum of every movement before the end of the window, so closing = opening balance + those six totals. Channel is ignored.
+- **Delivery and returns.** Delivered counts `delivered_at`. Returned counts `returned_at`. Cancelled counts `updated_at` while `status` is `cancelled`, because there is no `cancelled_at`. A later edit of a cancelled order (courier, tracking) can move `updated_at` and therefore the cancel day. Return rate is returned ÷ delivered × 100, NULL when nothing was delivered. It can be over 100% when more orders were returned in the window than delivered in it. An order delivered and returned in the same window counts in both.
+- **Trend** is net sales and profit by day, week, or month. Week buckets start on Monday. Month buckets start on the 1st. The first and last bucket can be partial. The default grain is day up to 31 days, week up to 92, otherwise month. An empty day has profit 0. A day whose only sales have no `unit_cost` has profit NULL.
+
+The dashboard still counts revenue, orders, customers, pending, statuses, best sellers, areas, categories, and the chart by `created_at`, and it still leaves cancelled and returned orders out of revenue. Its delivered count is the number of orders whose `delivered_at` is in the window, including one that was later returned.
 
 ## Categories
 

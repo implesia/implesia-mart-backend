@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
@@ -10,6 +11,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     UniqueConstraint,
     true,
@@ -56,6 +58,10 @@ class OrderSource(StrEnum):
     DIRECT = "direct"
 
 
+# Reports group by this. It is not `orders.source` (cart vs direct).
+WEBSITE_CHANNEL = "website"
+
+
 class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """A cash-on-delivery or Bangla QR order. Money columns are a snapshot from the server.
 
@@ -87,6 +93,8 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_orders_phone", "phone"),
         Index("ix_orders_created_at", "created_at"),
         Index("ix_orders_status", "status"),
+        Index("ix_orders_delivered_at", "delivered_at"),
+        Index("ix_orders_returned_at", "returned_at"),
     )
 
     number: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -94,6 +102,10 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     source: Mapped[str] = mapped_column(String(16), nullable=False)
+    # Where the sale came from. New checkout orders store "website".
+    # Orders placed before this column existed stay NULL. No server default:
+    # a default would make those old rows read as "website".
+    channel: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default=OrderStatus.NEW.value)
     payment_method: Mapped[str] = mapped_column(String(16), nullable=False, default="cod")
     advance_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -139,6 +151,10 @@ class OrderItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("quantity >= 1 AND quantity <= 1000", name="quantity_in_range"),
         CheckConstraint("unit_price >= 0 AND line_total >= 0", name="money_non_negative"),
+        CheckConstraint(
+            "unit_cost IS NULL OR unit_cost >= 0",
+            name="unit_cost_non_negative",
+        ),
     )
 
     order_id: Mapped[uuid.UUID] = mapped_column(
@@ -165,6 +181,9 @@ class OrderItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     base_discount: Mapped[int | None] = mapped_column(Integer)
     quantity_discount: Mapped[int | None] = mapped_column(Integer)
     total_discount: Mapped[int | None] = mapped_column(Integer)
+    # Product cost_price at order time. NULL when the product had no cost, and on
+    # lines placed before this column existed. Later cost edits do not change it.
+    unit_cost: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     selection: Mapped[list[Any]] = mapped_column(
         JSON().with_variant(JSONB(), "postgresql"),
         nullable=False,

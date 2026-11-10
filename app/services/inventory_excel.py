@@ -96,15 +96,25 @@ def template_bytes(kind: str) -> bytes:
 
 
 def workbook_bytes(
-    headers: Sequence[str], rows: Sequence[Sequence[object]], sheet_name: str
+    headers: Sequence[str],
+    rows: Sequence[Sequence[object]],
+    sheet_name: str,
+    preamble: Sequence[Sequence[object]] | None = None,
 ) -> bytes:
+    """Write a sheet. `preamble` rows (filter, dates) sit above the header.
+
+    Money values stay numbers: pass `int`, `float`, or `Decimal`, not a taka string.
+    """
     book = Workbook()
     sheet = book.active
     sheet.title = sheet_name[:31] or "Sheet"
-    sheet.append(headers)
+    for line in preamble or []:
+        sheet.append([_export_cell(value) for value in line])
+    sheet.append(list(headers))
+    header_row = sheet.max_row
     for row in rows:
         sheet.append([_export_cell(value) for value in row])
-    sheet.freeze_panes = "A2"
+    sheet.freeze_panes = f"A{header_row + 1}"
     buffer = BytesIO()
     book.save(buffer)
     return buffer.getvalue()
