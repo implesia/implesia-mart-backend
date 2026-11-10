@@ -1,6 +1,12 @@
-from httpx import AsyncClient
+import uuid
+from datetime import UTC, datetime, timedelta
 
-from tests.test_orders import SHIPPING, _key
+from httpx import AsyncClient
+from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.order import Order
+from tests.test_orders import SHIPPING, _key, _move
 from tests.test_products import _create
 
 
@@ -124,6 +130,8 @@ async def test_overview_counts_sales_and_skips_cancelled(
     assert body["areas"][0]["name"] == "Dhaka"
     assert body["categories"][0]["id"] == "fashion"
     assert body["order_count"] == 2
+    assert sum(point["revenue"] for point in body["series"]) == body["revenue"]["value"]
+    assert sum(point["orders"] for point in body["series"]) == body["orders"]["value"]
 
 
 async def test_custom_range_needs_both_dates(
@@ -137,3 +145,49 @@ async def test_custom_range_needs_both_dates(
         headers=auth_headers,
     )
     assert wide.status_code == 422
+
+
+async def test_delivered_count_uses_delivered_at(
+    client: AsyncClient, auth_headers: dict[str, str], db_session: AsyncSession
+) -> None:
+    gown = await _create(client, auth_headers, title="Delivered gown", price=500, quantity=4)
+    placed = await client.post(
+        "/api/v1/orders",
+        headers={"Idempotency-Key": _key()},
+        json={
+            "source": "direct",
+            "items": [{"product_id": gown["id"], "quantity": 1}],
+            **SHIPPING,
+        },
+    )
+    assert placed.status_code == 201, placed.text
+    order_id = placed.json()["id"]
+    for status in ("confirmed", "shipped", "delivered"):
+        moved = await _move(client, auth_headers, order_id, status)
+        assert moved.status_code == 200, moved.text
+
+    fresh = await client.post(
+        "/api/v1/orders",
+        headers={"Idempotency-Key": _key()},
+        json={
+            "source": "direct",
+            "items": [{"product_id": gown["id"], "quantity": 1}],
+            **SHIPPING,
+            "phone": "01822222222",
+        },
+    )
+    assert fresh.status_code == 201, fresh.text
+
+    await db_session.execute(
+        update(Order)
+        .where(Order.id == uuid.UUID(order_id))
+        .values(created_at=datetime.now(UTC) - timedelta(days=40))
+    )
+    await db_session.commit()
+
+    today = await client.get("/api/v1/admin/dashboard?range=today", headers=auth_headers)
+    assert today.status_code == 200, today.text
+    body = today.json()
+    assert body["orders"]["value"] == 1
+    assert body["delivered"]["value"] == 1
+    assert body["revenue"]["value"] == fresh.json()["total"]

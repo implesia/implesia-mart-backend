@@ -26,6 +26,8 @@ Admin overview. Editor or superadmin. Viewer is `403`.
 Query: `range` is `today`, `yesterday`, `7d` (default), `30d`, `this-month`,
 `last-month`, or `custom`. Custom also needs `from` and `to` as `YYYY-MM-DD`.
 Days are Asia/Dhaka. Revenue excludes cancelled and returned orders.
+`delivered` counts orders whose `delivered_at` is in the range, including
+one that was later returned. The other counts follow `created_at`.
 
 ## Errors
 

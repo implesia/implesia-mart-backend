@@ -78,6 +78,38 @@ Generated from the FastAPI routers (`app/api/v1/router.py` and `app/api/v1/endpo
 | --- | --- | --- | --- | --- |
 | GET | `/api/v1/admin/dashboard` | admin (editor, superadmin) | — | `DashboardOverview` |
 
+Query: `range` is `today`, `yesterday`, `7d` (default), `30d`, `this-month`, `last-month`, or `custom`. Custom also needs `from` and `to` (`YYYY-MM-DD`, Asia/Dhaka). Longer than 366 days is 422. Revenue, orders, customers, pending, statuses, best sellers, areas, categories, and the chart follow `created_at` and leave cancelled and returned orders out of revenue. `delivered.value` counts orders whose `delivered_at` is in the window, including an order that was later returned. The figures are SQL aggregates. `Cache-Control: no-store`. Viewer is 403.
+
+## `admin/reports`
+
+Read-only sales and stock reports. Any signed-in staff, including `viewer`. There is no write route. Anonymous is 401. Every route is `Cache-Control: no-store`. Dates are inclusive Asia/Dhaka days. How each number is defined is in BUSINESS_LOGIC.md (Sales reports).
+
+Shared query: `preset` (`this_week`, `this_month`, `last_month`) or both `from` and `to` (`YYYY-MM-DD`). Sending both a preset and dates, sending neither, sending `from` after `to`, or a range longer than 366 days is 422. Optional `product_id`, `category_id` (that category and its descendants), and `channel` (at most 32 characters). An unknown product or category is 422. A channel does not match orders whose `channel` is NULL. `grain` (`day`, `week`, `month`) applies to the trend only.
+
+`cost_price` and `unit_cost` appear on the profit, product, and stock reports. They are not added to public product or order responses.
+
+| Method | Path | Access | Request body | Response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/v1/admin/reports/sales` | any signed-in staff | — | `SalesSummary` |
+| GET | `/api/v1/admin/reports/sales/export` | any signed-in staff | — | `.xlsx` |
+| GET | `/api/v1/admin/reports/profit` | any signed-in staff | — | `ProfitReport` |
+| GET | `/api/v1/admin/reports/profit/export` | any signed-in staff | — | `.xlsx` |
+| GET | `/api/v1/admin/reports/products` | any signed-in staff | — | `ProductReport` |
+| GET | `/api/v1/admin/reports/products/export` | any signed-in staff | — | `.xlsx` |
+| GET | `/api/v1/admin/reports/stock` | any signed-in staff | — | `StockReport` |
+| GET | `/api/v1/admin/reports/stock/export` | any signed-in staff | — | `.xlsx` |
+| GET | `/api/v1/admin/reports/movements` | any signed-in staff | — | `MovementReport` |
+| GET | `/api/v1/admin/reports/movements/export` | any signed-in staff | — | `.xlsx` |
+| GET | `/api/v1/admin/reports/delivery` | any signed-in staff | — | `DeliveryReport` |
+| GET | `/api/v1/admin/reports/delivery/export` | any signed-in staff | — | `.xlsx` |
+| GET | `/api/v1/admin/reports/trend` | any signed-in staff | — | `TrendReport` |
+| GET | `/api/v1/admin/reports/trend/export` | any signed-in staff | — | `.xlsx` |
+
+- Products and stock also take `page` (1–10000, default 1) and `page_size` (1–100, default 20). Export ignores the page and stops at 20,000 rows.
+- Stock on hand ignores the date window (`period_applies: false`) and the channel (`channel_applies: false`). Movements ignore the channel the same way.
+- The workbook states the report name, timezone, from, to, preset, product, category, and whether the channel filter applied. Money columns are numeric cells.
+- `MovementReport` uses the JSON key `return` for the return total. A sale quantity is negative.
+
 ## `admin/delivery`
 
 | Method | Path | Access | Request body | Response |
