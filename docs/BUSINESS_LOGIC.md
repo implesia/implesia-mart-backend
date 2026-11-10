@@ -141,6 +141,27 @@ Code: `app/services/badge_service.py`, `app/schemas/badge.py`, `app/models/badge
 - Variant products: `products.price` / `products.compare_at_price` always equal the cheapest active variant's (lowest `sort_order` on a tie; all variants when none is active). Every save re-syncs them from the variants, so `price` / `compare_at_price` sent for a variant product are ignored (the dashboard sends `compare_at_price: null` for them). Migration 0090 repaired rows saved before this rule (2026-11-03).
 - Saving a product with `regular_price` (+ `base_discount_percent`) sets `price` and `compare_at_price`. Saving only `price`/`compare_at_price` keeps the saved base % when they are unchanged and clears it (derived) when they change. A base % above the max % is refused.
 
+## Inventory ledger
+
+Code: `app/services/inventory_service.py`, `app/services/inventory_excel.py`, `app/models/inventory.py`.
+
+On-hand stock stays on `products.quantity` or, when the product has options, on `product_variants.quantity`. The ledger records every change. It does not replace those columns.
+
+- **Suppliers** have a name, phone, address, and note. Phone is stored as typed (it is not forced into the shopper `01…` format).
+- **Purchases** are insert-only. One purchase has a supplier, a date, and an invoice number. Each line is a product, or a variant when that product tracks stock per option, plus a quantity and a unit cost. Saving a purchase adds the quantity to that stock bucket and writes a `purchase` movement in the same transaction.
+- **Weighted average cost** updates `products.cost_price` when a purchase is saved. The previous count is the bucket being received: the product quantity, or that variant's quantity. Other variants are not part of the average. `cost_price` stays one number on the product.
+  - No previous `cost_price`, or previous stock is NULL or `<= 0`: the new cost is the incoming unit cost.
+  - Otherwise `(old stock × old cost + incoming qty × incoming unit cost) ÷ (old stock + incoming qty)`.
+  - Both costs are rounded half up to 2 decimal places before the division, and the result is rounded half up to 2 decimal places. Example: 1 on hand at 1.00 plus 1 at 1.01 → 1.005 → 1.01.
+  - A NULL quantity (made to order) is not turned into a number. The purchase is still recorded and the cost becomes the incoming unit cost.
+  - The product row is locked (`SELECT … FOR UPDATE`) before the count and the cost are read, so a second purchase waits and then weighs against the updated figures.
+- **Stock movements** are insert-only. There is no update or delete endpoint. The service refuses an ORM update or delete. On PostgreSQL a trigger rejects DELETE and any change to the quantity, type, cost, note, or time. Deleting a product, variant, order, purchase, import batch, or user may only null that foreign key; the movement row stays. A correction is a new movement. `quantity` is signed: sale is negative; purchase, opening, cancel, and return are positive; an adjustment is the difference. A cost-only import uses 0 and does not change the count.
+- **Orders.** When `_claim` actually decreases a count, it stages a `sale` movement. The row is inserted in that same transaction after the order id exists, before commit. A failed order rolls the stock change and the movement back together. `_restore` writes `cancel` when the new status is `cancelled` and `return` when it is `returned`, and only when the count was a number (the same rows the stock update touches). Delivered does not put stock back. A second cancel does not write a second movement. Unlimited stock (quantity NULL) does not write a sale or a reversal, because the count does not change.
+- **Adjustments** (damaged, lost, count correction) need a reason. Editor or above. The count cannot go below zero. A product or variant with no count (NULL) is refused.
+- **Opening stock** (`POST /admin/inventory/opening-stock` or `python -m scripts.opening_stock`) writes one `opening` movement per product, or per variant when stock is per option, using the current count. It does not change the count. Made-to-order rows are skipped. Running it again adds nothing. A partial unique index blocks a second opening for the same product or variant.
+- **Excel (.xlsx).** Exports: products and stock, purchases, movements, each filterable by date. Imports: purchases, opening stock, stock count, and cost price. Each import type has a blank template. Import is two steps: a preview lists every row as valid or names what is wrong; confirm then saves the valid rows in one transaction. Invalid rows are not saved. Products are matched by `product_id`, `variant_id`, or `sku` only, never by name. Imports add movements or purchases; they do not overwrite old ones. A stock count becomes an adjustment for the difference between the counted quantity and the current count (zero difference saves nothing). An opening-stock row must equal the current count. The same file (SHA-256 of the bytes) imported again is refused until `confirm_duplicate` is sent. Files must be `.xlsx`, at most 2 MB and 2,000 data rows. Exports stop at 20,000 rows.
+- Cost and unit cost are admin-only. They are not on any public or storefront response.
+
 ## Categories
 
 - Categories form a tree with a maximum depth (`MAX_DEPTH`) and a database cycle guard.

@@ -120,6 +120,10 @@ async def _viewer_headers(client: AsyncClient, auth_headers: dict[str, str]) -> 
     return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
+# A file has to travel as POST. This route only previews; it does not save.
+_VIEWER_READS = {("POST", "/api/v1/admin/inventory/imports/preview")}
+
+
 async def test_a_viewer_cannot_write_through_any_admin_route(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
@@ -130,7 +134,10 @@ async def test_a_viewer_cannot_write_through_any_admin_route(
             continue
         for method in operations:
             if method in {"post", "put", "patch", "delete"}:
-                writes.append((method.upper(), re.sub(r"\{[^}]+\}", _PARAM, path)))
+                pair = (method.upper(), re.sub(r"\{[^}]+\}", _PARAM, path))
+                if pair in _VIEWER_READS:
+                    continue
+                writes.append(pair)
     assert len(writes) >= 40
     for method, path in writes:
         response = await client.request(method, path, headers=viewer)
