@@ -17,6 +17,32 @@ _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _REFERENCE = re.compile(r"^[A-Za-z0-9+\-]{4,64}$")
 OrderSourceName = Literal["cart", "direct"]
 DeliveryZone = Literal["inside", "suburban", "outside"]
+_TRACKING_LIMIT = 500
+
+
+def purchase_event_id(order_number: str) -> str:
+    """Shared with the browser Pixel so Meta can deduplicate the Purchase."""
+    return f"purchase_{order_number}"
+
+
+class OrderTracking(BaseModel):
+    """Optional browser context for the Purchase event. Invalid values are dropped."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    fbp: str | None = None
+    fbc: str | None = None
+    event_source_url: str | None = None
+
+    @field_validator("fbp", "fbc", "event_source_url", mode="before")
+    @classmethod
+    def _optional_text(cls, value: object) -> str | None:
+        if not isinstance(value, str):
+            return None
+        text = value.strip()
+        if not text or len(text) > _TRACKING_LIMIT:
+            return None
+        return text
 
 
 class OrderLineInput(BaseModel):
@@ -61,6 +87,8 @@ class OrderCreate(OrderQuoteRequest):
     payment_method: PaymentMethod = "cod"
     advance_percent: int | None = None
     payment_reference: str = Field("", max_length=80)
+    # Browser Pixel cookies and the page URL. Omitted by older clients.
+    tracking: OrderTracking | None = None
 
     @field_validator("payment_reference")
     @classmethod
@@ -100,6 +128,13 @@ class OrderCreate(OrderQuoteRequest):
         if value and not _EMAIL.fullmatch(value):
             raise ValueError("Email is invalid")
         return value
+
+    @field_validator("tracking", mode="before")
+    @classmethod
+    def _tracking(cls, value: object) -> object:
+        if value is None or isinstance(value, dict | OrderTracking):
+            return value
+        return None
 
 
 class QuoteLineRead(BaseModel):
@@ -242,6 +277,9 @@ class OrderRead(BaseModel):
     delivered_at: datetime | None = None
     returned_at: datetime | None = None
     next_statuses: list[str] = Field(default_factory=list)
+    # Same string as ``number``. Present so the storefront contract can read ``order_number``.
+    order_number: str
+    analytics_event_id: str
 
 
 class OrderUpdate(BaseModel):

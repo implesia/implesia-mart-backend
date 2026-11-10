@@ -288,7 +288,7 @@ Staff inventory. `viewer` can read. Writes need `editor` or `superadmin`. Every 
 | GET | `/api/v1/admin/orders/{order_id}` | admin (editor, superadmin) | — | `OrderRead` |
 | PATCH | `/api/v1/admin/orders/{order_id}` | admin (editor, superadmin) | `OrderUpdate` | `OrderRead` |
 
-`OrderRead` includes `delivered_at` and `returned_at` (ISO datetime or `null`). They are set the first time the status becomes `delivered` or `returned` and are not replaced later. `PublicOrderRead` (order lookup) does not include them. `POST /orders` returns them as `null` on a new order.
+`OrderRead` includes `delivered_at` and `returned_at` (ISO datetime or `null`). They are set the first time the status becomes `delivered` or `returned` and are not replaced later. `PublicOrderRead` (order lookup) does not include them. `POST /orders` returns them as `null` on a new order. `OrderRead` also includes `order_number` (the same value as `number`) and `analytics_event_id` (`purchase_` plus that number). Those two fields are derived. They do not cause a Meta call on admin reads or status updates.
 
 ## `admin/pages/about`
 
@@ -607,6 +607,10 @@ Staff inventory. `viewer` can read. Writes need `editor` or `superadmin`. Every 
 | POST | `/api/v1/orders/quote` | public | `OrderQuoteRequest` | `QuoteRead` |
 
 `OrderCreate` takes `payment_method` (`cod` default, or `bangla_qr`), `advance_percent` (25/50/75/100, only for `bangla_qr`) and `payment_reference` (transaction ID or sender number, required for `bangla_qr`; spaces removed, then 4–64 letters, digits, `+` or `-`). The amounts are never accepted from the client. `QuoteRead.bangla_qr_options` lists `{percent, advance, due}` for the total (empty when no QR is set). `OrderRead` and `PublicOrderRead` return `payment_method`, `advance_percent`, `advance_amount`, `due_amount`; `OrderRead` (placed order, admin) also returns `payment_reference`, `delivered_at`, and `returned_at`.
+
+`OrderCreate.tracking` is optional: `{ "fbp": string|null, "fbc": string|null, "event_source_url": string|null }`. Each field is optional. A value that is not a string, is blank, or is longer than 500 characters is dropped. Unknown keys inside `tracking` are dropped. A missing `tracking`, or a `tracking` that is not an object, is ignored and the order is still placed. Other unknown fields on the order body are still `422`.
+
+`POST /orders` returns `order_number` (same string as `number`) and `analytics_event_id` (`purchase_<order_number>`). When `META_PIXEL_ID` and `META_CAPI_TOKEN` are both set, a successful create also sends one Meta Conversions API `Purchase` with that event id after the order is committed. The response does not wait on Meta and does not change if Meta fails. A replay of the same `Idempotency-Key` returns the same ids and does not send again. `POST /orders/quote` and `POST /orders/lookup` do not accept `tracking` and do not return `analytics_event_id`.
 
 ## `pages/about`
 

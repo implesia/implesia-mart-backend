@@ -102,6 +102,12 @@ class Settings(BaseSettings):
     # Cloudflare Turnstile
     turnstile_secret_key: str = ""
 
+    # Meta Conversions API. Both the pixel id and the token must be set or Purchase
+    # events are not sent. The test code is optional and only used while testing.
+    meta_pixel_id: str = ""
+    meta_capi_token: SecretStr = SecretStr("")
+    meta_test_event_code: str = ""
+
     @model_validator(mode="after")
     def _production_secret_key(self) -> Self:
         if self.environment != "production":
@@ -178,6 +184,11 @@ class Settings(BaseSettings):
     @property
     def turnstile_enabled(self) -> bool:
         return bool(self.turnstile_secret_key)
+
+    @property
+    def meta_capi_enabled(self) -> bool:
+        """True only when both the pixel id and the access token are set."""
+        return bool(self.meta_pixel_id.strip() and self.meta_capi_token.get_secret_value().strip())
 
     @property
     def object_storage_enabled(self) -> bool:

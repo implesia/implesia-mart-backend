@@ -38,4 +38,6 @@ docs {
   `Idempotency-Key` is required. Send the same key again to get the original order back. Stock is taken once. A price, discount, or delivery fee in the body is rejected.
 
   Phone is `01` plus 9 digits. Address is at least 8 characters.
+
+  Optional `tracking`: `{ "fbp", "fbc", "event_source_url" }`. The response adds `order_number` and `analytics_event_id` (`purchase_<order_number>`).
 }

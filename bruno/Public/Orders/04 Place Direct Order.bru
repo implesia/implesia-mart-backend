@@ -39,4 +39,6 @@ docs {
   # POST /api/v1/orders
 
   Buy now. Logged-in or anonymous. The cart is left untouched. The charged price is the product's current server price, snapshotted onto the order line.
+
+  Optional `tracking`: `{ "fbp", "fbc", "event_source_url" }` (each a string or null, max 500). The 201 body includes `number`, `order_number` (the same value) and `analytics_event_id` (`purchase_` plus that number).
 }

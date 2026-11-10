@@ -10,6 +10,7 @@ from sqlalchemy import Select, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from starlette.background import BackgroundTasks
 
 from app.core.exceptions import ConflictError, NotFoundError, UnprocessableError
 from app.models.audit_event import AuditAction
@@ -40,12 +41,14 @@ from app.schemas.order import (
     QuoteLineRead,
     QuoteRead,
     order_page_count,
+    purchase_event_id,
 )
 from app.schemas.pricing import QUANTITY_CEILING
 from app.services import (
     audit_service,
     delivery_service,
     inventory_service,
+    meta_capi,
     payment_service,
     pricing_service,
     variant_service,
@@ -164,6 +167,8 @@ def _read(order: Order) -> OrderRead:
         ],
         created_at=order.created_at,
         next_statuses=next_statuses(order.status),
+        order_number=order.number,
+        analytics_event_id=purchase_event_id(order.number),
     )
 
 
@@ -467,7 +472,11 @@ async def replayed(db: AsyncSession, shopper: Shopper, idempotency_key: str) -> 
 
 
 async def create_order(
-    db: AsyncSession, shopper: Shopper, payload: OrderCreate, idempotency_key: str
+    db: AsyncSession,
+    shopper: Shopper,
+    payload: OrderCreate,
+    idempotency_key: str,
+    background: BackgroundTasks | None = None,
 ) -> OrderRead:
     key = require_idempotency_key(idempotency_key)
     actor = shopper_actor(shopper)
@@ -575,7 +584,12 @@ async def create_order(
             return _read(replayed)
         raise ConflictError("Could not place the order. Try again.") from None
     db.expire_all()
-    return _read(await _load(db, order_id))
+    loaded = await _load(db, order_id)
+    read = _read(loaded)
+    # Only a newly committed order. Replays and status updates do not reach here.
+    if background is not None:
+        meta_capi.schedule_purchase(background, loaded, payload.tracking)
+    return read
 
 
 def _like(term: str) -> str:
