@@ -1,0 +1,27 @@
+meta {
+  name: Coupons Export
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/reports/coupons/export?from=2026-11-01&to=2026-11-10
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+}
+
+docs {
+  # GET /api/v1/admin/reports/coupons/export
+
+  Same query and rules as the JSON coupon report. The workbook states the
+  timezone, the dates, and that cancelled orders are omitted. Columns:
+  Code, Times used, Total discount, Total sales, plus a Total row.
+}

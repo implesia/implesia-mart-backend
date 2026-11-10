@@ -104,11 +104,44 @@ Shared query: `preset` (`this_week`, `this_month`, `last_month`) or both `from` 
 | GET | `/api/v1/admin/reports/delivery/export` | any signed-in staff | — | `.xlsx` |
 | GET | `/api/v1/admin/reports/trend` | any signed-in staff | — | `TrendReport` |
 | GET | `/api/v1/admin/reports/trend/export` | any signed-in staff | — | `.xlsx` |
+| GET | `/api/v1/admin/reports/coupons` | any signed-in staff | — | `CouponReport` |
+| GET | `/api/v1/admin/reports/coupons/export` | any signed-in staff | — | `.xlsx` |
 
 - Products and stock also take `page` (1–10000, default 1) and `page_size` (1–100, default 20). Export ignores the page and stops at 20,000 rows.
 - Stock on hand ignores the date window (`period_applies: false`) and the channel (`channel_applies: false`). Movements ignore the channel the same way.
 - The workbook states the report name, timezone, from, to, preset, product, category, and whether the channel filter applied. Money columns are numeric cells.
 - `MovementReport` uses the JSON key `return` for the return total. A sale quantity is negative.
+- `SalesSummary` adds `coupon_discount` (whole taka). It is already included in `discount`. Net sales are after that coupon. The sales workbook has a "Coupon discount" column.
+- `CouponReport` counts active redemptions placed in the window (`created_at`, not `delivered_at`). Cancelled uses are omitted. Returned orders stay. `product_id`, `category_id`, and `channel` are accepted by the shared query and ignored (`channel_applies: false`).
+
+```json
+{
+  "filters": {
+    "timezone": "Asia/Dhaka",
+    "preset": null,
+    "from": "2026-11-01",
+    "to": "2026-11-10",
+    "product_id": null,
+    "category_id": null,
+    "channel": null,
+    "channel_applies": false
+  },
+  "items": [
+    {
+      "coupon_id": "00000000-0000-4000-8000-000000000010",
+      "code": "EID10",
+      "times_used": 2,
+      "total_discount": 200,
+      "total_sales": 1940
+    }
+  ],
+  "times_used": 2,
+  "total_discount": 200,
+  "total_sales": 1940
+}
+```
+
+`total_sales` is the sum of `orders.total` for those uses (after the coupon, including delivery). The workbook columns are Code, Times used, Total discount, Total sales, plus a Total row.
 
 ## `admin/delivery`
 
@@ -125,6 +158,84 @@ Shared query: `preset` (`this_week`, `this_month`, `last_month`) or both `from` 
 | PUT | `/api/v1/admin/pricing` | admin (editor, superadmin) | `PricingSettingsUpdate` | `PricingSettingsRead` |
 
 Body/response: `{"tiers_enabled": true, "max_discount_percent": 90, "max_quantity_per_order": 10, "tiers": [{"min_quantity": 2, "extra_percent": 0.25}, ...]}`. `max_quantity_per_order` is 1–1000 (422 otherwise); omitted on `PUT` = keep the stored value. Percents 0–99.99 (two decimals), `min_quantity` 2–1000, at most 20 tiers, no duplicate quantities (422). `Cache-Control: no-store`.
+
+## `admin/coupons`
+
+Viewer can read. Create, update, activate, and deactivate need editor or above. Anonymous is 401. A viewer write is 403. Every route is `Cache-Control: no-store`. A successful write is an `ADMIN_WRITE` audit row. There is no delete: turn the coupon off. A coupon that has been redeemed cannot be removed.
+
+| Method | Path | Access | Request body | Response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/v1/admin/coupons` | any signed-in staff | — | `CouponList` |
+| POST | `/api/v1/admin/coupons` | editor, superadmin | `CouponWrite` | `CouponRead` (201) |
+| GET | `/api/v1/admin/coupons/{id}` | any signed-in staff | — | `CouponRead` |
+| PATCH | `/api/v1/admin/coupons/{id}` | editor, superadmin | `CouponUpdate` | `CouponRead` |
+| POST | `/api/v1/admin/coupons/{id}/activate` | editor, superadmin | — | `CouponRead` |
+| POST | `/api/v1/admin/coupons/{id}/deactivate` | editor, superadmin | — | `CouponRead` |
+| GET | `/api/v1/admin/coupons/{id}/redemptions` | any signed-in staff | — | `CouponRedemptionList` |
+
+List query: `q` (code, case-insensitive), `status` (`active`, `inactive`, `expired`, `scheduled`), `page` (1–10000, default 1), `page_size` (1–100, default 20). Response `{ items, total, page, page_size, pages }`.
+
+`status` is derived, in this order: `inactive` when `is_active` is false; `scheduled` when `starts_at` is in the future; `expired` when `ends_at` is in the past; otherwise `active`. A null start counts as already started. A null end does not expire.
+
+Redemptions query: `page` (default 1), `page_size` (default 20, max 100). Newest first. Cancelled rows stay in the list and do not add to `used_count`.
+
+`CouponWrite` (unknown fields 422):
+
+```json
+{
+  "code": "EID10",
+  "discount_type": "percent",
+  "value": 10,
+  "max_discount": 500,
+  "min_order_amount": 1000,
+  "starts_at": "2026-06-01T00:00:00",
+  "ends_at": "2026-06-30T23:59:00",
+  "usage_limit_total": 100,
+  "usage_limit_per_phone": 1,
+  "first_order_only": false,
+  "product_ids": [],
+  "category_ids": [],
+  "free_delivery": false,
+  "is_active": true
+}
+```
+
+`CouponUpdate` is the same fields, all optional. Omitted fields stay. `product_ids: []` or `category_ids: []` clears that list. `max_discount: null` clears the cap.
+
+Code rules: stored uppercase, unique case-insensitively, 3–32 of `A–Z`, `0–9`, `-`, `_`. The admin UI generates codes; this API only checks the shape. A duplicate is 409 `{ "error": { "code": "conflict", "message": "এই কুপন কোডটি আগে থেকেই আছে।", "details": null } }`.
+
+`discount_type` is `percent` or `fixed`. Percent `value` is 0–100 with at most two decimals. Fixed `value` is whole taka. `max_discount` is only for percent, and at least 1 when set. `value` 0 is allowed only when `free_delivery` is true. Limits, when set, are at least 1. `ends_at` cannot be before `starts_at`. A datetime with no timezone is Asia/Dhaka. A datetime with an offset is that instant. The response returns the UTC instant. Empty `product_ids` and `category_ids` mean the whole cart. A listed category includes its descendants. Unknown product or category ids are 422.
+
+`CouponRead`:
+
+```json
+{
+  "id": "00000000-0000-4000-8000-000000000010",
+  "code": "EID10",
+  "discount_type": "percent",
+  "value": 10,
+  "max_discount": 500,
+  "min_order_amount": 1000,
+  "starts_at": "2026-05-31T18:00:00Z",
+  "ends_at": "2026-06-30T17:59:00Z",
+  "usage_limit_total": 100,
+  "usage_limit_per_phone": 1,
+  "first_order_only": false,
+  "product_ids": [],
+  "category_ids": [],
+  "free_delivery": false,
+  "is_active": true,
+  "status": "scheduled",
+  "used_count": 0,
+  "created_by": "00000000-0000-4000-8000-000000000001",
+  "created_at": "2026-11-10T15:00:00Z",
+  "updated_at": "2026-11-10T15:00:00Z"
+}
+```
+
+`used_count` is the number of redemptions with `cancelled_at` null. `created_by` is the admin user id, or null. `value` is a JSON number.
+
+A redemption item: `{ id, coupon_id, order_id, order_number, phone, discount_amount, status, cancelled_at, created_at }`. `status` is `active` or `cancelled`. `phone` is `01XXXXXXXXX`.
 
 Product admin create/update also take `regular_price`, `base_discount_percent`, `tier_mode` (`global`/`custom`) and `tiers`; `AdminProductRead` returns them. `GET /products/by-slug/{slug}` and `/products/{id}` return `pricing` (`regular_price`, `selling_price`, `base_discount_percent`, `max_discount_percent`, `tiers` in force). `max_order_quantity` on a product: `null` = store-wide limit, 1–1000 = custom limit. Public detail `max_per_order`, each `variants[].max_quantity` and each cart line's `max_quantity` = min(effective limit, stock). Cart add/update and order create return 422 "এই পণ্যটি এক অর্ডারে সর্বোচ্চ Nটি নেওয়া যাবে।" above the limit. Cart and quote lines return `regular_price`, `base_discount_percent`, `quantity_discount_percent`, `total_discount_percent`; admin order items return the stored snapshot.
 
@@ -631,11 +742,40 @@ The server reads `now` (UTC) first. Rows are `created_at > since` and `created_a
 | POST | `/api/v1/orders/lookup` | public | `OrderLookup` | `PublicOrderRead` |
 | POST | `/api/v1/orders/quote` | public | `OrderQuoteRequest` | `QuoteRead` |
 
-`OrderCreate` takes `payment_method` (`cod` default, or `bangla_qr`), `advance_percent` (25/50/75/100, only for `bangla_qr`) and `payment_reference` (transaction ID or sender number, required for `bangla_qr`; spaces removed, then 4–64 letters, digits, `+` or `-`). The amounts are never accepted from the client. `QuoteRead.bangla_qr_options` lists `{percent, advance, due}` for the total (empty when no QR is set). `OrderRead` and `PublicOrderRead` return `payment_method`, `advance_percent`, `advance_amount`, `due_amount`; `OrderRead` (placed order, admin) also returns `payment_reference`, `delivered_at`, and `returned_at`.
+`OrderCreate` takes `payment_method` (`cod` default, or `bangla_qr`), `advance_percent` (25/50/75/100, only for `bangla_qr`) and `payment_reference` (transaction ID or sender number, required for `bangla_qr`; spaces removed, then 4–64 letters, digits, `+` or `-`). The amounts are never accepted from the client. `QuoteRead.bangla_qr_options` lists `{percent, advance, due}` for the total after any coupon (empty when no QR is set). `OrderRead` and `PublicOrderRead` return `payment_method`, `advance_percent`, `advance_amount`, `due_amount`, `coupon_code`, and `coupon_discount`; `OrderRead` (placed order, admin) also returns `payment_reference`, `delivered_at`, and `returned_at`. `coupon_code` and `coupon_discount` are null when the order did not use a coupon. A free-delivery coupon that takes no merchandise off stores `coupon_discount` 0.
+
+`OrderQuoteRequest` adds optional `coupon_code` (string, blank means none) and optional `phone` (same mobile form as an order; blank means none). `phone` is only so the quote can check the per-phone limit and the first-order rule. Order create always has a phone, so those two are always checked there. `QuoteRead.coupon` is null when no code was sent. Otherwise:
+
+```json
+{
+  "code": "EID10",
+  "valid": true,
+  "discount": 100,
+  "free_delivery": false,
+  "error_code": null,
+  "message": null
+}
+```
+
+An invalid code keeps the quote at 200. `valid` is false, `discount` is 0, and `error_code` / `message` are set. `subtotal` stays the merchandise after the quantity discount. A valid coupon reduces `total` and, when `free_delivery` is true, sets `shipping` to 0. `total = subtotal − discount + shipping`.
+
+`OrderCreate.coupon_code` is optional. The server prices the discount again inside the order transaction. A code that is not valid at that moment is 422 and the order is not saved. The body is the usual envelope, not a new top-level `error_code`:
+
+```json
+{
+  "error": {
+    "code": "coupon_expired",
+    "message": "এই কুপনের মেয়াদ শেষ হয়ে গেছে।",
+    "details": null
+  }
+}
+```
+
+Codes: `coupon_not_found`, `coupon_inactive`, `coupon_not_started`, `coupon_expired`, `coupon_min_amount` (the message includes the minimum in ৳ with Bengali digits), `coupon_usage_limit`, `coupon_phone_limit`, `coupon_first_order_only`, `coupon_not_eligible`. The Bangla sentences are in BUSINESS_LOGIC.md. Sending `coupon_discount`, `total`, `shipping`, or `unit_price` is 422 because those fields are not accepted. They are never applied.
 
 `OrderCreate.tracking` is optional: `{ "fbp": string|null, "fbc": string|null, "event_source_url": string|null }`. Each field is optional. A value that is not a string, is blank, or is longer than 500 characters is dropped. Unknown keys inside `tracking` are dropped. A missing `tracking`, or a `tracking` that is not an object, is ignored and the order is still placed. Other unknown fields on the order body are still `422`.
 
-`POST /orders` returns `order_number` (same string as `number`) and `analytics_event_id` (`purchase_<order_number>`). When `META_PIXEL_ID` and `META_CAPI_TOKEN` are both set, a successful create also sends one Meta Conversions API `Purchase` with that event id after the order is committed. The response does not wait on Meta and does not change if Meta fails. A replay of the same `Idempotency-Key` returns the same ids and does not send again. `POST /orders/quote` and `POST /orders/lookup` do not accept `tracking` and do not return `analytics_event_id`.
+`POST /orders` returns `order_number` (same string as `number`) and `analytics_event_id` (`purchase_<order_number>`). When `META_PIXEL_ID` and `META_CAPI_TOKEN` are both set, a successful create also sends one Meta Conversions API `Purchase` with that event id after the order is committed. `custom_data.value` is the post-coupon total. When `coupon_code` is set, `custom_data.coupon` is that code. The response does not wait on Meta and does not change if Meta fails. A replay of the same `Idempotency-Key` returns the same ids and does not send again. `POST /orders/quote` and `POST /orders/lookup` do not accept `tracking` and do not return `analytics_event_id`. Lookup does return `coupon_code` and `coupon_discount`.
 
 ## `pages/about`
 

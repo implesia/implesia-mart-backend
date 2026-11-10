@@ -5,6 +5,7 @@ from app.api.v1.endpoints import (
     admin_audit,
     admin_badges,
     admin_cart,
+    admin_coupons,
     admin_delivery,
     admin_inventory,
     admin_orders,
@@ -128,6 +129,9 @@ api_router.include_router(
 )
 api_router.include_router(
     admin_pricing.router, prefix="/admin/pricing", tags=["admin:pricing"], dependencies=_AUDITED
+)
+api_router.include_router(
+    admin_coupons.router, prefix="/admin/coupons", tags=["admin:coupons"], dependencies=_AUDITED
 )
 api_router.include_router(
     admin_inventory.router,

@@ -41,4 +41,6 @@ docs {
   Buy now. Logged-in or anonymous. The cart is left untouched. The charged price is the product's current server price, snapshotted onto the order line.
 
   Optional `tracking`: `{ "fbp", "fbc", "event_source_url" }` (each a string or null, max 500). The 201 body includes `number`, `order_number` (the same value) and `analytics_event_id` (`purchase_` plus that number).
+
+  Optional `coupon_code`. The server recomputes the discount. Do not send `coupon_discount`, `total`, or `unit_price` (422). A code that is not valid now is 422 `{"error": {"code": "<coupon error code>", "message": "<Bangla>"}}`. The 201 body includes `coupon_code` and `coupon_discount` (both null when no code was used).
 }

@@ -1,0 +1,36 @@
+meta {
+  name: Update Coupon
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/coupons/{{COUPON_ID}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "max_discount": 300,
+    "is_active": true
+  }
+}
+
+docs {
+  # PATCH /api/v1/admin/coupons/{id}
+
+  Editor or superadmin. Omitted fields stay as they are. Send `product_ids: []`
+  or `category_ids: []` to clear that restriction. `max_discount: null` clears the cap.
+
+  There is no delete. A coupon that has been used is turned off with Deactivate.
+}

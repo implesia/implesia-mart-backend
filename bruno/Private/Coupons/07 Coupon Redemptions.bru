@@ -1,0 +1,36 @@
+meta {
+  name: Coupon Redemptions
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/coupons/{{COUPON_ID}}/redemptions
+  body: none
+  auth: bearer
+}
+
+params:query {
+  page: 1
+  page_size: 20
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/admin/coupons/{id}/redemptions
+
+  Any signed-in staff, including viewer. Newest first.
+
+  Query: `page` (1–10000, default 1), `page_size` (1–100, default 20).
+
+  Each item: `{ id, coupon_id, order_id, order_number, phone, discount_amount,
+  status, cancelled_at, created_at }`. `status` is `active` or `cancelled`.
+  A cancelled order sets `cancelled_at` and stops counting. A returned order stays `active`.
+}

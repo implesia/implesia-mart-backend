@@ -1,0 +1,51 @@
+meta {
+  name: List Coupons
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/coupons
+  body: none
+  auth: bearer
+}
+
+params:query {
+  q: EID
+  status: active
+  page: 1
+  page_size: 20
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/admin/coupons
+
+  Any signed-in staff, including viewer. Anonymous is 401.
+
+  Query: `q` (code search, case-insensitive), `status` (`active`, `inactive`,
+  `expired`, `scheduled`), `page` (1–10000, default 1), `page_size` (1–100, default 20).
+
+  `status` is derived: inactive if `is_active` is false; otherwise scheduled when
+  `starts_at` is in the future; otherwise expired when `ends_at` is in the past;
+  otherwise active. A missing start means already started. A missing end never expires.
+
+  Response: `{ items, total, page, page_size, pages }`. Each item is a coupon object.
+  `used_count` is the number of redemptions that are not cancelled. It is not a stored column.
+}
+
+tests {
+  test("lists coupons", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getHeader("cache-control")).to.include("no-store");
+    expect(res.body).to.have.property("items");
+    expect(res.body).to.have.property("total");
+  });
+}

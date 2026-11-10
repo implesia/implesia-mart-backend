@@ -49,6 +49,7 @@ from app.schemas.order import (
 from app.schemas.pricing import QUANTITY_CEILING
 from app.services import (
     audit_service,
+    coupon_service,
     delivery_service,
     inventory_service,
     meta_capi,
@@ -150,6 +151,8 @@ def _read(order: Order) -> OrderRead:
         subtotal=order.subtotal,
         shipping=order.shipping,
         total=order.total,
+        coupon_code=order.coupon_code,
+        coupon_discount=order.coupon_discount,
         courier_name=order.courier_name,
         tracking_number=order.tracking_number,
         delivered_at=order.delivered_at,
@@ -311,6 +314,13 @@ async def quote(db: AsyncSession, shopper: Shopper, payload: OrderQuoteRequest) 
     ]
     rates = await delivery_service.fees(db)
     totals = _totals(lines, payload.district, payload.area, payload.delivery_zone, rates)
+    totals.coupon = await coupon_service.preview(
+        db, payload.coupon_code, lines, phone=payload.phone
+    )
+    if totals.coupon is not None and totals.coupon.valid:
+        if totals.coupon.free_delivery:
+            totals.shipping = 0
+        totals.total = totals.subtotal - totals.coupon.discount + totals.shipping
     if totals.total > 0 and await payment_service.bangla_qr_src(db) is not None:
         totals.bangla_qr_options = payment_service.advance_options(totals.total)
     return totals
@@ -521,18 +531,39 @@ async def create_order(
 
     # Prices come only from the database rows and the pricing rules, never from the request.
     rules = await pricing_service.store_rules(db)
-    priced: list[tuple[Requested, pricing_service.Line, str, str, str, str, Decimal | None]] = []
+    priced: list[
+        tuple[Requested, pricing_service.Line, str, str, str, str, Decimal | None, uuid.UUID | None]
+    ] = []
     ordered = sorted(requested, key=lambda row: (row.product_id.hex, str(row.variant_id or "")))
     for row in ordered:
         product = await _product(db, row.product_id)
         variant = await variant_service.resolve_for_purchase(db, product, row.variant_id)
         line, title, slug, image_src, sku = await _claim(db, product, variant, row.quantity, rules)
         # Snapshot the cost now. A later purchase must not rewrite this order.
-        priced.append((row, line, title, slug, image_src, sku, product.cost_price))
+        priced.append(
+            (row, line, title, slug, image_src, sku, product.cost_price, product.category_id)
+        )
 
     subtotal = sum(line.line_total for _row, line, *_rest in priced)
     shipping = fee if priced else 0
-    total = subtotal + shipping
+    coupon_code: str | None = None
+    coupon_discount: int | None = None
+    priced_coupon: coupon_service.PricedCoupon | None = None
+    if payload.coupon_code:
+        money = [
+            coupon_service.MoneyLine(row.product_id, category_id, line.line_total)
+            for row, line, _title, _slug, _image, _sku, _cost, category_id in priced
+        ]
+        # Re-checked under a row lock. A code that failed since the quote rejects the order.
+        priced_coupon = await coupon_service.lock_and_price(
+            db, payload.coupon_code, money, payload.phone
+        )
+        coupon_code = priced_coupon.code
+        coupon_discount = priced_coupon.discount
+        if priced_coupon.free_delivery:
+            shipping = 0
+    taken = coupon_discount or 0
+    total = max(subtotal - taken + shipping, 0)
     # The advance and the amount due are computed here from the server total, never taken
     # from the request. Bangla QR is refused while no QR image is set.
     advance_percent: int | None = None
@@ -565,9 +596,11 @@ async def create_order(
         subtotal=subtotal,
         shipping=shipping,
         total=total,
+        coupon_code=coupon_code,
+        coupon_discount=coupon_discount,
         inventory_held=True,
     )
-    for row, line, title, slug, image_src, sku, unit_cost in priced:
+    for row, line, title, slug, image_src, sku, unit_cost, _category_id in priced:
         order.items.append(
             OrderItem(
                 product_id=row.product_id,
@@ -589,6 +622,8 @@ async def create_order(
         )
     db.add(order)
     await db.flush()
+    if priced_coupon is not None:
+        coupon_service.stage_redemption(db, priced_coupon, order.id, payload.phone)
     inventory_service.attach_pending_sales(db, order.id)
     db.add(OrderIdempotency(actor=actor, idempotency_key=key, order_id=order.id))
 
@@ -775,6 +810,8 @@ def _public(order: Order) -> PublicOrderRead:
         subtotal=order.subtotal,
         shipping=order.shipping,
         total=order.total,
+        coupon_code=order.coupon_code,
+        coupon_discount=order.coupon_discount,
         courier_name=order.courier_name,
         tracking_number=order.tracking_number,
         **_payment(order),
@@ -944,6 +981,8 @@ async def update_order(
             await _restore(db, order, stock_reason=target, actor_id=actor_id)
         if target == OrderStatus.CANCELLED.value:
             became_cancelled = True
+            # The use comes back. A return leaves the redemption counted.
+            await coupon_service.cancel_for_order(db, order.id)
         await audit_service.record(
             db,
             actor_id=actor_id,

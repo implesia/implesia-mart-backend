@@ -1,0 +1,33 @@
+meta {
+  name: Get Coupon
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/coupons/{{COUPON_ID}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/admin/coupons/{id}
+
+  Any signed-in staff, including viewer. Unknown id is 404.
+
+  Coupon JSON: `{ id, code, discount_type, value, max_discount, min_order_amount,
+  starts_at, ends_at, usage_limit_total, usage_limit_per_phone, first_order_only,
+  product_ids, category_ids, free_delivery, is_active, status, used_count,
+  created_by, created_at, updated_at }`.
+
+  `created_by` is the admin user id, or null. Money fields are numbers.
+  `value` may have decimals for a percent coupon.
+}

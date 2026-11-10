@@ -1,0 +1,26 @@
+meta {
+  name: Deactivate Coupon
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/coupons/{{COUPON_ID}}/deactivate
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # POST /api/v1/admin/coupons/{id}/deactivate
+
+  Editor or superadmin. Sets `is_active` false. `status` becomes `inactive`.
+  A shopper quote reports `coupon_inactive`. The rows and past redemptions stay.
+}

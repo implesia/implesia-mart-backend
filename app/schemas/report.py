@@ -45,19 +45,25 @@ class SalesSummary(BaseModel):
     # Sum of list price × quantity (regular price, or the selling price when
     # the line has no regular price). Whole taka.
     gross_sales: int
-    # gross_sales minus the sum of line totals. Includes the list-price
-    # discount and the quantity discount. Whole taka.
+    # List-price discount, quantity discount, and coupon discount. Whole taka.
+    # gross_sales - the sum of line totals, plus coupon_discount.
     discount: int
+    # Coupon taka on delivered orders in the window. Already inside discount.
+    # A product or category filter keeps that filter's share of the coupon.
+    # NULL coupon columns count as 0, so orders from before coupons are unchanged.
+    coupon_discount: int
     # Sum of orders.shipping, once per delivered order. A product filter still
     # counts the whole order's delivery charge, not a share of it.
+    # Free delivery is already shipping 0 on the order.
     delivery_charge: int
-    # gross_sales - discount + delivery_charge. Whole taka.
+    # gross_sales - discount + delivery_charge. Whole taka. Net of the coupon.
     net_sales: int
 
 
 class ProfitReport(BaseModel):
     filters: ReportFilters
-    # line_total of lines that have a unit_cost. Delivery is not included.
+    # line_total of lines that have a unit_cost, minus that line's share of
+    # the coupon. Delivery is not included.
     revenue: int
     cost: ReportMoney | None = None
     profit: ReportMoney | None = None
@@ -160,3 +166,26 @@ class TrendReport(BaseModel):
     filters: ReportFilters
     grain: ReportGrain
     points: list[TrendPoint]
+
+
+class CouponReportRow(BaseModel):
+    coupon_id: uuid.UUID
+    code: str
+    times_used: int
+    total_discount: int
+    # Sum of orders.total (after the coupon, including delivery) for those uses.
+    total_sales: int
+
+
+class CouponReport(BaseModel):
+    """Active redemptions whose order was placed in the window. Cancelled uses are omitted.
+
+    A returned order stays in the count. The date is the redemption time, which
+    is the order time, not delivered_at.
+    """
+
+    filters: ReportFilters
+    items: list[CouponReportRow]
+    times_used: int
+    total_discount: int
+    total_sales: int
