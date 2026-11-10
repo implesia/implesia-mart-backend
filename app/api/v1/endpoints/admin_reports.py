@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentUser, DbSession, no_store
 from app.schemas.report import (
+    CouponReport,
     DeliveryReport,
     MovementReport,
     ProductReport,
@@ -177,4 +178,19 @@ async def export_trend(
 ) -> StreamingResponse:
     del user
     name, payload = await report_service.trend_workbook(db, request)
+    return _xlsx(name, payload)
+
+
+@router.get("/coupons", response_model=CouponReport)
+async def read_coupons(user: CurrentUser, db: DbSession, request: ReportArgs) -> CouponReport:
+    del user
+    return await report_service.coupon_report(db, request)
+
+
+@router.get("/coupons/export")
+async def export_coupons(
+    user: CurrentUser, db: DbSession, request: ReportArgs
+) -> StreamingResponse:
+    del user
+    name, payload = await report_service.coupon_workbook(db, request)
     return _xlsx(name, payload)

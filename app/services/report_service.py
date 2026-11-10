@@ -17,15 +17,18 @@ from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from sqlalchemy import String, and_, case, cast, distinct, func, or_, select
+from sqlalchemy import Float, Numeric, String, and_, case, cast, distinct, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import UnprocessableError
+from app.models.coupon import Coupon, CouponRedemption
 from app.models.inventory import StockMovement
 from app.models.order import Order, OrderItem
 from app.models.product import Product
 from app.schemas.common import page_count
 from app.schemas.report import (
+    CouponReport,
+    CouponReportRow,
     DeliveryReport,
     MovementReport,
     ProductReport,
@@ -104,6 +107,16 @@ class _DayFigures:
     cost: Decimal = field(default_factory=lambda: Decimal("0.00"))
     had_known: bool = False
     unknown_revenue: int = 0
+    coupon: int = 0
+    known_coupon: int = 0
+    unknown_coupon: int = 0
+
+
+@dataclass
+class _CouponShares:
+    matched: int = 0
+    known: int = 0
+    unknown: int = 0
 
 
 def window_bounds(
@@ -290,21 +303,99 @@ def _profit_of(totals: _LineTotals) -> tuple[Decimal | None, Decimal | None]:
     return profit, margin
 
 
+def _whole(value: object) -> int:
+    if value is None:
+        return 0
+    return int(Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def _coupon_ratio(discount: Any, part: Any, merch: Any, dialect: str) -> Any:
+    """Whole taka, half up for positive amounts. SQLite divides in float."""
+    number = Numeric if dialect == "postgresql" else Float
+    return func.round(cast(discount, number) * cast(part, number) / cast(merch, number))
+
+
+def _coupon_share_query(scope: ReportScope, dialect: str) -> Any:
+    """One row per delivered order: its coupon split across matching lines."""
+    line_match: list[Any] = []
+    if scope.product_id is not None:
+        line_match.append(OrderItem.product_id == scope.product_id)
+    if scope.category_ids is not None:
+        line_match.append(Product.category_id.in_(scope.category_ids))
+    matched_expr = and_(*line_match) if line_match else true()
+    known = OrderItem.unit_cost.is_not(None)
+    unknown = OrderItem.unit_cost.is_(None)
+    parts = (
+        select(
+            OrderItem.order_id.label("order_id"),
+            func.sum(OrderItem.line_total).label("merch"),
+            func.sum(case((matched_expr, OrderItem.line_total), else_=0)).label("matched_lines"),
+            func.sum(case((and_(matched_expr, known), OrderItem.line_total), else_=0)).label(
+                "known_lines"
+            ),
+            func.sum(case((and_(matched_expr, unknown), OrderItem.line_total), else_=0)).label(
+                "unknown_lines"
+            ),
+        )
+        .select_from(OrderItem)
+        .outerjoin(Product, Product.id == OrderItem.product_id)
+        .group_by(OrderItem.order_id)
+        .subquery()
+    )
+    discount = func.coalesce(Order.coupon_discount, 0)
+    stmt = (
+        select(
+            Order.id.label("order_id"),
+            dhaka_day(Order.delivered_at, dialect).label("day"),
+            _coupon_ratio(discount, parts.c.matched_lines, parts.c.merch, dialect).label("matched"),
+            _coupon_ratio(discount, parts.c.known_lines, parts.c.merch, dialect).label("known"),
+            _coupon_ratio(discount, parts.c.unknown_lines, parts.c.merch, dialect).label("unknown"),
+        )
+        .select_from(Order)
+        .join(parts, parts.c.order_id == Order.id)
+        .where(
+            at_or_after(Order.delivered_at, scope.start, dialect),
+            before(Order.delivered_at, scope.end, dialect),
+            parts.c.merch > 0,
+            parts.c.matched_lines > 0,
+        )
+    )
+    if scope.channel is not None:
+        stmt = stmt.where(Order.channel == scope.channel)
+    return stmt.subquery()
+
+
+async def _coupon_shares(db: AsyncSession, scope: ReportScope) -> _CouponShares:
+    shares = _coupon_share_query(scope, dialect_name(db))
+    row = (
+        await db.execute(
+            select(
+                func.coalesce(func.sum(shares.c.matched), 0),
+                func.coalesce(func.sum(shares.c.known), 0),
+                func.coalesce(func.sum(shares.c.unknown), 0),
+            )
+        )
+    ).one()
+    return _CouponShares(matched=_whole(row[0]), known=_whole(row[1]), unknown=_whole(row[2]))
+
+
 async def sales_summary(
     db: AsyncSession, request: ReportRequest, now: datetime | None = None
 ) -> SalesSummary:
     scope = await _scope(db, request, now)
     orders, shipping = await _order_shipping(db, scope)
     totals = await _line_totals(db, scope)
-    discount = totals.gross - totals.merchandise
+    coupon = await _coupon_shares(db, scope)
+    discount = totals.gross - totals.merchandise + coupon.matched
     return SalesSummary(
         filters=scope.filters(),
         order_count=orders,
         units_sold=totals.units,
         gross_sales=totals.gross,
         discount=discount,
+        coupon_discount=coupon.matched,
         delivery_charge=shipping,
-        net_sales=totals.merchandise + shipping,
+        net_sales=totals.merchandise + shipping - coupon.matched,
     )
 
 
@@ -313,6 +404,9 @@ async def profit_report(
 ) -> ProfitReport:
     scope = await _scope(db, request, now)
     totals = await _line_totals(db, scope)
+    coupon = await _coupon_shares(db, scope)
+    totals.known_revenue = max(totals.known_revenue - coupon.known, 0)
+    totals.unknown_revenue = max(totals.unknown_revenue - coupon.unknown, 0)
     profit, margin = _profit_of(totals)
     return ProfitReport(
         filters=scope.filters(),
@@ -337,6 +431,23 @@ def _product_groups(scope: ReportScope, dialect: str) -> Any:
     )
     known = OrderItem.unit_cost.is_not(None)
     group_key = func.coalesce(cast(OrderItem.product_id, String), OrderItem.title)
+    order_merch = (
+        select(
+            OrderItem.order_id.label("order_id"),
+            func.sum(OrderItem.line_total).label("merch"),
+        )
+        .group_by(OrderItem.order_id)
+        .subquery()
+    )
+    discount = func.coalesce(Order.coupon_discount, 0)
+    share = case(
+        (
+            and_(delivered, order_merch.c.merch > 0),
+            _coupon_ratio(discount, OrderItem.line_total, order_merch.c.merch, dialect),
+        ),
+        else_=0,
+    )
+    known_share = case((and_(delivered, known), share), else_=0)
     stmt = (
         select(
             func.max(cast(OrderItem.product_id, String)).label("product_id"),
@@ -344,10 +455,14 @@ def _product_groups(scope: ReportScope, dialect: str) -> Any:
             func.coalesce(func.sum(case((delivered, OrderItem.quantity), else_=0)), 0).label(
                 "units_sold"
             ),
-            func.coalesce(func.sum(case((delivered, OrderItem.line_total), else_=0)), 0).label(
-                "revenue"
-            ),
-            func.sum(case((and_(delivered, known), OrderItem.line_total))).label("known_revenue"),
+            (
+                func.coalesce(func.sum(case((delivered, OrderItem.line_total), else_=0)), 0)
+                - func.coalesce(func.sum(share), 0)
+            ).label("revenue"),
+            (
+                func.sum(case((and_(delivered, known), OrderItem.line_total)))
+                - func.coalesce(func.sum(known_share), 0)
+            ).label("known_revenue"),
             func.sum(
                 case((and_(delivered, known), OrderItem.quantity * OrderItem.unit_cost))
             ).label("cost"),
@@ -364,6 +479,7 @@ def _product_groups(scope: ReportScope, dialect: str) -> Any:
         )
         .select_from(OrderItem)
         .join(Order, Order.id == OrderItem.order_id)
+        .outerjoin(order_merch, order_merch.c.order_id == Order.id)
         .outerjoin(Product, Product.id == OrderItem.product_id)
         .where(or_(delivered, returned))
         .group_by(group_key)
@@ -380,11 +496,11 @@ def _product_groups(scope: ReportScope, dialect: str) -> Any:
 def _product_row(row: Any) -> ProductReportRow:
     known_revenue = row.known_revenue
     cost = _money(row.cost)
-    revenue = int(row.revenue)
+    revenue = _whole(row.revenue)
     if cost is None:
         profit, margin = None, None
     else:
-        known = int(known_revenue or 0)
+        known = 0 if known_revenue is None else _whole(known_revenue)
         profit = (Decimal(known) - cost).quantize(_TWOPLACES, rounding=ROUND_HALF_UP)
         margin = (
             None
@@ -750,6 +866,25 @@ async def _trend_days(
             continue
         bucket = figures.setdefault(key, _DayFigures())
         bucket.delivery += int(shipping)
+    shares = _coupon_share_query(scope, dialect)
+    coupon_rows = (
+        await db.execute(
+            select(
+                shares.c.day,
+                func.coalesce(func.sum(shares.c.matched), 0),
+                func.coalesce(func.sum(shares.c.known), 0),
+                func.coalesce(func.sum(shares.c.unknown), 0),
+            ).group_by(shares.c.day)
+        )
+    ).all()
+    for raw_day, matched, known_coupon, unknown_coupon in coupon_rows:
+        key = _as_date(raw_day)
+        if key is None:
+            continue
+        bucket = figures.setdefault(key, _DayFigures())
+        bucket.coupon += _whole(matched)
+        bucket.known_coupon += _whole(known_coupon)
+        bucket.unknown_coupon += _whole(unknown_coupon)
     return figures
 
 
@@ -788,23 +923,28 @@ def _fold(days: dict[date, _DayFigures], bucket: date, grain: str) -> _DayFigure
         total.cost += figures.cost
         total.had_known = total.had_known or figures.had_known
         total.unknown_revenue += figures.unknown_revenue
+        total.coupon += figures.coupon
+        total.known_coupon += figures.known_coupon
+        total.unknown_coupon += figures.unknown_coupon
     return total
 
 
 def _trend_point(bucket: date, figures: _DayFigures) -> TrendPoint:
+    known_revenue = max(figures.known_revenue - figures.known_coupon, 0)
+    unknown_revenue = max(figures.unknown_revenue - figures.unknown_coupon, 0)
     if figures.had_known:
-        profit: Decimal | None = (Decimal(figures.known_revenue) - figures.cost).quantize(
+        profit: Decimal | None = (Decimal(known_revenue) - figures.cost).quantize(
             _TWOPLACES, rounding=ROUND_HALF_UP
         )
-    elif figures.unknown_revenue:
+    elif unknown_revenue:
         profit = None
     else:
         profit = Decimal("0.00")
     return TrendPoint(
         start=bucket,
-        net_sales=figures.merchandise + figures.delivery,
+        net_sales=figures.merchandise + figures.delivery - figures.coupon,
         profit=profit,
-        unknown_cost_revenue=figures.unknown_revenue,
+        unknown_cost_revenue=unknown_revenue,
     )
 
 
@@ -818,6 +958,7 @@ async def sales_workbook(
         summary.units_sold,
         summary.gross_sales,
         summary.discount,
+        summary.coupon_discount,
         summary.delivery_charge,
         summary.net_sales,
     ]]
@@ -826,6 +967,7 @@ async def sales_workbook(
         "Units sold",
         "Gross sales",
         "Discount",
+        "Coupon discount",
         "Delivery charge",
         "Net sales",
     ]
@@ -1027,6 +1169,81 @@ async def trend_workbook(
         rows,
         True,
         extra=[["Grain", report.grain]],
+    )
+
+
+async def coupon_report(
+    db: AsyncSession, request: ReportRequest, now: datetime | None = None
+) -> CouponReport:
+    """Uses placed in the window. Cancelled redemptions are left out. Returns stay in."""
+    scope = await _scope(db, request, now)
+    dialect = dialect_name(db)
+    rows = (
+        await db.execute(
+            select(
+                Coupon.id,
+                Coupon.code,
+                func.count(CouponRedemption.id),
+                func.coalesce(func.sum(CouponRedemption.discount_amount), 0),
+                func.coalesce(func.sum(Order.total), 0),
+            )
+            .select_from(Coupon)
+            .join(CouponRedemption, CouponRedemption.coupon_id == Coupon.id)
+            .join(Order, Order.id == CouponRedemption.order_id)
+            .where(
+                CouponRedemption.cancelled_at.is_(None),
+                at_or_after(CouponRedemption.created_at, scope.start, dialect),
+                before(CouponRedemption.created_at, scope.end, dialect),
+            )
+            .group_by(Coupon.id, Coupon.code)
+            .order_by(
+                func.coalesce(func.sum(CouponRedemption.discount_amount), 0).desc(),
+                Coupon.code.asc(),
+            )
+        )
+    ).all()
+    items = [
+        CouponReportRow(
+            coupon_id=row[0],
+            code=str(row[1]),
+            times_used=int(row[2]),
+            total_discount=int(row[3]),
+            total_sales=int(row[4]),
+        )
+        for row in rows
+    ]
+    return CouponReport(
+        filters=scope.filters(channel_applies=False),
+        items=items,
+        times_used=sum(item.times_used for item in items),
+        total_discount=sum(item.total_discount for item in items),
+        total_sales=sum(item.total_sales for item in items),
+    )
+
+
+async def coupon_workbook(
+    db: AsyncSession, request: ReportRequest, now: datetime | None = None
+) -> tuple[str, bytes]:
+    report = await coupon_report(db, request, now)
+    scope = await _scope(db, request, now)
+    headers = ["Code", "Times used", "Total discount", "Total sales"]
+    rows: list[list[object]] = [
+        [item.code, item.times_used, item.total_discount, item.total_sales]
+        for item in report.items
+    ]
+    rows.append(["Total", report.times_used, report.total_discount, report.total_sales])
+    return _filename("coupons", scope), _book(
+        "Coupons",
+        scope,
+        headers,
+        rows,
+        False,
+        extra=[[
+            "Note",
+            "Counts active redemptions placed in the window. "
+            "Cancelled orders are omitted. Returned orders stay. "
+            "Total sales is the order total after the coupon, including delivery.",
+        ]],
     )
 
 

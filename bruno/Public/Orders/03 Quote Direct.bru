@@ -32,4 +32,8 @@ docs {
   # POST /api/v1/orders/quote
 
   Prices a buy-now list. This does not read or clear the cart. Do not send `unit_price`.
+
+  Optional `coupon_code` (string). Optional `phone` (the same mobile form as an order) so the quote can check the per-phone limit and the first-order rule. A blank code is no coupon.
+
+  The response adds `coupon`: null, or `{ code, valid, discount, free_delivery, error_code, message }`. An invalid code does not fail the quote. `total` and `shipping` already include a valid coupon. `subtotal` stays the merchandise after the quantity discount, before the coupon.
 }

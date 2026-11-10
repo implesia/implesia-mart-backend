@@ -5,7 +5,7 @@
 FastAPI backend for the Implesia Mart storefront and its admin dashboard. It serves:
 
 - **Storefront (public)**: products, categories, search, CMS pages (home, about, sustainability, shipping, privacy, FAQs, contact, blogs), site header/footer/contact settings, carts, orders, inquiries.
-- **Admin (staff)**: editing all of the above, product badges, media uploads, orders and delivery status, dashboard overview, users and audit events.
+- **Admin (staff)**: editing all of the above, product badges, media uploads, orders and delivery status, coupons, sales reports, dashboard overview, users and audit events.
 
 There are no customer accounts. Shoppers stay anonymous. A guest cart is identified by the `X-Cart-Token` header.
 

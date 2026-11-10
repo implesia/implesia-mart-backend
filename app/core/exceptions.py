@@ -60,6 +60,14 @@ class UnprocessableError(AppError):
     code = "validation_error"
 
 
+class CouponError(UnprocessableError):
+    """A coupon the shopper sent cannot be used. `code` is the coupon error code."""
+
+    def __init__(self, error_code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = error_code
+
+
 def _envelope(code: str, message: str, details: Any = None) -> dict[str, Any]:
     return {"error": {"code": code, "message": message, "details": details}}
 

@@ -1,0 +1,69 @@
+meta {
+  name: Create Coupon
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/coupons
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "code": "EID10",
+    "discount_type": "percent",
+    "value": 10,
+    "max_discount": 500,
+    "min_order_amount": 1000,
+    "starts_at": "2026-06-01T00:00:00",
+    "ends_at": "2026-06-30T23:59:00",
+    "usage_limit_total": 100,
+    "usage_limit_per_phone": 1,
+    "first_order_only": false,
+    "product_ids": [],
+    "category_ids": [],
+    "free_delivery": false,
+    "is_active": true
+  }
+}
+
+docs {
+  # POST /api/v1/admin/coupons
+
+  Editor or superadmin. Viewer is 403. A successful write is an `ADMIN_WRITE` audit row.
+
+  The code is stored uppercase. 3–32 characters: A–Z, 0–9, hyphen, underscore.
+  Generating a code is the admin UI's job; the API only checks the shape.
+
+  `starts_at` and `ends_at` with no timezone are Asia/Dhaka. A value with an offset
+  is that exact instant. Both ends are inclusive. Omit either to leave it open.
+
+  `value` is a percent (0–100, at most two decimals) or a whole-taka fixed amount.
+  `max_discount` is only for a percent coupon. Value 0 is allowed only with `free_delivery`.
+
+  Empty `product_ids` and `category_ids` means the whole cart. A listed category
+  includes its child categories. The discount applies only to the eligible line subtotal.
+
+  A duplicate code (any case) is 409 "এই কুপন কোডটি আগে থেকেই আছে।"
+}
+
+tests {
+  test("creates a coupon", function () {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.body.code).to.equal("EID10");
+    expect(res.body.discount_type).to.equal("percent");
+    expect(res.body.used_count).to.equal(0);
+    bru.setVar("COUPON_ID", res.body.id);
+  });
+}
