@@ -1,6 +1,6 @@
 import re
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -339,3 +339,33 @@ class AdminOrderList(BaseModel):
 
 def order_page_count(total: int, page_size: int) -> int:
     return page_count(total, page_size)
+
+
+class NewOrderQuery(BaseModel):
+    """Cursor for the staff new-order feed. This is not a page of the order list."""
+
+    since: datetime | None = None
+    limit: int = Field(20, ge=1, le=50)
+
+    @field_validator("since")
+    @classmethod
+    def _since_utc(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+
+
+class NewOrderItem(BaseModel):
+    id: uuid.UUID
+    number: str
+    customer_name: str
+    total: int
+    payment_method: PaymentMethod
+    created_at: datetime
+
+
+class NewOrderFeed(BaseModel):
+    now: datetime
+    items: list[NewOrderItem]

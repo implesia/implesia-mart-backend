@@ -284,9 +284,34 @@ Staff inventory. `viewer` can read. Writes need `editor` or `superadmin`. Every 
 
 | Method | Path | Access | Request body | Response |
 | --- | --- | --- | --- | --- |
+| GET | `/api/v1/admin/orders/new` | any signed-in staff | — | `NewOrderFeed` |
 | GET | `/api/v1/admin/orders` | admin (editor, superadmin) | — | `AdminOrderList` |
 | GET | `/api/v1/admin/orders/{order_id}` | admin (editor, superadmin) | — | `OrderRead` |
 | PATCH | `/api/v1/admin/orders/{order_id}` | admin (editor, superadmin) | `OrderUpdate` | `OrderRead` |
+
+`GET /api/v1/admin/orders/new` is a cursor feed for polling, not a page. `Cache-Control: no-store`. Anonymous, or a bearer token that is not a live staff session, is 401. A viewer is allowed here and is still 403 on the editor list.
+
+Query: `since` (optional ISO-8601; a value with no timezone is UTC) and `limit` (integer 1–50, default 20). `limit` outside that range is 422.
+
+The server reads `now` (UTC) first. Rows are `created_at > since` and `created_at <= now`, newest first (`created_at`, then `id`). With no `since`, `since` is `now` minus 24 hours. The next poll should send this response's `now` as `since`, so a row is not returned twice and a row created after `now` shows up on the next poll.
+
+```json
+{
+  "now": "2026-11-10T12:00:00+00:00",
+  "items": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "number": "IM-AB12CD34",
+      "customer_name": "Rina Akter",
+      "total": 1570,
+      "payment_method": "cod",
+      "created_at": "2026-11-10T11:55:00+00:00"
+    }
+  ]
+}
+```
+
+`payment_method` is the stored value: `cod` or `bangla_qr`. `total` is the order total in whole taka. The select list is only these columns. `ix_orders_created_at` (migration 0005) supports the filter.
 
 `OrderRead` includes `delivered_at` and `returned_at` (ISO datetime or `null`). They are set the first time the status becomes `delivered` or `returned` and are not replaced later. `PublicOrderRead` (order lookup) does not include them. `POST /orders` returns them as `null` on a new order. `OrderRead` also includes `order_number` (the same value as `number`) and `analytics_event_id` (`purchase_` plus that number). Those two fields are derived. They do not cause a Meta call on admin reads or status updates.
 

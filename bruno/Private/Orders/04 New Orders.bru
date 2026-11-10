@@ -1,0 +1,53 @@
+meta {
+  name: New Orders
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/orders/new
+  body: none
+  auth: bearer
+}
+
+params:query {
+  since: 2026-11-10T00:00:00Z
+  limit: 20
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/admin/orders/new
+
+  Any signed-in staff, including viewer. Anonymous is 401.
+
+  `since` is optional ISO-8601. `limit` is 1 to 50 and defaults to 20.
+  Orders are newest first and must be strictly newer than `since`.
+  With no `since`, the feed is the latest `limit` orders from the last 24 hours.
+  Pass the previous response `now` as the next `since`.
+
+  ```json
+  {
+    "now": "2026-11-10T12:00:00+00:00",
+    "items": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "number": "IM-AB12CD34",
+        "customer_name": "Rina Akter",
+        "total": 1570,
+        "payment_method": "cod",
+        "created_at": "2026-11-10T11:55:00+00:00"
+      }
+    ]
+  }
+  ```
+
+  `payment_method` is `cod` or `bangla_qr`.
+}
