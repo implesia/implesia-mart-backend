@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Request
 from limits import parse
 
 from app.api.deps import DbSession, no_store
@@ -54,6 +54,7 @@ async def place_order(
     actor: ShopperDep,
     payload: OrderCreate,
     idempotency_key: Annotated[str, Header()],
+    background: BackgroundTasks,
 ) -> OrderRead:
     # Only placed orders spend the per-IP budget: a replay of the same Idempotency-Key and a
     # submission rejected as invalid (empty cart, stock, delivery area) do not count.
@@ -63,7 +64,7 @@ async def place_order(
     bucket = ("orders-placed", _rate_limit_key(request))
     if limiter.enabled and not limiter.limiter.test(_ORDER_LIMIT, *bucket):
         raise TooManyRequestsError("Too many requests.")
-    order = await order_service.create_order(db, actor, payload, idempotency_key)
+    order = await order_service.create_order(db, actor, payload, idempotency_key, background)
     if limiter.enabled:
         limiter.limiter.hit(_ORDER_LIMIT, *bucket)
     return order

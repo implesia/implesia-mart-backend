@@ -2,6 +2,13 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Meta Conversions API Purchase on order create (2026-11-10). Done (not live).**
+  - After a new order commits, the API sends one Meta `Purchase` event in the background. A network error, timeout, or exception is logged with the order number only and does not change the 201 response. The same idempotency key and later status updates do not send again. No migration.
+  - `POST /api/v1/orders` accepts an optional `tracking` object (`fbp`, `fbc`, `event_source_url`, each a string or null, max 500). Missing, unknown, or invalid values are ignored. Clients that omit `tracking` are unchanged.
+  - The order response already returns the number as `number`. It now also returns `order_number` (the same string) and `analytics_event_id` (`purchase_` plus that string) on every `OrderRead`, including admin reads. Public lookup is unchanged.
+  - The event is sent only when both `META_PIXEL_ID` and `META_CAPI_TOKEN` are set. `META_TEST_EVENT_CODE` is optional. Empty pixel id or token disables sending with no error. No id or token is stored in the repo.
+  - Files: `app/services/meta_capi.py`, `app/services/order_service.py`, `app/api/v1/endpoints/orders.py`, `app/schemas/order.py`, `app/core/config.py`, `.env.example`, `tests/test_meta_capi.py`, `tests/conftest.py`, docs.
+  - Frontend (`implesia-mart`): on `POST /api/v1/orders`, you may send `tracking: { fbp, fbc, event_source_url }`. Read `order_number` and `analytics_event_id` from the 201 body. The browser Pixel `Purchase` `eventID` must be `analytics_event_id` (`purchase_<order_number>`), the same id the server sends, so Meta can deduplicate. `number` is still the order number.
 - **Testing branch: 0094 migration test survives the 0092 column cycle (2026-11-10).**
   - On the shared Postgres integration database, `test_0092_migration` drops `orders.delivered_at` and `orders.returned_at` and adds them back. PostgreSQL drops `ix_orders_delivered_at` and `ix_orders_returned_at` with those columns. Migration 0092 does not recreate them; they belong to 0094. `test_0094_migration` treated a present `channel` column as "0094 is already applied" and its downgrade failed with `index "ix_orders_returned_at" does not exist`.
   - The test now creates those two indexes when they are missing before it downgrades, and again in its cleanup. The migration files are unchanged.
