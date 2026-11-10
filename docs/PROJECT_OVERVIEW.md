@@ -72,6 +72,7 @@ Names only. Values live in `.env` (see `.env.example`) and must never be committ
 - Mail: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_TLS`, `EMAIL_FROM`, `EMAIL_FROM_NAME`, `ORDER_NOTIFICATION_RECIPIENTS`
 - `TURNSTILE_SECRET_KEY`
 - Meta Conversions API, optional (empty pixel id or token disables it): `META_PIXEL_ID`, `META_CAPI_TOKEN`, `META_TEST_EVENT_CODE`
+- Telegram, optional (empty token or chat list disables it): `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_IDS`, `TELEGRAM_NOTIFY_ORDER_CANCELLED`, `TELEGRAM_NOTIFY_LOW_STOCK`, `ADMIN_BASE_URL`
 - Media, all empty or all set: `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `MEDIA_PUBLIC_BASE_URL`
 
 ## Connection to the frontend repo

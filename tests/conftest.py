@@ -22,6 +22,12 @@ os.environ.update(
         "META_PIXEL_ID": "",
         "META_CAPI_TOKEN": "",
         "META_TEST_EVENT_CODE": "",
+        # Telegram stays off in the suite even when a local .env has a bot.
+        "TELEGRAM_BOT_TOKEN": "",
+        "TELEGRAM_CHAT_IDS": "",
+        "TELEGRAM_NOTIFY_ORDER_CANCELLED": "false",
+        "TELEGRAM_NOTIFY_LOW_STOCK": "false",
+        "ADMIN_BASE_URL": "",
     }
 )
 

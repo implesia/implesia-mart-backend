@@ -134,6 +134,11 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # replace it. NULL when that change was never recorded.
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     returned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Set when this process has claimed the new-order Telegram alert. NULL when
+    # Telegram was off, and on every order placed before the column existed.
+    telegram_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     inventory_held: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=true()
     )
