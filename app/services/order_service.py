@@ -3,6 +3,7 @@ import re
 import secrets
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any, NamedTuple
 
 from sqlalchemy import Select, func, or_, select, update
@@ -15,6 +16,7 @@ from app.models.audit_event import AuditAction
 from app.models.inventory import MovementType
 from app.models.order import (
     ORDER_TRANSITIONS,
+    WEBSITE_CHANNEL,
     Order,
     OrderIdempotency,
     OrderItem,
@@ -487,13 +489,14 @@ async def create_order(
 
     # Prices come only from the database rows and the pricing rules, never from the request.
     rules = await pricing_service.store_rules(db)
-    priced: list[tuple[Requested, pricing_service.Line, str, str, str, str]] = []
+    priced: list[tuple[Requested, pricing_service.Line, str, str, str, str, Decimal | None]] = []
     ordered = sorted(requested, key=lambda row: (row.product_id.hex, str(row.variant_id or "")))
     for row in ordered:
         product = await _product(db, row.product_id)
         variant = await variant_service.resolve_for_purchase(db, product, row.variant_id)
         line, title, slug, image_src, sku = await _claim(db, product, variant, row.quantity, rules)
-        priced.append((row, line, title, slug, image_src, sku))
+        # Snapshot the cost now. A later purchase must not rewrite this order.
+        priced.append((row, line, title, slug, image_src, sku, product.cost_price))
 
     subtotal = sum(line.line_total for _row, line, *_rest in priced)
     shipping = fee if priced else 0
@@ -512,6 +515,7 @@ async def create_order(
         number=await _number(db),
         user_id=shopper.user.id if shopper.user is not None else None,
         source=payload.source,
+        channel=WEBSITE_CHANNEL,
         status=OrderStatus.NEW.value,
         payment_method=payload.payment_method,
         advance_percent=advance_percent,
@@ -531,7 +535,7 @@ async def create_order(
         total=total,
         inventory_held=True,
     )
-    for row, line, title, slug, image_src, sku in priced:
+    for row, line, title, slug, image_src, sku, unit_cost in priced:
         order.items.append(
             OrderItem(
                 product_id=row.product_id,
@@ -548,6 +552,7 @@ async def create_order(
                 base_discount=pricing_service.to_hundredths(line.base_percent),
                 quantity_discount=pricing_service.to_hundredths(line.quantity_percent),
                 total_discount=pricing_service.to_hundredths(line.total_percent),
+                unit_cost=unit_cost,
             )
         )
     db.add(order)

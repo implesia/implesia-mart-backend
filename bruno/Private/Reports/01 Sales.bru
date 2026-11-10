@@ -1,0 +1,56 @@
+meta {
+name: Sales
+type: http
+seq: 1
+}
+
+get {
+url: {{PRIVATE_BASE_URL}}/api/v1/admin/reports/sales?from=2026-11-01&to=2026-11-10
+body: none
+auth: bearer
+}
+
+auth:bearer {
+token: {{ACCESS_TOKEN}}
+}
+
+headers {
+Accept: application/json
+}
+
+docs {
+# GET /api/v1/admin/reports/sales
+
+Any signed-in staff, including viewer. Read only.
+
+Query: `preset` (`this_week`, `this_month`, `last_month`) or both `from` and
+`to` (`YYYY-MM-DD`). Days are Asia/Dhaka. Sales count by `delivered_at`.
+Optional `product_id`, `category_id`, `channel`.
+
+The same path with `/export` downloads `.xlsx`.
+
+## Errors
+
+`401` — not signed in.
+`422` — preset and dates together, dates missing, `from` after `to`,
+or a range longer than 366 days.
+}
+
+tests {
+test("returns the sales summary", function () {
+expect(res.getStatus()).to.equal(200);
+const body = res.getBody();
+expect(body.filters.timezone).to.equal("Asia/Dhaka");
+expect(body.order_count).to.be.a("number");
+expect(body.net_sales).to.be.a("number");
+});
+}
+
+assert {
+res.status: eq 200
+}
+
+settings {
+encodeUrl: true
+timeout: 25000
+}
