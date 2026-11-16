@@ -891,6 +891,19 @@ Writes on this router use the product-write rate limit and return 429 `rate_limi
 | GET | `/api/v1/admin/site/header` | admin (editor, superadmin) | — | `HeaderAdmin` |
 | PUT | `/api/v1/admin/site/header` | admin (editor, superadmin) | `HeaderWrite` | `HeaderAdmin` |
 
+## `admin/site/settings`
+
+Home/default storefront SEO. There is no separate settings resource; this is the one row.
+
+`SiteSettings`: `seo_title` (string ≤ 70, or `null`), `seo_description` (string ≤ 170, or `null`), `seo_title_template` (string ≤ 80, or `null`). `null` means the storefront keeps its built-in copy for that field. A template that is set contains `%s` exactly once, for example `%s | Implesia Mart`, and no other `%`. The storefront replaces `%s` with the page title.
+
+PATCH omits a field to keep it. `null` or `""` clears it (stored and returned as `null`). Whitespace is collapsed. An unknown field is 422. Editor or above. A viewer is 403. Anonymous is 401. Admin responses are `Cache-Control: no-store`. A successful PATCH is an `ADMIN_WRITE` audit row.
+
+| Method | Path | Access | Request body | Response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/v1/admin/site/settings` | admin (editor, superadmin) | — | `SiteSettings` |
+| PATCH | `/api/v1/admin/site/settings` | admin (editor, superadmin) | `SiteSettingsUpdate` (partial) | `SiteSettings` |
+
 ## `auth`
 
 | Method | Path | Access | Request body | Response |
@@ -1240,6 +1253,14 @@ No SMS or WhatsApp gateway is called. The SSL Wireless keys in `.env.example` ar
 | Method | Path | Access | Request body | Response |
 | --- | --- | --- | --- | --- |
 | GET | `/api/v1/site/header` | public | — | `HeaderPublic` |
+
+## `site/settings`
+
+Same `SiteSettings` object as `GET /api/v1/admin/site/settings`. `null` means the storefront keeps its built-in title, description, or title template. `Cache-Control: public, max-age=60`. The API does not cache the row itself.
+
+| Method | Path | Access | Request body | Response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/v1/site/settings` | public (`Cache-Control: public, max-age=60`) | — | `SiteSettings` (`seo_title`, `seo_description`, `seo_title_template`; each string or `null`) |
 
 ## `users`
 

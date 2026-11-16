@@ -82,6 +82,7 @@ from app.models.shipping.support import ShippingSupport
 from app.models.site_contact import SiteContact
 from app.models.site_footer import SiteFooter
 from app.models.site_header import SiteHeader
+from app.models.site_settings import SiteSettings
 from app.models.sustainability.commitment import (
     SustainabilityCommitment,
     SustainabilityCommitmentItem,
@@ -245,6 +246,7 @@ __all__ = [
     "PaymentSettings",
     "PricingSettings",
     "SiteHeader",
+    "SiteSettings",
     "SustainabilityQualityStep",
     "User",
     "UserRole",
