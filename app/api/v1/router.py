@@ -136,6 +136,7 @@ api_router.include_router(
     dependencies=_AUDITED,
 )
 api_router.include_router(admin_cart.router, prefix="/admin/carts", tags=["admin:carts"])
+api_router.include_router(admin_orders.feed_router, prefix="/admin/orders", tags=["admin:orders"])
 api_router.include_router(
     admin_orders.router, prefix="/admin/orders", tags=["admin:orders"], dependencies=_AUDITED
 )

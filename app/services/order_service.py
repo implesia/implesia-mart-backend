@@ -2,7 +2,7 @@ import hmac
 import re
 import secrets
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, NamedTuple
 
@@ -10,6 +10,7 @@ from sqlalchemy import Select, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from starlette.background import BackgroundTasks
 
 from app.core.exceptions import ConflictError, NotFoundError, UnprocessableError
 from app.models.audit_event import AuditAction
@@ -29,6 +30,9 @@ from app.schemas.order import (
     AdminOrderList,
     AdminOrderMetrics,
     AdminOrderQuery,
+    NewOrderFeed,
+    NewOrderItem,
+    NewOrderQuery,
     OrderCreate,
     OrderItemRead,
     OrderLookup,
@@ -40,14 +44,17 @@ from app.schemas.order import (
     QuoteLineRead,
     QuoteRead,
     order_page_count,
+    purchase_event_id,
 )
 from app.schemas.pricing import QUANTITY_CEILING
 from app.services import (
     audit_service,
     delivery_service,
     inventory_service,
+    meta_capi,
     payment_service,
     pricing_service,
+    telegram_notify,
     variant_service,
 )
 from app.services.cart_service import Shopper, _cap, _purchasable, open_cart, shopper_actor
@@ -57,6 +64,8 @@ from app.services.product_service import content_of
 _KEY = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
 _ORDER_LOAD = selectinload(Order.items)
 _RESTOCK = {OrderStatus.CANCELLED.value, OrderStatus.RETURNED.value}
+# Absent `since` on the new-order feed looks back this far, not the whole table.
+_NEW_ORDER_WINDOW = timedelta(hours=24)
 
 
 def require_idempotency_key(value: str) -> str:
@@ -164,6 +173,8 @@ def _read(order: Order) -> OrderRead:
         ],
         created_at=order.created_at,
         next_statuses=next_statuses(order.status),
+        order_number=order.number,
+        analytics_event_id=purchase_event_id(order.number),
     )
 
 
@@ -352,6 +363,14 @@ async def _claim(
             raise UnprocessableError(variant_service.NOT_ENOUGH_STOCK)
         raise UnprocessableError("This product cannot be ordered")
     price, title, slug, image_src, left, compare_at, base = row
+    if not unlimited and left is not None:
+        telegram_notify.note_low_stock(
+            db,
+            product_id=product.id,
+            title=str(title),
+            before=int(left) + quantity,
+            after=int(left),
+        )
     if not unlimited:
         inventory_service.stage_sale(
             db,
@@ -418,7 +437,15 @@ async def _claim_variant(
         if variant.quantity is not None and 0 < variant.quantity < quantity:
             raise UnprocessableError(variant_service.NOT_ENOUGH_STOCK)
         raise UnprocessableError("This product cannot be ordered")
+    before_qty = product.quantity
     await variant_service.rollup_by_id(db, product.id)
+    telegram_notify.note_low_stock(
+        db,
+        product_id=product.id,
+        title=product.title,
+        before=before_qty,
+        after=product.quantity,
+    )
     if variant.quantity is not None:
         inventory_service.stage_sale(
             db,
@@ -467,13 +494,18 @@ async def replayed(db: AsyncSession, shopper: Shopper, idempotency_key: str) -> 
 
 
 async def create_order(
-    db: AsyncSession, shopper: Shopper, payload: OrderCreate, idempotency_key: str
+    db: AsyncSession,
+    shopper: Shopper,
+    payload: OrderCreate,
+    idempotency_key: str,
+    background: BackgroundTasks | None = None,
 ) -> OrderRead:
     key = require_idempotency_key(idempotency_key)
     actor = shopper_actor(shopper)
     replayed = await _replay(db, actor, key)
     if replayed is not None:
         return _read(replayed)
+    telegram_notify.discard_low_stock(db)
     inventory_service.clear_pending_sales(db)
 
     requested = await _requested(db, shopper, payload)
@@ -570,12 +602,20 @@ async def create_order(
         await db.commit()
     except IntegrityError:
         await db.rollback()
+        telegram_notify.discard_low_stock(db)
         replayed = await _replay(db, actor, key)
         if replayed is not None:
             return _read(replayed)
         raise ConflictError("Could not place the order. Try again.") from None
     db.expire_all()
-    return _read(await _load(db, order_id))
+    loaded = await _load(db, order_id)
+    read = _read(loaded)
+    # Only a newly committed order. Replays and status updates do not reach here.
+    if background is not None:
+        meta_capi.schedule_purchase(background, loaded, payload.tracking)
+        await telegram_notify.notify_new_order(db, background, loaded)
+    telegram_notify.flush_low_stock(db, background)
+    return read
 
 
 def _like(term: str) -> str:
@@ -670,6 +710,52 @@ async def list_orders(db: AsyncSession, query: AdminOrderQuery) -> AdminOrderLis
         page_size=query.page_size,
         pages=order_page_count(total, query.page_size),
         metrics=await _metrics(db),
+    )
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+async def list_new_orders(db: AsyncSession, query: NewOrderQuery) -> NewOrderFeed:
+    """Orders created after `since`, newest first. Only the columns the feed returns.
+
+    `now` is captured before the query and is the next cursor. Rows created
+    after that instant wait for the following poll, so a row is not returned
+    twice when the client sends the previous `now` as `since`.
+    """
+    now = datetime.now(UTC)
+    since = _as_utc(query.since) if query.since is not None else now - _NEW_ORDER_WINDOW
+    rows = (
+        await db.execute(
+            select(
+                Order.id,
+                Order.number,
+                Order.customer_name,
+                Order.total,
+                Order.payment_method,
+                Order.created_at,
+            )
+            .where(Order.created_at > since, Order.created_at <= now)
+            .order_by(Order.created_at.desc(), Order.id.desc())
+            .limit(query.limit)
+        )
+    ).all()
+    return NewOrderFeed(
+        now=now,
+        items=[
+            NewOrderItem(
+                id=row.id,
+                number=str(row.number),
+                customer_name=str(row.customer_name),
+                total=int(row.total),
+                payment_method=row.payment_method,
+                created_at=_as_utc(row.created_at),
+            )
+            for row in rows
+        ],
     )
 
 
@@ -819,10 +905,17 @@ def _status_assignments(target: str) -> dict[str, Any]:
 
 
 async def update_order(
-    db: AsyncSession, order_id: uuid.UUID, payload: OrderUpdate, *, actor: User | None = None
+    db: AsyncSession,
+    order_id: uuid.UUID,
+    payload: OrderUpdate,
+    *,
+    actor: User | None = None,
+    background: BackgroundTasks | None = None,
 ) -> OrderRead:
+    telegram_notify.discard_low_stock(db)
     actor_id = actor.id if actor is not None else None
     order = await _load(db, order_id)
+    became_cancelled = False
     if payload.status is not None and payload.status.value != order.status:
         current = order.status
         target = payload.status.value
@@ -849,6 +942,8 @@ async def update_order(
             raise ConflictError("This order was changed by someone else. Reload and try again.")
         if target in _RESTOCK:
             await _restore(db, order, stock_reason=target, actor_id=actor_id)
+        if target == OrderStatus.CANCELLED.value:
+            became_cancelled = True
         await audit_service.record(
             db,
             actor_id=actor_id,
@@ -864,4 +959,8 @@ async def update_order(
     order_id = order.id
     await db.commit()
     db.expire_all()
-    return _read(await _load(db, order_id))
+    loaded = await _load(db, order_id)
+    if became_cancelled:
+        telegram_notify.schedule_cancelled(background, loaded)
+    telegram_notify.flush_low_stock(db, background)
+    return _read(loaded)

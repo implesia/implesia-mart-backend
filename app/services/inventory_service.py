@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
+from starlette.background import BackgroundTasks
 
 from app.core.exceptions import ConflictError, NotFoundError, UnprocessableError
 from app.models.audit_event import AuditAction
@@ -56,7 +57,7 @@ from app.schemas.inventory import (
     SupplierUpdate,
 )
 from app.schemas.product import MAX_QUANTITY
-from app.services import audit_service, variant_service
+from app.services import audit_service, telegram_notify, variant_service
 from app.services.inventory_excel import (
     COST_COLUMNS,
     MAX_EXPORT_ROWS,
@@ -337,8 +338,12 @@ async def get_purchase(db: AsyncSession, purchase_id: uuid.UUID) -> PurchaseRead
 
 
 async def create_purchase(
-    db: AsyncSession, payload: PurchaseCreate, actor: User
+    db: AsyncSession,
+    payload: PurchaseCreate,
+    actor: User,
+    background: BackgroundTasks | None = None,
 ) -> PurchaseRead:
+    telegram_notify.discard_low_stock(db)
     supplier = await db.get(Supplier, payload.supplier_id)
     if supplier is None:
         raise NotFoundError("Supplier not found")
@@ -400,7 +405,9 @@ async def create_purchase(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
+        telegram_notify.discard_low_stock(db)
         raise ConflictError("Could not save this purchase") from exc
+    telegram_notify.flush_low_stock(db, background)
     return await get_purchase(db, purchase_id)
 
 
@@ -426,8 +433,12 @@ async def list_movements(db: AsyncSession, query: MovementQuery) -> MovementList
 
 
 async def adjust_stock(
-    db: AsyncSession, payload: AdjustmentCreate, actor: User
+    db: AsyncSession,
+    payload: AdjustmentCreate,
+    actor: User,
+    background: BackgroundTasks | None = None,
 ) -> MovementRead:
+    telegram_notify.discard_low_stock(db)
     product, variant, errors = await _resolve_target(
         db, payload.product_id, "", payload.variant_id
     )
@@ -456,6 +467,7 @@ async def adjust_stock(
     )
     await _persist_bucket(db, bucket, actor.id)
     await db.commit()
+    telegram_notify.flush_low_stock(db, background)
     await db.refresh(movement)
     reads = await _movement_reads(db, [movement])
     return reads[0]
@@ -568,7 +580,9 @@ async def confirm_import(
     *,
     actor: User,
     confirm_duplicate: bool,
+    background: BackgroundTasks | None = None,
 ) -> ImportResult:
+    telegram_notify.discard_low_stock(db)
     rows = await _classify(db, kind, data, filename)
     digest = file_hash(data)
     if rows and all(not row.valid for row in rows):
@@ -614,7 +628,9 @@ async def confirm_import(
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
+        telegram_notify.discard_low_stock(db)
         raise ConflictError("Could not import this workbook. Nothing was saved.") from exc
+    telegram_notify.flush_low_stock(db, background)
     return ImportResult(
         import_type=ImportKind(kind),
         file_hash=digest,
@@ -1188,6 +1204,13 @@ async def _audit_bucket(
                 }
             },
         )
+    telegram_notify.note_low_stock(
+        db,
+        product_id=fresh.id,
+        title=fresh.title,
+        before=bucket.original_quantity,
+        after=fresh.quantity,
+    )
 
 
 async def _opening_exists(

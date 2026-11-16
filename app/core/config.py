@@ -13,6 +13,10 @@ Environment = Literal["local", "test", "staging", "production"]
 DEFAULT_SECRET_KEY = "change-me-in-production"
 MIN_PRODUCTION_SECRET_KEY_LENGTH = 32
 
+# Products have no reorder column. Same cutoff as report_service.LOW_STOCK_AT
+# and the storefront low-stock mark. Not an environment variable.
+LOW_STOCK_THRESHOLD = 5
+
 # NoDecode stops pydantic-settings from JSON-parsing the raw env value, so the
 # "before" validator below can accept a plain comma separated string.
 CsvList = Annotated[list[str], NoDecode]
@@ -102,6 +106,21 @@ class Settings(BaseSettings):
     # Cloudflare Turnstile
     turnstile_secret_key: str = ""
 
+    # Meta Conversions API. Both the pixel id and the token must be set or Purchase
+    # events are not sent. The test code is optional and only used while testing.
+    meta_pixel_id: str = ""
+    meta_capi_token: SecretStr = SecretStr("")
+    meta_test_event_code: str = ""
+
+    # Telegram. An empty token or an empty chat list leaves alerts off.
+    # Chat ids are comma-separated. Group ids are negative.
+    telegram_bot_token: SecretStr = SecretStr("")
+    telegram_chat_ids: CsvList = Field(default_factory=list)
+    telegram_notify_order_cancelled: bool = False
+    telegram_notify_low_stock: bool = False
+    # Storefront origin, no path. The order link is {ADMIN_BASE_URL}/admin/orders/{id}.
+    admin_base_url: str = ""
+
     @model_validator(mode="after")
     def _production_secret_key(self) -> Self:
         if self.environment != "production":
@@ -141,8 +160,22 @@ class Settings(BaseSettings):
         )
         return self
 
+    @model_validator(mode="after")
+    def _admin_base_url_origin(self) -> Self:
+        raw = self.admin_base_url.strip().rstrip("/")
+        if not raw:
+            self.admin_base_url = ""
+            return self
+        _require_origin(raw, "ADMIN_BASE_URL", production=self.environment == "production")
+        self.admin_base_url = raw
+        return self
+
     @field_validator(
-        "cors_origins", "order_notification_recipients", "trusted_proxies", mode="before"
+        "cors_origins",
+        "order_notification_recipients",
+        "trusted_proxies",
+        "telegram_chat_ids",
+        mode="before",
     )
     @classmethod
     def _split_csv(cls, value: object) -> object:
@@ -178,6 +211,16 @@ class Settings(BaseSettings):
     @property
     def turnstile_enabled(self) -> bool:
         return bool(self.turnstile_secret_key)
+
+    @property
+    def meta_capi_enabled(self) -> bool:
+        """True only when both the pixel id and the access token are set."""
+        return bool(self.meta_pixel_id.strip() and self.meta_capi_token.get_secret_value().strip())
+
+    @property
+    def telegram_enabled(self) -> bool:
+        """True only when a bot token and at least one chat id are set."""
+        return bool(self.telegram_bot_token.get_secret_value().strip() and self.telegram_chat_ids)
 
     @property
     def object_storage_enabled(self) -> bool:

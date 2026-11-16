@@ -18,6 +18,16 @@ os.environ.update(
         "S3_ACCESS_KEY_ID": "",
         "S3_SECRET_ACCESS_KEY": "",
         "MEDIA_PUBLIC_BASE_URL": "",
+        # CAPI stays off in the suite even when a local .env has credentials.
+        "META_PIXEL_ID": "",
+        "META_CAPI_TOKEN": "",
+        "META_TEST_EVENT_CODE": "",
+        # Telegram stays off in the suite even when a local .env has a bot.
+        "TELEGRAM_BOT_TOKEN": "",
+        "TELEGRAM_CHAT_IDS": "",
+        "TELEGRAM_NOTIFY_ORDER_CANCELLED": "false",
+        "TELEGRAM_NOTIFY_LOW_STOCK": "false",
+        "ADMIN_BASE_URL": "",
     }
 )
 

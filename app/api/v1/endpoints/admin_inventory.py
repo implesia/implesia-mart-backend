@@ -3,7 +3,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentUser, DbSession, RequireEditor, no_store
@@ -85,10 +85,14 @@ async def list_purchases(
 @router.post("/purchases", response_model=PurchaseRead, status_code=201)
 @limiter.limit(settings.rate_limit_product_writes)
 async def create_purchase(
-    request: Request, db: DbSession, actor: RequireEditor, payload: PurchaseCreate
+    request: Request,
+    db: DbSession,
+    actor: RequireEditor,
+    payload: PurchaseCreate,
+    background: BackgroundTasks,
 ) -> PurchaseRead:
     del request
-    return await inventory_service.create_purchase(db, payload, actor)
+    return await inventory_service.create_purchase(db, payload, actor, background)
 
 
 @router.get("/purchases/{purchase_id}", response_model=PurchaseRead)
@@ -108,10 +112,14 @@ async def list_movements(
 @router.post("/adjustments", response_model=MovementRead, status_code=201)
 @limiter.limit(settings.rate_limit_product_writes)
 async def adjust_stock(
-    request: Request, db: DbSession, actor: RequireEditor, payload: AdjustmentCreate
+    request: Request,
+    db: DbSession,
+    actor: RequireEditor,
+    payload: AdjustmentCreate,
+    background: BackgroundTasks,
 ) -> MovementRead:
     del request
-    return await inventory_service.adjust_stock(db, payload, actor)
+    return await inventory_service.adjust_stock(db, payload, actor, background)
 
 
 @router.post("/opening-stock", response_model=OpeningStockResult)
@@ -162,6 +170,7 @@ async def confirm_import(
     request: Request,
     db: DbSession,
     actor: RequireEditor,
+    background: BackgroundTasks,
     import_type: Annotated[str, Form()],
     file: Annotated[UploadFile, File()],
     confirm_duplicate: Annotated[bool, Form()] = False,
@@ -175,6 +184,7 @@ async def confirm_import(
         filename,
         actor=actor,
         confirm_duplicate=confirm_duplicate,
+        background=background,
     )
 
 
