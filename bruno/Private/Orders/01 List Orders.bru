@@ -30,7 +30,9 @@ headers {
 docs {
   # GET /api/v1/admin/orders
 
-  Editor or superadmin. `status` is `new`, `confirmed`, `shipped`, `delivered`, `cancelled`, or `returned`. `scope=transit` is confirmed plus shipped. `sort` is `newest`, `oldest`, `high`, or `low`.
+  Editor or superadmin. `status` is `new`, `confirmed`, `packed`, `shipped`, `delivered`, `cancelled`, or `returned`. `scope=transit` is confirmed, packed, and shipped. `sort` is `newest`, `oldest`, `high`, or `low`.
+
+  Also filters: `origin` (`online` or `offline`), `payment_method`, `payment_status` (`unpaid`, `partial`, `paid`), `call_status`, `courier`, `date_from`, `date_to` (Asia/Dhaka, at most 366 days). `status_counts` uses those filters and ignores `status`, so the tabs stay filled.
 
   Money on each order is the snapshot from checkout. `%` is not a wildcard.
 }

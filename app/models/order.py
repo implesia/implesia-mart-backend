@@ -14,6 +14,8 @@ from sqlalchemy import (
     Numeric,
     String,
     UniqueConstraint,
+    func,
+    text,
     true,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -28,6 +30,7 @@ from app.models.user import User
 class OrderStatus(StrEnum):
     NEW = "new"
     CONFIRMED = "confirmed"
+    PACKED = "packed"
     SHIPPED = "shipped"
     DELIVERED = "delivered"
     CANCELLED = "cancelled"
@@ -35,11 +38,12 @@ class OrderStatus(StrEnum):
 
 
 # Allowed forward moves. Cancelled and returned are terminal: their stock is already restored.
+# Confirmed is the ready-to-pack queue. Packed is required before shipped.
+# Existing rows stay on whatever status they already have; only new moves use this map.
 ORDER_TRANSITIONS: dict[str, frozenset[str]] = {
     OrderStatus.NEW.value: frozenset({OrderStatus.CONFIRMED.value, OrderStatus.CANCELLED.value}),
-    OrderStatus.CONFIRMED.value: frozenset(
-        {OrderStatus.SHIPPED.value, OrderStatus.CANCELLED.value}
-    ),
+    OrderStatus.CONFIRMED.value: frozenset({OrderStatus.PACKED.value, OrderStatus.CANCELLED.value}),
+    OrderStatus.PACKED.value: frozenset({OrderStatus.SHIPPED.value, OrderStatus.CANCELLED.value}),
     OrderStatus.SHIPPED.value: frozenset({OrderStatus.DELIVERED.value, OrderStatus.RETURNED.value}),
     OrderStatus.DELIVERED.value: frozenset({OrderStatus.RETURNED.value}),
     OrderStatus.CANCELLED.value: frozenset(),
@@ -54,12 +58,45 @@ def next_statuses(current: str) -> list[str]:
 
 
 class OrderSource(StrEnum):
+    """How the lines were chosen. Not online vs offline. See OrderOrigin."""
+
     CART = "cart"
     DIRECT = "direct"
 
 
-# Reports group by this. It is not `orders.source` (cart vs direct).
+class OrderOrigin(StrEnum):
+    """Where the order was entered. Existing rows are online."""
+
+    ONLINE = "online"
+    OFFLINE = "offline"
+
+
+class CallStatus(StrEnum):
+    NOT_CALLED = "not_called"
+    CONFIRMED = "confirmed"
+    NO_ANSWER = "no_answer"
+    FAKE = "fake"
+
+
+class ActivityAction(StrEnum):
+    CREATED = "created"
+    STATUS_CHANGED = "status_changed"
+    CALL_STATUS_CHANGED = "call_status_changed"
+    ITEMS_EDITED = "items_edited"
+    COURIER_EDITED = "courier_edited"
+    PRINTED = "printed"
+    NOTE_CHANGED = "note_changed"
+    CUSTOMER_MESSAGE = "customer_message"
+
+
+# Reports group by channel. It is not `orders.source` (cart vs direct)
+# and it is not `orders.origin` (online vs offline).
 WEBSITE_CHANNEL = "website"
+OFFLINE_CHANNEL = "offline"
+
+ONLINE_PAYMENT_METHODS = frozenset({"cod", "bangla_qr"})
+OFFLINE_PAYMENT_METHODS = frozenset({"cash", "bkash", "nagad", "card", "due"})
+PAYMENT_METHODS = ONLINE_PAYMENT_METHODS | OFFLINE_PAYMENT_METHODS
 
 
 class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -74,14 +111,18 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("number", name="uq_orders_number"),
         CheckConstraint(
-            "status IN ('new', 'confirmed', 'shipped', 'delivered', 'cancelled', 'returned')",
+            "status IN ('new', 'confirmed', 'packed', 'shipped', 'delivered', "
+            "'cancelled', 'returned')",
             name="status_known",
         ),
         CheckConstraint("source IN ('cart', 'direct')", name="source_known"),
         CheckConstraint(
             "subtotal >= 0 AND shipping >= 0 AND total >= 0", name="money_non_negative"
         ),
-        CheckConstraint("payment_method IN ('cod', 'bangla_qr')", name="payment_known"),
+        CheckConstraint(
+            "payment_method IN ('cod', 'bangla_qr', 'cash', 'bkash', 'nagad', 'card', 'due')",
+            name="payment_known",
+        ),
         CheckConstraint(
             "advance_percent IS NULL OR advance_percent IN (25, 50, 75, 100)",
             name="advance_percent_known",
@@ -94,11 +135,23 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "coupon_discount IS NULL OR coupon_discount >= 0",
             name="coupon_discount_non_negative",
         ),
+        CheckConstraint("origin IN ('online', 'offline')", name="origin_known"),
+        CheckConstraint(
+            "call_status IN ('not_called', 'confirmed', 'no_answer', 'fake')",
+            name="call_status_known",
+        ),
+        CheckConstraint("manual_discount >= 0", name="manual_discount_non_negative"),
+        CheckConstraint("paid_amount >= 0", name="paid_non_negative"),
         Index("ix_orders_phone", "phone"),
         Index("ix_orders_created_at", "created_at"),
         Index("ix_orders_status", "status"),
         Index("ix_orders_delivered_at", "delivered_at"),
         Index("ix_orders_returned_at", "returned_at"),
+        Index("ix_orders_origin", "origin"),
+        Index("ix_orders_call_status", "call_status"),
+        Index("ix_orders_ordered_at", "ordered_at"),
+        # Public lookup compares lower(tracking_number). A plain index would not serve that.
+        Index("ix_orders_tracking_number_lower", text("lower(tracking_number)")),
     )
 
     number: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -106,11 +159,23 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     source: Mapped[str] = mapped_column(String(16), nullable=False)
+    # Online checkout vs an order typed by staff. NOT NULL, default online,
+    # so rows from before this column existed read as online. This is not
+    # `source` (cart vs direct) and not `channel`.
+    origin: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=OrderOrigin.ONLINE.value, server_default="online"
+    )
     # Where the sale came from. New checkout orders store "website".
     # Orders placed before this column existed stay NULL. No server default:
     # a default would make those old rows read as "website".
     channel: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default=OrderStatus.NEW.value)
+    call_status: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default=CallStatus.NOT_CALLED.value,
+        server_default=CallStatus.NOT_CALLED.value,
+    )
     payment_method: Mapped[str] = mapped_column(String(16), nullable=False, default="cod")
     advance_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
     advance_amount: Mapped[int] = mapped_column(
@@ -137,15 +202,38 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # has this discount taken off. A later edit of the coupon does not change it.
     coupon_code: Mapped[str | None] = mapped_column(String(32))
     coupon_discount: Mapped[int | None] = mapped_column(Integer)
+    # Staff discount on top of any coupon, whole taka. 0 on every older order
+    # and on online checkout. The total already has it taken off.
+    manual_discount: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    # Taka already collected. 0 when it was never recorded (older COD orders).
+    # A Bangla QR order with paid_amount 0 is read as advance_amount.
+    paid_amount: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     courier_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     tracking_number: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     # First time the status became delivered or returned. Kept forever; a later move does not
     # replace it. NULL when that change was never recorded.
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     returned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Last time a packing slip was printed. NULL until the first print. A reprint overwrites it.
+    printed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Business date for an offline order. NULL on online checkout and on rows
+    # from before this column existed; those still count on created_at.
+    ordered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Set when this process has claimed the new-order Telegram alert. NULL when
     # Telegram was off, and on every order placed before the column existed.
     telegram_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Claim for the customer message sent when the status first becomes confirmed
+    # or shipped. NULL when that send was never claimed: the flag was off, the
+    # phone was empty, or the order reached that status before this column existed.
+    # A later edit does not clear it, so the same status is not sent again.
+    customer_sms_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    customer_sms_shipped_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     inventory_held: Mapped[bool] = mapped_column(
@@ -221,3 +309,35 @@ class OrderIdempotency(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     order: Mapped[Order] = relationship()
+
+
+class OrderActivity(UUIDPrimaryKeyMixin, Base):
+    """Who changed an order, and what changed. Rows are inserted, never updated."""
+
+    __tablename__ = "order_activities"
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('created', 'status_changed', 'call_status_changed', "
+            "'items_edited', 'courier_edited', 'printed', 'note_changed', "
+            "'customer_message')",
+            name="action_known",
+        ),
+        Index("ix_order_activities_order_id_created_at", "order_id", "created_at"),
+    )
+
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("orders.id", ondelete="CASCADE"), nullable=False
+    )
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    summary: Mapped[str] = mapped_column(String(200), nullable=False)
+    detail: Mapped[dict[str, Any]] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"),
+        nullable=False,
+        default=dict,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

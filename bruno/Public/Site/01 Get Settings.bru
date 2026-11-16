@@ -1,0 +1,79 @@
+meta {
+  name: Get Settings
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{BASE_URL}}/api/v1/site/settings
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/site/settings
+
+  Public. No token. The storefront reads this for the home/default document
+  title, the default meta description, and the optional title template.
+
+  `Cache-Control: public, max-age=60`. The API still reads the database on a
+  cache miss. A null field means keep the storefront's built-in copy. Do not
+  treat null as an empty string that should overwrite the default.
+
+  ## Response `200`
+
+  ```json
+  {
+    "seo_title": "Implesia Mart",
+    "seo_description": "Home goods, delivered across Bangladesh.",
+    "seo_title_template": "%s | Implesia Mart"
+  }
+  ```
+
+  Before an editor saves, every field is `null`.
+}
+
+example {
+  name: 200 OK
+  description: Default SEO the storefront may cache for 60 seconds
+
+  request: {
+    url: {{BASE_URL}}/api/v1/site/settings
+    method: GET
+    headers: {
+      Accept: application/json
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+      cache-control: public, max-age=60
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "seo_title": "Implesia Mart",
+          "seo_description": "Home goods, delivered across Bangladesh.",
+          "seo_title_template": "%s | Implesia Mart"
+        }
+      '''
+    }
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}

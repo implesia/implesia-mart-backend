@@ -1,0 +1,97 @@
+meta {
+  name: Update Settings
+  type: http
+  seq: 2
+}
+
+patch {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/site/settings
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "seo_title": "Implesia Mart",
+    "seo_description": "Home goods, delivered across Bangladesh.",
+    "seo_title_template": "%s | Implesia Mart"
+  }
+}
+
+docs {
+  # PATCH /api/v1/admin/site/settings
+
+  Editor or superadmin. A viewer is 403. Anonymous is 401.
+  `Cache-Control: no-store`. A successful write is an `ADMIN_WRITE` audit row.
+
+  Omit a field to keep it. `null` or `""` clears it (stored and returned as
+  `null`). Whitespace is collapsed. Unknown fields are 422.
+
+  Lengths: `seo_title` ≤ 70, `seo_description` ≤ 170, `seo_title_template` ≤ 80.
+  A template that is set must contain `%s` exactly once and no other `%`.
+
+  ## Response `200`
+
+  The three fields after the update. The public `GET /api/v1/site/settings`
+  returns the same object.
+}
+
+example {
+  name: 200 OK
+  description: Saves the home title, description, and title template
+
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/admin/site/settings
+    method: PATCH
+    mode: json
+    headers: {
+      Accept: application/json
+      Content-Type: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+    body:json: {
+      {
+        "seo_title": "Implesia Mart",
+        "seo_description": "Home goods, delivered across Bangladesh.",
+        "seo_title_template": "%s | Implesia Mart"
+      }
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+      cache-control: no-store
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "seo_title": "Implesia Mart",
+          "seo_description": "Home goods, delivered across Bangladesh.",
+          "seo_title_template": "%s | Implesia Mart"
+        }
+      '''
+    }
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}

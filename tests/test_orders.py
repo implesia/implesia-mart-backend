@@ -264,7 +264,8 @@ async def test_order_follows_lifecycle_and_returns_restock(
     product = await _create(client, auth_headers, title="Lifecycle lamp", price=500, quantity=3)
     order_id = await _place(client, auth_headers, product["id"])
     for status, following in [
-        ("confirmed", ["shipped", "cancelled"]),
+        ("confirmed", ["packed", "cancelled"]),
+        ("packed", ["shipped", "cancelled"]),
         ("shipped", ["delivered", "returned"]),
         ("delivered", ["returned"]),
         ("returned", []),

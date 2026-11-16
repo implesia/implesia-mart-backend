@@ -70,7 +70,7 @@ async def test_editor_can_read_the_dashboard(
     body = response.json()
     assert body["range"] == "7d"
     assert body["grain"] == "day"
-    assert len(body["statuses"]) == 6
+    assert len(body["statuses"]) == 7
 
 
 async def test_overview_counts_sales_and_skips_cancelled(
@@ -162,7 +162,7 @@ async def test_delivered_count_uses_delivered_at(
     )
     assert placed.status_code == 201, placed.text
     order_id = placed.json()["id"]
-    for status in ("confirmed", "shipped", "delivered"):
+    for status in ("confirmed", "packed", "shipped", "delivered"):
         moved = await _move(client, auth_headers, order_id, status)
         assert moved.status_code == 200, moved.text
 

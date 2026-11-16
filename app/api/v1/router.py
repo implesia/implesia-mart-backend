@@ -25,6 +25,7 @@ from app.api.v1.endpoints import (
     site_footer,
     site_header,
     site_payment,
+    site_settings,
     users,
 )
 from app.api.v1.endpoints.about import cta as about_cta
@@ -236,6 +237,15 @@ api_router.include_router(
     site_header.admin_router,
     prefix="/admin/site/header",
     tags=["admin:site:header"],
+    dependencies=_AUDITED,
+)
+api_router.include_router(
+    site_settings.public_router, prefix="/site/settings", tags=["site:settings"]
+)
+api_router.include_router(
+    site_settings.admin_router,
+    prefix="/admin/site/settings",
+    tags=["admin:site:settings"],
     dependencies=_AUDITED,
 )
 api_router.include_router(

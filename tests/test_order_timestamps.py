@@ -26,6 +26,8 @@ async def test_status_change_stamps_once_and_admin_reads_it(
     assert confirmed.status_code == 200, confirmed.text
     assert confirmed.json()["delivered_at"] is None
     assert confirmed.json()["returned_at"] is None
+    packed = await _move(client, auth_headers, order_id, "packed")
+    assert packed.status_code == 200, packed.text
     shipped = await _move(client, auth_headers, order_id, "shipped")
     assert shipped.json()["delivered_at"] is None
 
