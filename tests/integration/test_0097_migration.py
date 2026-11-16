@@ -50,6 +50,26 @@ async def _columns(db: AsyncSession) -> set[str]:
 async def _restore(db: AsyncSession) -> None:
     if "origin" not in await _columns(db):
         await _run(db, "upgrade")
+    # 0097's upgrade recreates order_activities with the narrower action check.
+    # Put the 0098 value back so later tests can store a customer message.
+    present = await db.scalar(text("SELECT to_regclass('public.order_activities')"))
+    if present is None:
+        return
+    path = (
+        Path(__file__).parents[2] / "alembic" / "versions" / "0098_order_print_and_customer_sms.py"
+    )
+    spec = importlib.util.spec_from_file_location("migration_0098_check", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    def go(sync_conn) -> None:  # type: ignore[no-untyped-def]
+        with Operations.context(MigrationContext.configure(sync_conn)):
+            module.widen_activity_check()
+
+    conn = await db.connection()
+    await conn.run_sync(go)
+    await db.commit()
 
 
 async def test_0097_defaults_existing_rows_and_keeps_totals(

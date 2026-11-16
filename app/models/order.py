@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
     true,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -41,9 +42,7 @@ class OrderStatus(StrEnum):
 # Existing rows stay on whatever status they already have; only new moves use this map.
 ORDER_TRANSITIONS: dict[str, frozenset[str]] = {
     OrderStatus.NEW.value: frozenset({OrderStatus.CONFIRMED.value, OrderStatus.CANCELLED.value}),
-    OrderStatus.CONFIRMED.value: frozenset(
-        {OrderStatus.PACKED.value, OrderStatus.CANCELLED.value}
-    ),
+    OrderStatus.CONFIRMED.value: frozenset({OrderStatus.PACKED.value, OrderStatus.CANCELLED.value}),
     OrderStatus.PACKED.value: frozenset({OrderStatus.SHIPPED.value, OrderStatus.CANCELLED.value}),
     OrderStatus.SHIPPED.value: frozenset({OrderStatus.DELIVERED.value, OrderStatus.RETURNED.value}),
     OrderStatus.DELIVERED.value: frozenset({OrderStatus.RETURNED.value}),
@@ -87,6 +86,7 @@ class ActivityAction(StrEnum):
     COURIER_EDITED = "courier_edited"
     PRINTED = "printed"
     NOTE_CHANGED = "note_changed"
+    CUSTOMER_MESSAGE = "customer_message"
 
 
 # Reports group by channel. It is not `orders.source` (cart vs direct)
@@ -150,6 +150,8 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_orders_origin", "origin"),
         Index("ix_orders_call_status", "call_status"),
         Index("ix_orders_ordered_at", "ordered_at"),
+        # Public lookup compares lower(tracking_number). A plain index would not serve that.
+        Index("ix_orders_tracking_number_lower", text("lower(tracking_number)")),
     )
 
     number: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -222,6 +224,16 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Set when this process has claimed the new-order Telegram alert. NULL when
     # Telegram was off, and on every order placed before the column existed.
     telegram_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Claim for the customer message sent when the status first becomes confirmed
+    # or shipped. NULL when that send was never claimed: the flag was off, the
+    # phone was empty, or the order reached that status before this column existed.
+    # A later edit does not clear it, so the same status is not sent again.
+    customer_sms_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    customer_sms_shipped_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     inventory_held: Mapped[bool] = mapped_column(
@@ -306,7 +318,8 @@ class OrderActivity(UUIDPrimaryKeyMixin, Base):
     __table_args__ = (
         CheckConstraint(
             "action IN ('created', 'status_changed', 'call_status_changed', "
-            "'items_edited', 'courier_edited', 'printed', 'note_changed')",
+            "'items_edited', 'courier_edited', 'printed', 'note_changed', "
+            "'customer_message')",
             name="action_known",
         ),
         Index("ix_order_activities_order_id_created_at", "order_id", "created_at"),

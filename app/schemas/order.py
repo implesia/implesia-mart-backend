@@ -226,20 +226,41 @@ class OrderItemRead(BaseModel):
 
 
 class OrderLookup(BaseModel):
-    """Public status check. The number alone is not enough."""
+    """Public status check. The number alone is not enough.
+
+    Send the order number or the courier tracking id, plus the phone.
+    Both pieces are required. Sending neither, or sending both, is rejected.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    number: str = Field(min_length=4, max_length=32)
+    number: str | None = Field(default=None, max_length=32)
+    tracking_number: str | None = Field(default=None, max_length=120)
     phone: str = Field(min_length=11, max_length=20)
 
-    @field_validator("number")
+    @field_validator("number", mode="before")
     @classmethod
-    def _number(cls, value: str) -> str:
+    def _number(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value
         number = re.sub(r"\s+", "", value).upper()
+        if not number:
+            return None
         if not re.fullmatch(r"IM-[0-9A-F]{8}", number):
             raise ValueError("Order number looks wrong")
         return number
+
+    @field_validator("tracking_number", mode="before")
+    @classmethod
+    def _tracking(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value
+        cleaned = value.strip()
+        return cleaned or None
 
     @field_validator("phone")
     @classmethod
@@ -248,6 +269,12 @@ class OrderLookup(BaseModel):
         if phone is None:
             raise ValueError("Phone must be an 11-digit Bangladesh mobile number")
         return phone
+
+    @model_validator(mode="after")
+    def _one_identifier(self) -> "OrderLookup":
+        if (self.number is None) == (self.tracking_number is None):
+            raise ValueError("Send the order number or the tracking number, and the phone")
+        return self
 
 
 class PublicOrderItemRead(BaseModel):
@@ -259,7 +286,19 @@ class PublicOrderItemRead(BaseModel):
     unit_price: int
     quantity: int
     line_total: int
+    # Option labels joined with " / ". Empty when the line has no options.
+    variant_label: str = ""
     selection: list[SelectedOption] = Field(default_factory=list)
+
+
+class PublicTimelineEvent(BaseModel):
+    """One status the customer can see, with the time we actually know.
+
+    No actor, note, or other staff field.
+    """
+
+    status: str
+    at: datetime
 
 
 class PublicOrderRead(BaseModel):
@@ -281,8 +320,11 @@ class PublicOrderRead(BaseModel):
     payment_method: AnyPaymentMethod
     advance_percent: int | None = None
     advance_amount: int = 0
+    # Cash still to collect. For COD this is the amount due on delivery.
     due_amount: int = 0
     items: list[PublicOrderItemRead]
+    # Known status times only. Older orders may have just the placed event.
+    timeline: list[PublicTimelineEvent] = Field(default_factory=list)
     created_at: datetime
 
 
@@ -552,9 +594,7 @@ class OfflineOrderCreate(BaseModel):
     @model_validator(mode="after")
     def _reference_shape(self) -> "OfflineOrderCreate":
         if self.payment_reference and not _REFERENCE.fullmatch(self.payment_reference):
-            raise ValueError(
-                "Payment reference must be 4–64 letters, digits, + or -"
-            )
+            raise ValueError("Payment reference must be 4–64 letters, digits, + or -")
         return self
 
 
@@ -608,8 +648,13 @@ class PrintedResult(BaseModel):
 
 
 class PrintLine(BaseModel):
+    # Product name, as snapshotted on the line (`title`).
     title: str
+    # Option labels joined with " / ". Empty when the line has no options.
+    variant_label: str = ""
     sku: str
+    # First 8 hex characters of the product UUID. Empty when the product was deleted.
+    product_id_short: str = ""
     quantity: int
     unit_price: int
     line_total: int
@@ -618,16 +663,26 @@ class PrintLine(BaseModel):
 
 class PrintOrder(BaseModel):
     id: uuid.UUID
+    # INV- plus the order number's hex body. Derived. Not a separate sequence.
+    invoice_id: str
     number: str
+    # Same string as `number`.
+    order_number: str
     status: str
     origin: Literal["online", "offline"]
     ordered_at: datetime | None
     created_at: datetime
+    # Order date in Asia/Dhaka plus the zone's day count. Not stored on the order.
+    estimated_delivery_date: date
     customer_name: str
     phone: str
+    # Empty when the order has no email.
+    email: str = ""
     district: str
     area: str
     address: str
+    # address, area, district, skipping blanks.
+    full_address: str
     notes: str
     courier_name: str
     tracking_number: str

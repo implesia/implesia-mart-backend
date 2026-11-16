@@ -623,26 +623,39 @@ An unknown id is a per-order error, not a 404 for the batch. Cancel and return i
 { "printed": ["…"], "missing": ["…"] }
 ```
 
-`POST /print-data` does not mark anything printed. Missing ids are listed. Each order includes customer, courier, tracking, items, totals, `paid_amount`, `due_amount`, and `payment_status` so the admin UI can render an invoice or a label.
+`POST /print-data` does not mark anything printed. Missing ids are listed. Each order includes the invoice id, customer, courier, tracking, items, totals, `paid_amount`, `due_amount`, and `payment_status` so the admin UI can render an invoice or a label. Totals are the stored order totals. This route does not write them.
+
+`invoice_id` is `INV-` plus the eight hex characters of `number` (`IM-AB12CD34` → `INV-AB12CD34`). `order_number` is the same string as `number`. There is no invoice sequence and no new column.
+
+`estimated_delivery_date` is a `YYYY-MM-DD` date, computed when this route is read. It is not stored. The order date is `ordered_at` in Asia/Dhaka when that is set, otherwise `created_at` in Asia/Dhaka. Inside Dhaka and Dhaka-suburban add `DELIVERY_DAYS_INSIDE_DHAKA` (default 2). Outside Dhaka adds `DELIVERY_DAYS_OUTSIDE_DHAKA` (default 5). Changing those settings changes the printed date on the next read, including for old orders. It does not change `created_at`, `ordered_at`, or any money column.
+
+`email` is `""` when the order has none. `full_address` is `address`, `area`, and `district` joined with `", "`, skipping blanks. The three parts are still returned on their own.
+
+Each item: `title` is the product name, `variant_label` is the option labels joined with `" / "` (`""` when there are none), `sku` is the snapshotted SKU, `product_id_short` is the first 8 hex characters of the product UUID (`""` when the product was deleted), then `quantity`, `unit_price`, and `line_total`. `selection` is still the option list.
 
 ```json
 {
   "orders": [
     {
       "id": "…",
+      "invoice_id": "INV-AB12CD34",
       "number": "IM-AB12CD34",
+      "order_number": "IM-AB12CD34",
       "status": "confirmed",
       "origin": "offline",
       "ordered_at": "2026-11-16T00:00:00+06:00",
       "created_at": "2026-11-16T09:00:00+00:00",
+      "estimated_delivery_date": "2026-11-18",
       "customer_name": "Karim Uddin",
       "phone": "01800000000",
+      "email": "",
       "district": "Dhaka",
       "area": "Gulshan",
       "address": "House 4, Road 12, Gulshan",
+      "full_address": "House 4, Road 12, Gulshan, Gulshan, Dhaka",
       "notes": "Counter sale",
-      "courier_name": "",
-      "tracking_number": "",
+      "courier_name": "Pathao",
+      "tracking_number": "TRK-1",
       "payment_method": "cash",
       "payment_status": "partial",
       "subtotal": 1000,
@@ -655,7 +668,9 @@ An unknown id is a per-order error, not a 404 for the batch. Cancel and return i
       "items": [
         {
           "title": "Counter lamp",
+          "variant_label": "",
           "sku": "",
+          "product_id_short": "123e4567",
           "quantity": 2,
           "unit_price": 500,
           "line_total": 1000,
@@ -1019,7 +1034,90 @@ Codes: `coupon_not_found`, `coupon_inactive`, `coupon_not_started`, `coupon_expi
 
 `OrderCreate.tracking` is optional: `{ "fbp": string|null, "fbc": string|null, "event_source_url": string|null }`. Each field is optional. A value that is not a string, is blank, or is longer than 500 characters is dropped. Unknown keys inside `tracking` are dropped. A missing `tracking`, or a `tracking` that is not an object, is ignored and the order is still placed. Other unknown fields on the order body are still `422`.
 
-`POST /orders` returns `order_number` (same string as `number`) and `analytics_event_id` (`purchase_<order_number>`). When `META_PIXEL_ID` and `META_CAPI_TOKEN` are both set, a successful create also sends one Meta Conversions API `Purchase` with that event id after the order is committed. `custom_data.value` is the post-coupon total. When `coupon_code` is set, `custom_data.coupon` is that code. The response does not wait on Meta and does not change if Meta fails. A replay of the same `Idempotency-Key` returns the same ids and does not send again. `POST /orders/quote` and `POST /orders/lookup` do not accept `tracking` and do not return `analytics_event_id`. Lookup does return `coupon_code` and `coupon_discount`.
+`POST /orders` returns `order_number` (same string as `number`) and `analytics_event_id` (`purchase_<order_number>`). When `META_PIXEL_ID` and `META_CAPI_TOKEN` are both set, a successful create also sends one Meta Conversions API `Purchase` with that event id after the order is committed. `custom_data.value` is the post-coupon total. When `coupon_code` is set, `custom_data.coupon` is that code. The response does not wait on Meta and does not change if Meta fails. A replay of the same `Idempotency-Key` returns the same ids and does not send again. `POST /orders/quote` and `POST /orders/lookup` do not accept the Meta `tracking` object and do not return `analytics_event_id`. Lookup does return `coupon_code` and `coupon_discount`.
+
+### Public order lookup
+
+`POST /api/v1/orders/lookup` is public and `no-store`. It is the only order-status lookup. Rate limit: `RATE_LIMIT_ORDER_LOOKUP` (default `30/minute`) per client address. Over the limit is `429` with `error.code` `rate_limited`.
+
+`OrderLookup` (`extra` forbidden). `phone` is required (the same Bangladesh mobile forms as checkout, compared as `01XXXXXXXXX`). Send exactly one of `number` or `tracking_number`. Both, or neither, is `422` with message `Send the order number or the tracking number, and the phone`.
+
+- `number`: `IM-` plus 8 hex characters. Spaces are removed and letters are upper-cased. A wrong shape is `422`.
+- `tracking_number`: the courier consignment id, trimmed, 1–120 characters. Match is exact and case-insensitive. It is not a search prefix.
+
+A wrong phone, an unknown number, and an unknown tracking id all return the same `404` body, `Order not found`. The response does not say which part failed. When several orders share one tracking id and the same phone, the newest `created_at` (then `id`) is returned. A tracking id that belongs to a different phone is `404`.
+
+```json
+{ "number": "IM-AB12CD34", "phone": "01700000000" }
+```
+
+```json
+{ "tracking_number": "Pathao-9", "phone": "01700000000" }
+```
+
+`PublicOrderRead` adds `timeline` and `items[].variant_label`. It still has no order id, email, street address, area, district, notes, staff fields, costs, or the SMS claim timestamps.
+
+`due_amount` is the cash still to collect. For COD that is the delivery amount. For Bangla QR it is the remainder after the advance. An older order whose `due_amount` column is NULL is returned as the total minus the advance.
+
+`items` is the summary: `title`, `variant_label` (option labels joined with `" / "`, `""` when there are none), `quantity`, `unit_price`, `line_total`, plus `slug`, `product_id` (null after the product is deleted), `image_src`, and `selection` so the page can link to `/products/{id}`.
+
+`timeline` is only `{ "status", "at" }`. `status` is the stored value (`new`, `confirmed`, `packed`, `shipped`, `delivered`, `cancelled`, `returned`). The first event is `new` at `created_at`. Later events are the `status_changed` activity times. `delivered_at` and `returned_at` are added when those columns are set and no activity row recorded that status. There is no actor and no note. An order from before the activity log may only have the placed event, plus delivery or return when those columns were filled. The current `status` field is still the order's status even when the timeline has no time for it.
+
+```json
+{
+  "number": "IM-AB12CD34",
+  "status": "shipped",
+  "customer_name": "Rina Akter",
+  "phone": "017••••000",
+  "delivery_zone": "outside",
+  "subtotal": 900,
+  "shipping": 130,
+  "total": 1030,
+  "coupon_code": null,
+  "coupon_discount": null,
+  "courier_name": "Pathao",
+  "tracking_number": "Pathao-9",
+  "payment_method": "cod",
+  "advance_percent": null,
+  "advance_amount": 0,
+  "due_amount": 1030,
+  "items": [
+    {
+      "title": "Track gown",
+      "slug": "track-gown",
+      "product_id": "…",
+      "image_src": "/media/products/gown.jpg",
+      "unit_price": 900,
+      "quantity": 1,
+      "line_total": 900,
+      "variant_label": "M",
+      "selection": [{ "name": "Size", "label": "M", "swatch": "" }]
+    }
+  ],
+  "timeline": [
+    { "status": "new", "at": "2026-11-16T09:00:00Z" },
+    { "status": "confirmed", "at": "2026-11-16T10:00:00Z" },
+    { "status": "shipped", "at": "2026-11-16T12:00:00Z" }
+  ],
+  "created_at": "2026-11-16T09:00:00Z"
+}
+```
+
+The storefront order-status page should read `number` from the query (`/order-status?number=IM-AB12CD34`) and still require the phone before calling this route. The link in the customer message uses that query. The phone is not put in the URL.
+
+### Customer status messages
+
+There is no new route. When a single `PATCH` or `POST /bulk-status` actually moves an order to `confirmed` or `shipped`, the API may queue a short Bengali SMS for that order's phone. Online and offline orders are both included. Packed, delivered, cancelled, and returned do not send. An order that is already in the target status does not send again.
+
+The queue runs after the status commit. A send error, a timeout, or an exception does not change the HTTP status of the update. The `PATCH` body is built before the send finishes, so `activity` on that response may not include the message row yet. The next read of the order does.
+
+The activity action is `customer_message`. `detail` is `{ "status": "confirmed"|"shipped", "result": "logged"|"skipped"|"failed", "provider": "log"|"noop" }`. It has no phone, no message body, and no token. `actor_user_id` is null.
+
+Sending is off unless `CUSTOMER_SMS_ENABLED` is true. `CUSTOMER_SMS_ON_CONFIRMED` and `CUSTOMER_SMS_ON_SHIPPED` default true and apply only when the master flag is on. `CUSTOMER_SMS_PROVIDER` is `log` (write the text to the API log, result `logged`) or `noop` (drop it, result `skipped`). An empty phone is skipped and not claimed. The claim is one conditional update of `customer_sms_confirmed_at` or `customer_sms_shipped_at`. Those columns are not in any response. A failed send still keeps the claim, so the same status is not sent again.
+
+Confirmed text: `Implesia: অর্ডার {number} নিশ্চিত। মোট ৳{total}, বাকি ৳{due}। স্ট্যাটাস: {url}`. Shipped text: `Implesia: অর্ডার {number} পাঠানো হয়েছে। কুরিয়ার {courier}, ট্র্যাকিং {tracking}। স্ট্যাটাস: {url}`. A missing courier or tracking is left out of that sentence. `{url}` is `{ADMIN_BASE_URL}/order-status?number={number}` and the whole status sentence is left out when `ADMIN_BASE_URL` is empty. The phone number is not in the text. `বাকি` is `due_amount`, or the total minus the advance when that column is NULL.
+
+No SMS or WhatsApp gateway is called. The SSL Wireless keys in `.env.example` are not read. Setting them does not send a message.
 
 ## `pages/about`
 

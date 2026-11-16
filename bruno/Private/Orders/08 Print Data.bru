@@ -30,6 +30,8 @@ docs {
 
   Editor or superadmin. Returns invoice fields for the ids that exist. Missing ids are listed and are not a 404. This does not mark the order printed.
 
+  Each order includes `invoice_id` (`INV-` plus the order number's hex body), `number`, `order_number`, `created_at`, `estimated_delivery_date` (computed, not stored), `customer_name`, `phone`, `email` (empty when none), `full_address`, `courier_name`, `tracking_number`, and items with `title`, `variant_label`, `sku`, `product_id_short`, `quantity`, `unit_price`, `line_total`. Totals are the stored totals.
+
   Mark printed with POST /api/v1/admin/orders/printed and the same body. A reprint is allowed and each print is written to the activity log. `printed_at` is the latest time.
 
   Ready to pack is GET /api/v1/admin/orders/ready-to-pack (confirmed orders). POST bulk-status with `packed` moves them on.

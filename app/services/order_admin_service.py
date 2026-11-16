@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTasks
 
+from app.core.config import settings
 from app.core.exceptions import AppError, ConflictError, NotFoundError, UnprocessableError
 from app.models.inventory import MovementType
 from app.models.order import (
@@ -53,6 +54,7 @@ from app.schemas.order import (
     StatusCounts,
 )
 from app.services import (
+    customer_notify,
     delivery_service,
     inventory_service,
     order_service,
@@ -60,7 +62,7 @@ from app.services import (
     telegram_notify,
     variant_service,
 )
-from app.services.product_options import resolve_selection, selection_of
+from app.services.product_options import resolve_selection, selection_of, variant_label
 from app.services.product_service import content_of
 from app.services.shop_sql import SHOP, at_or_after, before, dialect_name
 
@@ -154,9 +156,7 @@ def _merge_lines(items: list[AdminOrderLineInput]) -> list[AdminOrderLineInput]:
     return list(merged.values())
 
 
-async def _resolve_line(
-    db: AsyncSession, item: AdminOrderLineInput, *, existing: bool
-) -> _Wanted:
+async def _resolve_line(db: AsyncSession, item: AdminOrderLineInput, *, existing: bool) -> _Wanted:
     product = await db.get(Product, item.product_id)
     if product is None:
         if existing:
@@ -245,9 +245,7 @@ async def create_offline(
     telegram_notify.discard_low_stock(db)
     inventory_service.clear_pending_sales(db)
 
-    wanted = [
-        await _resolve_line(db, item, existing=False) for item in _merge_lines(payload.items)
-    ]
+    wanted = [await _resolve_line(db, item, existing=False) for item in _merge_lines(payload.items)]
     rates = await delivery_service.fees(db)
     zone, fee, available = delivery_service.price_for(payload.district, payload.area, None, rates)
     if payload.delivery_charge is None:
@@ -456,6 +454,7 @@ async def bulk_status(
     telegram_notify.discard_low_stock(db)
     results: list[BulkStatusItem] = []
     notify: list[uuid.UUID] = []
+    sms_ids: list[uuid.UUID] = []
     target = payload.status.value
     for order_id in payload.ids:
         try:
@@ -463,9 +462,7 @@ async def bulk_status(
                 try:
                     order = await order_service._load(db, order_id)
                 except NotFoundError:
-                    results.append(
-                        BulkStatusItem(id=order_id, ok=False, error="Order not found")
-                    )
+                    results.append(BulkStatusItem(id=order_id, ok=False, error="Order not found"))
                     continue
                 if order.status == target:
                     results.append(BulkStatusItem(id=order_id, ok=True, status=order.status))
@@ -475,6 +472,8 @@ async def bulk_status(
                 )
                 if became_cancelled and order.origin != OrderOrigin.OFFLINE.value:
                     notify.append(order.id)
+                if target in customer_notify.SEND_ON:
+                    sms_ids.append(order.id)
                 results.append(BulkStatusItem(id=order_id, ok=True, status=target))
         except AppError as exc:
             results.append(BulkStatusItem(id=order_id, ok=False, status=None, error=exc.message))
@@ -482,13 +481,15 @@ async def bulk_status(
     db.expire_all()
     for order_id in notify:
         telegram_notify.schedule_cancelled(background, await order_service._load(db, order_id))
+    for order_id in sms_ids:
+        await customer_notify.schedule(
+            db, background, await order_service._load(db, order_id), target
+        )
     telegram_notify.flush_low_stock(db, background)
     return BulkStatusResult(results=results)
 
 
-async def mark_printed(
-    db: AsyncSession, ids: list[uuid.UUID], *, actor: User
-) -> PrintedResult:
+async def mark_printed(db: AsyncSession, ids: list[uuid.UUID], *, actor: User) -> PrintedResult:
     now = datetime.now(UTC)
     printed: list[uuid.UUID] = []
     missing: list[uuid.UUID] = []
@@ -511,10 +512,53 @@ async def mark_printed(
     return PrintedResult(printed=printed, missing=missing)
 
 
+def invoice_id_for(number: str) -> str:
+    """Stable invoice id derived from the order number. No separate sequence.
+
+    ``IM-AB12CD34`` becomes ``INV-AB12CD34``. A number without that prefix
+    still gets a stable ``INV-`` form.
+    """
+    body = number[3:] if number.startswith("IM-") and len(number) > 3 else number
+    return f"INV-{body}"
+
+
+def full_address_of(order: Order) -> str:
+    parts = [order.address.strip(), order.area.strip(), order.district.strip()]
+    return ", ".join(part for part in parts if part)
+
+
+def estimated_delivery_date(order: Order) -> date:
+    """Order date in Asia/Dhaka plus the zone's day count.
+
+    ``ordered_at`` wins when it is set (offline orders). Otherwise
+    ``created_at``. Inside Dhaka and Dhaka-suburban share one count.
+    Outside Dhaka uses the other. Nothing is written back to the order.
+    """
+    stamp = order.ordered_at or order.created_at
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=UTC)
+    placed = stamp.astimezone(SHOP).date()
+    days = (
+        settings.delivery_days_outside_dhaka
+        if order.delivery_zone == "outside"
+        else settings.delivery_days_inside_dhaka
+    )
+    return placed + timedelta(days=days)
+
+
+def short_product_id(product_id: uuid.UUID | None) -> str:
+    """First 8 hex characters of the product UUID. Empty when the product is gone."""
+    if product_id is None:
+        return ""
+    return product_id.hex[:8]
+
+
 def _print_line(item: OrderItem) -> PrintLine:
     return PrintLine(
         title=item.title,
+        variant_label=variant_label(item.selection),
         sku=item.sku,
+        product_id_short=short_product_id(item.product_id),
         quantity=item.quantity,
         unit_price=item.unit_price,
         line_total=item.line_total,
@@ -526,9 +570,7 @@ async def print_data(db: AsyncSession, ids: list[uuid.UUID]) -> PrintData:
     rows = list(
         (
             await db.execute(
-                select(Order)
-                .where(Order.id.in_(ids))
-                .options(order_service._ORDER_LOAD)
+                select(Order).where(Order.id.in_(ids)).options(order_service._ORDER_LOAD)
             )
         )
         .scalars()
@@ -548,16 +590,21 @@ async def print_data(db: AsyncSession, ids: list[uuid.UUID]) -> PrintData:
         orders.append(
             PrintOrder(
                 id=order.id,
+                invoice_id=invoice_id_for(order.number),
                 number=order.number,
+                order_number=order.number,
                 status=order.status,
                 origin=origin,
                 ordered_at=order.ordered_at,
                 created_at=order_service._as_utc(order.created_at),
+                estimated_delivery_date=estimated_delivery_date(order),
                 customer_name=order.customer_name,
                 phone=order.phone,
+                email=order.email or "",
                 district=order.district,
                 area=order.area,
                 address=order.address,
+                full_address=full_address_of(order),
                 notes=order.notes,
                 courier_name=order.courier_name,
                 tracking_number=order.tracking_number,
@@ -570,9 +617,7 @@ async def print_data(db: AsyncSession, ids: list[uuid.UUID]) -> PrintData:
                 total=order.total,
                 paid_amount=paid,
                 due_amount=(
-                    order.due_amount
-                    if order.due_amount is not None
-                    else max(order.total - paid, 0)
+                    order.due_amount if order.due_amount is not None else max(order.total - paid, 0)
                 ),
                 items=[_print_line(item) for item in order.items],
             )
@@ -586,9 +631,7 @@ async def ready_to_pack(db: AsyncSession, query: AdminOrderQuery) -> AdminOrderL
     return await order_service.list_orders(db, scoped)
 
 
-async def _period(
-    db: AsyncSession, start: datetime, end: datetime, dialect: str
-) -> PeriodTotals:
+async def _period(db: AsyncSession, start: datetime, end: datetime, dialect: str) -> PeriodTotals:
     placed = _placed_column()
     sale = Order.status.notin_(_NOT_REVENUE)
     count, revenue = (
@@ -609,9 +652,7 @@ async def overview(db: AsyncSession) -> OrderOverview:
     tomorrow = today + timedelta(days=1)
     week = today - timedelta(days=today.weekday())
     month = today.replace(day=1)
-    counted = (
-        await db.execute(select(Order.status, func.count()).group_by(Order.status))
-    ).all()
+    counted = (await db.execute(select(Order.status, func.count()).group_by(Order.status))).all()
     counts = {status.value: 0 for status in OrderStatus}
     for status, count in counted:
         counts[str(status)] = int(count)
@@ -704,10 +745,7 @@ async def search_customers(db: AsyncSession, q: str) -> CustomerSearch:
     )
     rows = (
         await db.execute(
-            select(ranked)
-            .where(ranked.c.rn == 1)
-            .order_by(ranked.c.created_at.desc())
-            .limit(20)
+            select(ranked).where(ranked.c.rn == 1).order_by(ranked.c.created_at.desc()).limit(20)
         )
     ).all()
     return CustomerSearch(
@@ -725,4 +763,3 @@ async def search_customers(db: AsyncSession, q: str) -> CustomerSearch:
             for row in rows
         ]
     )
-

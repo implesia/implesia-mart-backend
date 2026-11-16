@@ -47,6 +47,7 @@ from app.schemas.order import (
     OrderUpdate,
     PublicOrderItemRead,
     PublicOrderRead,
+    PublicTimelineEvent,
     QuoteLineRead,
     QuoteRead,
     StatusCounts,
@@ -57,6 +58,7 @@ from app.schemas.pricing import QUANTITY_CEILING
 from app.services import (
     audit_service,
     coupon_service,
+    customer_notify,
     delivery_service,
     inventory_service,
     meta_capi,
@@ -66,7 +68,7 @@ from app.services import (
     variant_service,
 )
 from app.services.cart_service import Shopper, _cap, _purchasable, open_cart, shopper_actor
-from app.services.product_options import resolve_selection, selection_of
+from app.services.product_options import resolve_selection, selection_of, variant_label
 from app.services.product_service import content_of
 from app.services.shop_sql import SHOP, at_or_after, before, dialect_name
 
@@ -785,9 +787,7 @@ async def list_orders(db: AsyncSession, query: AdminOrderQuery) -> AdminOrderLis
     if query.call_status is not None:
         conditions.append(Order.call_status == query.call_status.value)
     if query.courier:
-        conditions.append(
-            func.lower(Order.courier_name).like(_like(query.courier), escape="\\")
-        )
+        conditions.append(func.lower(Order.courier_name).like(_like(query.courier), escape="\\"))
     if query.payment_status is not None:
         paid = case(
             (
@@ -861,9 +861,7 @@ async def list_orders(db: AsyncSession, query: AdminOrderQuery) -> AdminOrderLis
     histories, duplicates = await _histories(db, rows)
     count_filters = [item for item in conditions if item is not status_clause]
     counted = await db.execute(
-        select(Order.status, func.count())
-        .where(*count_filters)
-        .group_by(Order.status)
+        select(Order.status, func.count()).where(*count_filters).group_by(Order.status)
     )
     status_counts = {status.value: 0 for status in OrderStatus}
     for status, count in counted.all():
@@ -938,7 +936,7 @@ def _mask_phone(phone: str) -> str:
     return f"{phone[:3]}••••{phone[-3:]}"
 
 
-def _public(order: Order) -> PublicOrderRead:
+def _public(order: Order, timeline: list[PublicTimelineEvent]) -> PublicOrderRead:
     return PublicOrderRead(
         number=order.number,
         status=order.status,
@@ -962,12 +960,60 @@ def _public(order: Order) -> PublicOrderRead:
                 unit_price=item.unit_price,
                 quantity=item.quantity,
                 line_total=item.line_total,
+                variant_label=variant_label(item.selection),
                 selection=selection_of(item.selection),
             )
             for item in order.items
         ],
+        timeline=timeline,
         created_at=order.created_at,
     )
+
+
+async def _timeline(db: AsyncSession, order: Order) -> list[PublicTimelineEvent]:
+    """Status times the customer can see. No actor and no staff notes.
+
+    Placed is ``created_at``. Later statuses come from ``status_changed``
+    activity rows. ``delivered_at`` and ``returned_at`` fill a gap when that
+    change was recorded on the order and not in the activity log.
+    """
+    rows = (
+        (
+            await db.execute(
+                select(OrderActivity)
+                .where(
+                    OrderActivity.order_id == order.id,
+                    OrderActivity.action == ActivityAction.STATUS_CHANGED.value,
+                )
+                .order_by(OrderActivity.created_at.asc(), OrderActivity.id.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    events = [PublicTimelineEvent(status=OrderStatus.NEW.value, at=_as_utc(order.created_at))]
+    seen = {OrderStatus.NEW.value}
+    for row in rows:
+        detail = row.detail or {}
+        target = detail.get("to")
+        if not isinstance(target, str) or not target:
+            continue
+        events.append(PublicTimelineEvent(status=target, at=_as_utc(row.created_at)))
+        seen.add(target)
+    if order.delivered_at is not None and OrderStatus.DELIVERED.value not in seen:
+        events.append(
+            PublicTimelineEvent(status=OrderStatus.DELIVERED.value, at=_as_utc(order.delivered_at))
+        )
+    if order.returned_at is not None and OrderStatus.RETURNED.value not in seen:
+        events.append(
+            PublicTimelineEvent(status=OrderStatus.RETURNED.value, at=_as_utc(order.returned_at))
+        )
+    events.sort(key=lambda event: event.at)
+    return events
+
+
+async def _public_order(db: AsyncSession, order: Order) -> PublicOrderRead:
+    return _public(order, await _timeline(db, order))
 
 
 def _same_secret(stored: str, given: str) -> bool:
@@ -977,13 +1023,36 @@ def _same_secret(stored: str, given: str) -> bool:
 
 
 async def lookup_order(db: AsyncSession, payload: OrderLookup) -> PublicOrderRead:
-    order = (
-        await db.execute(select(Order).options(_ORDER_LOAD).where(Order.number == payload.number))
-    ).scalar_one_or_none()
-    stored = order.phone if order is not None else "00000000000"
-    if order is None or not _same_secret(stored, payload.phone):
+    if payload.number is not None:
+        order = (
+            await db.execute(
+                select(Order).options(_ORDER_LOAD).where(Order.number == payload.number)
+            )
+        ).scalar_one_or_none()
+        stored = order.phone if order is not None else "00000000000"
+        if order is None or not _same_secret(stored, payload.phone):
+            raise NotFoundError("Order not found")
+        return await _public_order(db, order)
+    needle = (payload.tracking_number or "").casefold()
+    rows = list(
+        (
+            await db.execute(
+                select(Order)
+                .options(_ORDER_LOAD)
+                .where(func.lower(Order.tracking_number) == needle)
+                .order_by(Order.created_at.desc(), Order.id.desc())
+                .limit(50)
+            )
+        )
+        .scalars()
+        .unique()
+        .all()
+    )
+    matched = [row for row in rows if _same_secret(row.phone, payload.phone)]
+    if not matched:
+        _same_secret("00000000000", payload.phone)
         raise NotFoundError("Order not found")
-    return _public(order)
+    return await _public_order(db, matched[0])
 
 
 async def _histories(
@@ -1271,14 +1340,16 @@ async def update_order(
     actor_id = actor.id if actor is not None else None
     order = await _load(db, order_id)
     became_cancelled = False
+    sms_status: str | None = None
     if payload.status is not None and payload.status.value != order.status:
+        target = payload.status.value
         try:
-            became_cancelled = await change_status(
-                db, order, payload.status.value, actor_id=actor_id
-            )
+            became_cancelled = await change_status(db, order, target, actor_id=actor_id)
         except ConflictError:
             await db.rollback()
             raise
+        if target in customer_notify.SEND_ON:
+            sms_status = target
     before_courier = (order.courier_name, order.tracking_number)
     if payload.courier_name is not None:
         order.courier_name = payload.courier_name
@@ -1326,5 +1397,7 @@ async def update_order(
     # Offline orders do not send the staff cancel alert. Online cancel still does.
     if became_cancelled and loaded.origin != OrderOrigin.OFFLINE.value:
         telegram_notify.schedule_cancelled(background, loaded)
+    if sms_status is not None:
+        await customer_notify.schedule(db, background, loaded, sms_status)
     telegram_notify.flush_low_stock(db, background)
     return await present(db, loaded, with_activity=True)

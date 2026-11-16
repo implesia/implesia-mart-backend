@@ -28,6 +28,13 @@ os.environ.update(
         "TELEGRAM_NOTIFY_ORDER_CANCELLED": "false",
         "TELEGRAM_NOTIFY_LOW_STOCK": "false",
         "ADMIN_BASE_URL": "",
+        # Customer SMS stays off even when a local .env turns it on.
+        "CUSTOMER_SMS_ENABLED": "false",
+        "CUSTOMER_SMS_PROVIDER": "log",
+        "CUSTOMER_SMS_ON_CONFIRMED": "true",
+        "CUSTOMER_SMS_ON_SHIPPED": "true",
+        "DELIVERY_DAYS_INSIDE_DHAKA": "2",
+        "DELIVERY_DAYS_OUTSIDE_DHAKA": "5",
     }
 )
 
