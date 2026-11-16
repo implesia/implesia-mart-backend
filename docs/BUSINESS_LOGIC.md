@@ -255,9 +255,19 @@ The dashboard still counts revenue, orders, customers, pending, statuses, best s
 - At most 1000 categories.
 - A listing filtered by a hidden or missing category returns an empty list instead of leaking hidden products.
 
+## Storefront SEO
+
+Code: `app/services/site_settings_service.py`, `app/schemas/site_settings.py`.
+
+- One `site_settings` row (slug `main`) holds the home/default document title, the default meta description, and an optional title template. There is no second settings table for this.
+- Lengths, counted in characters: `seo_title` ≤ 70, `seo_description` ≤ 170, `seo_title_template` ≤ 80. A template that is set contains `%s` exactly once and no other `%` (`%s | Implesia Mart`). The storefront replaces `%s` with that page's title.
+- Empty is stored and returned as `null`. The storefront then keeps its built-in copy. The API does not invent a fallback title.
+- PATCH leaves out a field to keep it. `null` or a blank string clears it. Whitespace collapses to one space.
+- Public `GET /api/v1/site/settings` may be cached by the client for 60 seconds (`Cache-Control: public, max-age=60`). The handler still reads the database. Admin GET and PATCH are `Cache-Control: no-store`. Editor or above. A viewer is 403.
+
 ## CMS content
 
-- Home sections (hero, categories, featured, showcase, promo, …), about, sustainability, shipping, privacy, FAQs, contact, blogs, site header/footer/contact are admin-edited and read publicly.
+- Home sections (hero, categories, featured, showcase, promo, …), about, sustainability, shipping, privacy, FAQs, contact, blogs, site header/footer/contact, and the storefront SEO settings are admin-edited and read publicly.
 - Admin href fields reject script schemes (`javascript:` and similar).
 - Home showcase rows (`gadgets` = Trending, `fashion`) are curated lists: admin `choices` and added/edited items must be published products from any category (422 "Choose a published product"; an edit may keep its current product if it was hidden later). At most 12 per row, no duplicates. Public `GET /home/showcase` returns only published pinned products.
 - Home media section (`home_media`, one row, `app/services/home/media_service.py`): `media_type` is `image`, `video` or `youtube`. Public `GET /home/media` returns null unless active with a heading and usable media (image needs `image_src` + `media_alt`, video needs an MP4/WEBM `video_src`, YouTube needs the id). `youtube_url` accepts watch / youtu.be / shorts / embed links or an id (same `youtube_id()` check as products) and is stored as the id. The button is shown only when `cta_enabled` with a label and a link that is a site path (`/…`, no `//` or `..`) or `https://`. On save only the chosen type's fields are kept (image: no video/YouTube/thumbnail; video: no image/YouTube; YouTube: no image/video) and replaced or dropped files under `/media/home-media/` are deleted. Uploads: images 5 MB (JPEG/PNG/WEBP/GIF by content), videos 50 MB (MP4/WEBM by content). Public and admin responses are `Cache-Control: no-store`.

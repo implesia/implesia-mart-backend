@@ -1,0 +1,82 @@
+meta {
+  name: Get Settings
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/site/settings
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/admin/site/settings
+
+  Editor or superadmin. A viewer is 403. Anonymous is 401.
+  `Cache-Control: no-store`.
+
+  The body matches the public settings response. Null means the storefront
+  is still using its built-in default for that field.
+
+  ## Response `200`
+
+  ```json
+  {
+    "seo_title": null,
+    "seo_description": null,
+    "seo_title_template": null
+  }
+  ```
+}
+
+example {
+  name: 200 OK
+  description: Nothing saved yet
+
+  request: {
+    url: {{PRIVATE_BASE_URL}}/api/v1/admin/site/settings
+    method: GET
+    mode: none
+    headers: {
+      Accept: application/json
+      Authorization: Bearer {{ACCESS_TOKEN}}
+    }
+  }
+
+  response: {
+    headers: {
+      content-type: application/json
+      cache-control: no-store
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "seo_title": null,
+          "seo_description": null,
+          "seo_title_template": null
+        }
+      '''
+    }
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 25000
+}
