@@ -90,6 +90,10 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "advance_amount >= 0 AND (due_amount IS NULL OR due_amount >= 0)",
             name="advance_non_negative",
         ),
+        CheckConstraint(
+            "coupon_discount IS NULL OR coupon_discount >= 0",
+            name="coupon_discount_non_negative",
+        ),
         Index("ix_orders_phone", "phone"),
         Index("ix_orders_created_at", "created_at"),
         Index("ix_orders_status", "status"),
@@ -128,6 +132,11 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     subtotal: Mapped[int] = mapped_column(Integer, nullable=False)
     shipping: Mapped[int] = mapped_column(Integer, nullable=False)
     total: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Snapshot of the coupon accepted at checkout. NULL when the order used none,
+    # including every order placed before coupons existed. The total already
+    # has this discount taken off. A later edit of the coupon does not change it.
+    coupon_code: Mapped[str | None] = mapped_column(String(32))
+    coupon_discount: Mapped[int | None] = mapped_column(Integer)
     courier_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     tracking_number: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     # First time the status became delivered or returned. Kept forever; a later move does not

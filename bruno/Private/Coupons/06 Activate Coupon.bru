@@ -1,0 +1,26 @@
+meta {
+  name: Activate Coupon
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/coupons/{{COUPON_ID}}/activate
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # POST /api/v1/admin/coupons/{id}/activate
+
+  Editor or superadmin. Sets `is_active` true. `status` is then `active`,
+  `scheduled`, or `expired` from the window.
+}

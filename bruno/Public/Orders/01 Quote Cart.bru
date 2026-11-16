@@ -31,4 +31,6 @@ docs {
   The response `unit_price`, `line_total`, `subtotal`, `shipping`, and `total` are the only numbers to show. Do not multiply on the client. `max_quantity` is the cap for the + button.
 
   A quote does not take stock and does not create an order. District `ঢাকা` or `dhaka` is inside Dhaka. Any other district is outside. The server chooses the fee.
+
+  Optional `coupon_code`. Optional `phone` checks the per-phone limit and the first-order rule. `coupon` on the response is null or `{ code, valid, discount, free_delivery, error_code, message }`. A bad code is reported and the quote still returns prices.
 }

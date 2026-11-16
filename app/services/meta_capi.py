@@ -120,6 +120,8 @@ def build_purchase_body(order: Order, tracking: OrderTracking | None) -> dict[st
         },
         "user_data": user_data,
     }
+    if order.coupon_code:
+        event["custom_data"]["coupon"] = order.coupon_code
     if tracking is not None and tracking.event_source_url:
         event["event_source_url"] = tracking.event_source_url
 

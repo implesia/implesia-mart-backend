@@ -54,8 +54,25 @@ class OrderLineInput(BaseModel):
     selection: list[OptionChoice] = Field(default_factory=list, max_length=6)
 
 
+class CouponQuoteRead(BaseModel):
+    """The coupon on a quote. An invalid code does not fail the quote."""
+
+    code: str
+    valid: bool
+    discount: int = 0
+    free_delivery: bool = False
+    error_code: str | None = None
+    message: str | None = None
+
+
 class OrderQuoteRequest(BaseModel):
-    """A price check. The client never sends a price, a discount, or a fee."""
+    """A price check. The client never sends a price, a discount, or a fee.
+
+    `coupon_code` is the only coupon input. A client-sent discount or total is
+    rejected (unknown field), and the server computes the taka itself.
+    Optional `phone` lets the quote check the per-phone limit and first-order
+    rule. Order create always has a phone, so those two are always checked there.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -64,6 +81,16 @@ class OrderQuoteRequest(BaseModel):
     area: str = Field("", max_length=120)
     delivery_zone: DeliveryZone | None = None
     items: list[OrderLineInput] = Field(default_factory=list, max_length=12)
+    coupon_code: str | None = Field(default=None, max_length=40)
+    phone: str | None = Field(default=None, max_length=20)
+
+    @field_validator("coupon_code", "phone")
+    @classmethod
+    def _blank_coupon(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        return text or None
 
     @model_validator(mode="after")
     def items_match_source(self) -> "OrderQuoteRequest":
@@ -166,7 +193,10 @@ class QuoteRead(BaseModel):
     delivery_zone: DeliveryZone
     delivery_available: bool
     # Bangla QR advance choices for this total (empty when no QR is set or nothing to pay).
+    # Computed from the total after a valid coupon.
     bangla_qr_options: list[AdvanceOption] = Field(default_factory=list)
+    # Null when the shopper did not send a code. Invalid codes stay on this object.
+    coupon: CouponQuoteRead | None = None
 
 
 class OrderItemRead(BaseModel):
@@ -236,6 +266,9 @@ class PublicOrderRead(BaseModel):
     subtotal: int
     shipping: int
     total: int
+    # Null on orders placed with no coupon, including every order from before coupons.
+    coupon_code: str | None = None
+    coupon_discount: int | None = None
     courier_name: str
     tracking_number: str
     payment_method: PaymentMethod
@@ -268,6 +301,8 @@ class OrderRead(BaseModel):
     subtotal: int
     shipping: int
     total: int
+    coupon_code: str | None = None
+    coupon_discount: int | None = None
     courier_name: str
     tracking_number: str
     items: list[OrderItemRead]
