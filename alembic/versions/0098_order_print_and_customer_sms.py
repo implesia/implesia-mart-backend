@@ -61,7 +61,7 @@ def _checks(table: str, needle: str) -> list[str]:
 
 def _replace_check(table: str, needle: str, name: str, sql: str) -> None:
     for existing in _checks(table, needle):
-        op.drop_constraint(existing, table, type_="check")
+        op.drop_constraint(op.f(existing), table, type_="check")
     op.create_check_constraint(op.f(name), table, sql)
 
 

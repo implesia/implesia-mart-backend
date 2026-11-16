@@ -73,12 +73,12 @@ def _drop_if_present(table: str, name: str) -> None:
         {"table": table, "name": name},
     )
     if found:
-        op.drop_constraint(name, table, type_="check")
+        op.drop_constraint(op.f(name), table, type_="check")
 
 
 def _replace_check(table: str, needle: str, name: str, sql: str) -> None:
     for existing in _checks(table, needle):
-        op.drop_constraint(existing, table, type_="check")
+        op.drop_constraint(op.f(existing), table, type_="check")
     _drop_if_present(table, name)
     # op.f keeps the name we pass. A bare name would be prefixed again.
     op.create_check_constraint(op.f(name), table, sql)
