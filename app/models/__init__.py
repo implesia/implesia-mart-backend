@@ -53,7 +53,7 @@ from app.models.home.showcase import HomeShowcase, HomeShowcaseItem, HomeShowcas
 from app.models.home.trust import HomeTrust, HomeTrustItem
 from app.models.inquiry import Inquiry, InquiryStatus, InquiryType
 from app.models.inventory import ImportBatch, Purchase, PurchaseItem, StockMovement, Supplier
-from app.models.order import Order, OrderIdempotency, OrderItem
+from app.models.order import Order, OrderActivity, OrderIdempotency, OrderItem
 from app.models.payment_settings import PaymentSettings
 from app.models.pricing import PricingSettings
 from app.models.privacy.collection import PrivacyCollection, PrivacyCollectionCard
@@ -82,6 +82,7 @@ from app.models.shipping.support import ShippingSupport
 from app.models.site_contact import SiteContact
 from app.models.site_footer import SiteFooter
 from app.models.site_header import SiteHeader
+from app.models.site_settings import SiteSettings
 from app.models.sustainability.commitment import (
     SustainabilityCommitment,
     SustainabilityCommitmentItem,
@@ -188,6 +189,7 @@ __all__ = [
     "HomeTrust",
     "HomeTrustItem",
     "Order",
+    "OrderActivity",
     "OrderIdempotency",
     "OrderItem",
     "PrivacyCollection",
@@ -244,6 +246,7 @@ __all__ = [
     "PaymentSettings",
     "PricingSettings",
     "SiteHeader",
+    "SiteSettings",
     "SustainabilityQualityStep",
     "User",
     "UserRole",

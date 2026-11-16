@@ -45,10 +45,10 @@ class SalesSummary(BaseModel):
     # Sum of list price × quantity (regular price, or the selling price when
     # the line has no regular price). Whole taka.
     gross_sales: int
-    # List-price discount, quantity discount, and coupon discount. Whole taka.
-    # gross_sales - the sum of line totals, plus coupon_discount.
+    # List-price discount, quantity discount, coupon, and staff manual_discount.
+    # gross_sales - the sum of line totals, plus those order discounts.
     discount: int
-    # Coupon taka on delivered orders in the window. Already inside discount.
+    # Coupon taka only. Staff manual_discount is in discount and not here.
     # A product or category filter keeps that filter's share of the coupon.
     # NULL coupon columns count as 0, so orders from before coupons are unchanged.
     coupon_discount: int
@@ -56,7 +56,7 @@ class SalesSummary(BaseModel):
     # counts the whole order's delivery charge, not a share of it.
     # Free delivery is already shipping 0 on the order.
     delivery_charge: int
-    # gross_sales - discount + delivery_charge. Whole taka. Net of the coupon.
+    # gross_sales - discount + delivery_charge. Whole taka. Net of coupon and staff discount.
     net_sales: int
 
 

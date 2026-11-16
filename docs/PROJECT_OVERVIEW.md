@@ -4,7 +4,7 @@
 
 FastAPI backend for the Implesia Mart storefront and its admin dashboard. It serves:
 
-- **Storefront (public)**: products, categories, search, CMS pages (home, about, sustainability, shipping, privacy, FAQs, contact, blogs), site header/footer/contact settings, carts, orders, inquiries.
+- **Storefront (public)**: products, categories, search, CMS pages (home, about, sustainability, shipping, privacy, FAQs, contact, blogs), site header/footer/contact settings, storefront SEO settings, carts, orders, inquiries.
 - **Admin (staff)**: editing all of the above, product badges, media uploads, orders and delivery status, coupons, sales reports, dashboard overview, users and audit events.
 
 There are no customer accounts. Shoppers stay anonymous. A guest cart is identified by the `X-Cart-Token` header.
@@ -73,6 +73,9 @@ Names only. Values live in `.env` (see `.env.example`) and must never be committ
 - `TURNSTILE_SECRET_KEY`
 - Meta Conversions API, optional (empty pixel id or token disables it): `META_PIXEL_ID`, `META_CAPI_TOKEN`, `META_TEST_EVENT_CODE`
 - Telegram, optional (empty token or chat list disables it): `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_IDS`, `TELEGRAM_NOTIFY_ORDER_CANCELLED`, `TELEGRAM_NOTIFY_LOW_STOCK`, `ADMIN_BASE_URL`
+- Customer SMS, off until enabled. `log` and `noop` only; no handset send: `CUSTOMER_SMS_ENABLED`, `CUSTOMER_SMS_PROVIDER`, `CUSTOMER_SMS_ON_CONFIRMED`, `CUSTOMER_SMS_ON_SHIPPED`
+- Printed delivery estimate, computed, not stored: `DELIVERY_DAYS_INSIDE_DHAKA`, `DELIVERY_DAYS_OUTSIDE_DHAKA`
+- Public lookup limit: `RATE_LIMIT_ORDER_LOOKUP` (default `30/minute`; not required in `.env`)
 - Media, all empty or all set: `S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `MEDIA_PUBLIC_BASE_URL`
 
 ## Connection to the frontend repo

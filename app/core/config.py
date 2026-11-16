@@ -119,7 +119,22 @@ class Settings(BaseSettings):
     telegram_notify_order_cancelled: bool = False
     telegram_notify_low_stock: bool = False
     # Storefront origin, no path. The order link is {ADMIN_BASE_URL}/admin/orders/{id}.
+    # The customer status link is {ADMIN_BASE_URL}/order-status?number={order number}.
     admin_base_url: str = ""
+
+    # Customer SMS when an order is confirmed or shipped. Off until the master
+    # flag is true. provider is only "log" (write the text to the log) or
+    # "noop" (do nothing). There is no live SMS or WhatsApp gateway in this
+    # process. See .env.example for the account a real send would need.
+    customer_sms_enabled: bool = False
+    customer_sms_provider: Literal["log", "noop"] = "log"
+    customer_sms_on_confirmed: bool = True
+    customer_sms_on_shipped: bool = True
+    # Added to the order date when a packing slip asks for an estimated
+    # delivery date. inside covers the city and Dhaka-suburban zones.
+    # The date is computed on read. It is not stored on the order.
+    delivery_days_inside_dhaka: int = Field(default=2, ge=0, le=60)
+    delivery_days_outside_dhaka: int = Field(default=5, ge=0, le=60)
 
     @model_validator(mode="after")
     def _production_secret_key(self) -> Self:
@@ -169,6 +184,14 @@ class Settings(BaseSettings):
         _require_origin(raw, "ADMIN_BASE_URL", production=self.environment == "production")
         self.admin_base_url = raw
         return self
+
+    @field_validator("customer_sms_provider", mode="before")
+    @classmethod
+    def _sms_provider(cls, value: object) -> object:
+        if isinstance(value, str):
+            cleaned = value.strip().lower()
+            return cleaned or "log"
+        return value
 
     @field_validator(
         "cors_origins",

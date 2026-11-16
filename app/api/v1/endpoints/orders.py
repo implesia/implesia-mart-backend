@@ -20,6 +20,20 @@ from app.services import order_service
 
 router = APIRouter(dependencies=[Depends(no_store)])
 
+# Staff-only fields stay off the storefront response. The row still stores them.
+_PUBLIC_ORDER_EXCLUDE = {
+    "origin",
+    "call_status",
+    "printed_at",
+    "ordered_at",
+    "manual_discount",
+    "paid_amount",
+    "payment_status",
+    "customer_history",
+    "duplicate_warning",
+    "activity",
+}
+
 
 @router.post("/quote", response_model=QuoteRead)
 @limiter.limit(settings.rate_limit_cart_writes)
@@ -47,7 +61,12 @@ async def lookup_order(
 _ORDER_LIMIT = parse(settings.rate_limit_orders)
 
 
-@router.post("", response_model=OrderRead, status_code=201)
+@router.post(
+    "",
+    response_model=OrderRead,
+    response_model_exclude=_PUBLIC_ORDER_EXCLUDE,
+    status_code=201,
+)
 async def place_order(
     request: Request,
     db: DbSession,

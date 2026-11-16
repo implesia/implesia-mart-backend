@@ -65,7 +65,7 @@ async def _place(
 
 
 async def _deliver(client: AsyncClient, headers: dict[str, str], order_id: str) -> None:
-    for status in ("confirmed", "shipped", "delivered"):
+    for status in ("confirmed", "packed", "shipped", "delivered"):
         moved = await _move(client, headers, order_id, status)
         assert moved.status_code == 200, moved.text
 

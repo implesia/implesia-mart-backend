@@ -4,6 +4,11 @@ from app.core.exceptions import UnprocessableError
 from app.schemas.product import OptionChoice, ProductContent, SelectedOption
 
 
+def variant_label(raw: object) -> str:
+    """One line such as ``Red / M``. Empty when the line has no options."""
+    return " / ".join(option.label for option in selection_of(raw))
+
+
 def selection_of(raw: object) -> list[SelectedOption]:
     if not isinstance(raw, list):
         return []

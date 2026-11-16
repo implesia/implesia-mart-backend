@@ -2,7 +2,11 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-PaymentMethod = Literal["cod", "bangla_qr"]
+StorePaymentMethod = Literal["cod", "bangla_qr"]
+OfflinePaymentMethod = Literal["cash", "bkash", "nagad", "card", "due"]
+AnyPaymentMethod = Literal["cod", "bangla_qr", "cash", "bkash", "nagad", "card", "due"]
+# Checkout still accepts only the storefront methods.
+PaymentMethod = StorePaymentMethod
 AdvancePercent = Literal[25, 50, 75, 100]
 ADVANCE_PERCENTS: tuple[int, ...] = (25, 50, 75, 100)
 

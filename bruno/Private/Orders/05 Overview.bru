@@ -1,0 +1,48 @@
+meta {
+  name: Overview
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/orders/overview
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  # GET /api/v1/admin/orders/overview
+
+  Editor or superadmin. Today, this week (Monday through today), and this month in Asia/Dhaka. Revenue skips cancelled and returned. `ready_to_pack` is the current count of `confirmed` orders.
+
+  ```json
+  {
+    "timezone": "Asia/Dhaka",
+    "today": { "orders": 1, "revenue": 980 },
+    "week": { "orders": 1, "revenue": 980 },
+    "month": { "orders": 1, "revenue": 980 },
+    "pending_confirm": 1,
+    "ready_to_pack": 0,
+    "shipped": 0,
+    "return_rate_percent": null,
+    "cancel_rate_percent": 0,
+    "origins": [
+      { "origin": "online", "orders": 0, "revenue": 0 },
+      { "origin": "offline", "orders": 1, "revenue": 980 }
+    ],
+    "status_counts": {
+      "new": 1, "confirmed": 0, "packed": 0, "shipped": 0,
+      "delivered": 0, "cancelled": 0, "returned": 0
+    },
+    "recent": []
+  }
+  ```
+}

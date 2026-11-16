@@ -78,7 +78,7 @@ Generated from the FastAPI routers (`app/api/v1/router.py` and `app/api/v1/endpo
 | --- | --- | --- | --- | --- |
 | GET | `/api/v1/admin/dashboard` | admin (editor, superadmin) | — | `DashboardOverview` |
 
-Query: `range` is `today`, `yesterday`, `7d` (default), `30d`, `this-month`, `last-month`, or `custom`. Custom also needs `from` and `to` (`YYYY-MM-DD`, Asia/Dhaka). Longer than 366 days is 422. Revenue, orders, customers, pending, statuses, best sellers, areas, categories, and the chart follow `created_at` and leave cancelled and returned orders out of revenue. `delivered.value` counts orders whose `delivered_at` is in the window, including an order that was later returned. The figures are SQL aggregates. `Cache-Control: no-store`. Viewer is 403.
+Query: `range` is `today`, `yesterday`, `7d` (default), `30d`, `this-month`, `last-month`, or `custom`. Custom also needs `from` and `to` (`YYYY-MM-DD`, Asia/Dhaka). Longer than 366 days is 422. Revenue, orders, customers, pending, statuses, best sellers, areas, categories, and the chart follow `ordered_at` when it is set, otherwise `created_at`. Cancelled and returned orders are left out of revenue. `delivered.value` counts orders whose `delivered_at` is in the window, including an order that was later returned. `statuses` has seven slices: `new`, `confirmed`, `packed`, `shipped`, `delivered`, `cancelled`, `returned`. The figures are SQL aggregates. `Cache-Control: no-store`. Viewer is 403.
 
 ## `admin/reports`
 
@@ -422,9 +422,268 @@ The server reads `now` (UTC) first. Rows are `created_at > since` and `created_a
 }
 ```
 
-`payment_method` is the stored value: `cod` or `bangla_qr`. `total` is the order total in whole taka. The select list is only these columns. `ix_orders_created_at` (migration 0005) supports the filter.
+`payment_method` is the stored value: `cod`, `bangla_qr`, or an offline method (`cash`, `bkash`, `nagad`, `card`, `due`). `total` is the order total in whole taka. The select list is only these columns. `ix_orders_created_at` (migration 0005) supports the filter.
 
 `OrderRead` includes `delivered_at` and `returned_at` (ISO datetime or `null`). They are set the first time the status becomes `delivered` or `returned` and are not replaced later. `PublicOrderRead` (order lookup) does not include them. `POST /orders` returns them as `null` on a new order. `OrderRead` also includes `order_number` (the same value as `number`) and `analytics_event_id` (`purchase_` plus that number). Those two fields are derived. They do not cause a Meta call on admin reads or status updates.
+
+`POST /api/v1/orders` still returns `OrderRead`, and it omits the staff fields: `origin`, `call_status`, `printed_at`, `ordered_at`, `manual_discount`, `paid_amount`, `payment_status`, `customer_history`, `duplicate_warning`, `activity`. A public status can be `packed`.
+
+### Status
+
+`new` → `confirmed` → `packed` → `shipped` → `delivered`, plus `cancelled` and `returned`.
+
+| From | Allowed |
+| --- | --- |
+| `new` | `confirmed`, `cancelled` |
+| `confirmed` | `packed`, `cancelled` |
+| `packed` | `shipped`, `cancelled` |
+| `shipped` | `delivered`, `returned` |
+| `delivered` | `returned` |
+| `cancelled`, `returned` | none |
+
+`confirmed` is the ready-to-pack queue. There is no extra status for that queue. Existing rows are not rewritten. An order that was already `confirmed` must be packed before it can ship. An illegal move is 409 `conflict`. The message is `Cannot change an order from {current} to {target}. Allowed: {allowed}`. A concurrent change is 409 `conflict` with "This order was changed by someone else. Reload and try again."
+
+`orders.source` stays `cart` or `direct`. Online versus offline is `orders.origin` (`online` or `offline`). `orders.channel` stays `website` on checkout and is `offline` on a counter order.
+
+### List
+
+`GET /api/v1/admin/orders`. Editor or superadmin. Viewer is 403. Anonymous is 401. `Cache-Control: no-store`.
+
+Query: `page` (1–10000), `page_size` (1–50, default 10), `q` (order number, name, phone, address, or line title), `status`, `scope` (`all` or `transit`), `sort` (`newest`, `oldest`, `high`, `low`), `origin` (`online` or `offline`), `payment_method`, `payment_status` (`unpaid`, `partial`, `paid`), `call_status` (`not_called`, `confirmed`, `no_answer`, `fake`), `courier` (case-insensitive, `%` and `_` are escaped), `date_from`, `date_to` (`YYYY-MM-DD`, Asia/Dhaka, inclusive). `date_from` after `date_to`, or a span longer than 366 days, is 422. The date filter uses `ordered_at` when set, otherwise `created_at`. `scope=transit` is `confirmed`, `packed`, and `shipped`. A page past the end returns `items: []` and the same meta.
+
+```json
+{
+  "items": [],
+  "total": 0,
+  "page": 1,
+  "page_size": 10,
+  "pages": 0,
+  "metrics": {
+    "orders": 0,
+    "new": 0,
+    "confirmed": 0,
+    "packed": 0,
+    "shipped": 0,
+    "delivered": 0,
+    "cancelled": 0,
+    "returned": 0,
+    "in_transit": 0,
+    "revenue": 0
+  },
+  "status_counts": {
+    "new": 0,
+    "confirmed": 0,
+    "packed": 0,
+    "shipped": 0,
+    "delivered": 0,
+    "cancelled": 0,
+    "returned": 0
+  }
+}
+```
+
+`metrics` is the whole table and ignores the query. `in_transit` is confirmed + packed + shipped. `revenue` excludes cancelled and returned. `status_counts` uses every filter except `status` and `scope`, so the status tabs stay filled. Each item is an `OrderRead` without `activity` (that list is on the detail). `customer_history` and `duplicate_warning` are filled for the page.
+
+### Detail and update
+
+`GET /api/v1/admin/orders/{order_id}` returns `OrderRead` plus `activity` (newest 100). A missing id is 404 `not_found` with "Order not found". A non-UUID is 422.
+
+`OrderRead` adds, on top of the checkout fields: `origin`, `call_status`, `payment_status`, `manual_discount`, `paid_amount`, `printed_at`, `ordered_at`, `customer_history`, `duplicate_warning`, `activity`, `next_statuses`.
+
+```json
+{
+  "customer_history": {
+    "phone": "01800000000",
+    "total_orders": 2,
+    "delivered": 1,
+    "returned_cancelled": 0
+  },
+  "duplicate_warning": true,
+  "activity": [
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "actor_user_id": "00000000-0000-4000-8000-000000000003",
+      "actor_name": "Implesia Mart Admin",
+      "action": "status_changed",
+      "summary": "Status new to confirmed",
+      "detail": { "from": "new", "to": "confirmed" },
+      "created_at": "2026-11-16T09:00:00+00:00"
+    }
+  ]
+}
+```
+
+`PATCH` body is `OrderUpdate` (`extra` forbidden). At least one of `status`, `call_status`, `courier_name`, `tracking_number`, `notes`. Empty object is 422. Courier and tracking are stripped strings, max 120. Notes max 500.
+
+`PUT /api/v1/admin/orders/{order_id}/items` replaces the lines while status is `new`. After that, 422 "Items can be edited only while the order is new". Body:
+
+```json
+{
+  "items": [
+    { "product_id": "…", "variant_id": null, "quantity": 1, "unit_price": 400 }
+  ],
+  "manual_discount": 100,
+  "delivery_charge": 80
+}
+```
+
+`items` is required, 1–12 lines. `manual_discount` and `delivery_charge` are optional; omit them to keep the current values. Omit `unit_price` to reprice from the catalog. The response is the updated `OrderRead`. Stock moves with the quantity change. A removed product is 422 "A product on this order was removed". A discount larger than the merchandise is 422 "Discount is larger than the merchandise total". A collected amount above the new total is 422 "Paid amount is larger than the new total".
+
+### Overview
+
+`GET /api/v1/admin/orders/overview`. Editor or superadmin.
+
+`today`, `week` (Monday through today), and `month` (the 1st through today) are Asia/Dhaka, half-open through tomorrow 00:00. Each is `{ "orders", "revenue" }`. Order counts include every status. Revenue skips cancelled and returned. The date is `ordered_at` when set, otherwise `created_at`.
+
+`pending_confirm` is the current count of `new`. `ready_to_pack` is the current count of `confirmed`. `shipped` is the current count of `shipped`. These are not limited to the period.
+
+`return_rate_percent` is returned ÷ (delivered + returned) × 100, two decimals, or `null` when that denominator is 0. `cancel_rate_percent` is cancelled ÷ every order × 100, or `null` when there are no orders. Both are all-time.
+
+`origins` always has `online` and `offline`, each `{ "origin", "orders", "revenue" }`. Revenue there also skips cancelled and returned. `status_counts` always has all seven keys. `recent` is up to 8 orders, newest `created_at` first: `id`, `number`, `status`, `origin`, `total`, `customer_name`, `phone`, `created_at`, `ordered_at`.
+
+### Customers
+
+`GET /api/v1/admin/orders/customers?q=`. `q` is required, 2–80 characters. Matches name or phone. A value that is a Bangladesh mobile also matches the stored `01XXXXXXXXX` form. Up to 20 rows, one per phone, latest order first.
+
+```json
+{
+  "items": [
+    {
+      "phone": "01800000000",
+      "customer_name": "Karim Uddin",
+      "email": "",
+      "district": "Dhaka",
+      "area": "Gulshan",
+      "address": "House 4, Road 12, Gulshan",
+      "orders": 2,
+      "last_ordered_at": "2026-11-16T09:00:00+00:00"
+    }
+  ]
+}
+```
+
+### Offline create
+
+`POST /api/v1/admin/orders/offline`. 201 `OrderRead`. Header `Idempotency-Key` is required (same shape as checkout). The same key from the same staff user returns the original order and does not take stock again. A key already used by someone else is 409.
+
+```json
+{
+  "customer_name": "Karim Uddin",
+  "phone": "01800000000",
+  "email": "",
+  "district": "Dhaka",
+  "area": "Gulshan",
+  "address": "House 4, Road 12, Gulshan",
+  "notes": "Counter sale",
+  "items": [
+    { "product_id": "…", "quantity": 2, "unit_price": 500 }
+  ],
+  "manual_discount": 100,
+  "delivery_charge": 80,
+  "payment_method": "cash",
+  "paid_amount": 200,
+  "payment_reference": "",
+  "order_date": "2026-11-16"
+}
+```
+
+`payment_method` is `cash`, `bkash`, `nagad`, `card`, or `due`. Unknown fields are 422. `order_date` must be from 2020-01-01 through today in Asia/Dhaka; omit it to use now. Omit `delivery_charge` to use the zone fee. A closed zone with no charge is 422 "Delivery is not available for this area". A charge of 0 is allowed. Omit `unit_price` to use the current price. The server computes `subtotal`, `shipping`, `total`, `paid_amount`, and `due_amount`. Client totals are not accepted. Not enough stock is 422 with the existing Bengali stock message, and nothing is saved. `paid_amount` above the total is 422 "Paid amount cannot be larger than the order total".
+
+The order is `origin: "offline"`, `source: "direct"`, `channel` stored as `offline`, status `new`. Stock is deducted and `unit_cost` is snapshotted like checkout. No Meta Purchase, no Telegram new-order message, no cancel Telegram if it is later cancelled, and no GA event from the server. Do not fire the browser Purchase event for `origin: "offline"`.
+
+### Bulk, pack, and print
+
+| Method | Path | Body | Response |
+| --- | --- | --- | --- |
+| GET | `/api/v1/admin/orders/ready-to-pack` | — | `AdminOrderList` |
+| POST | `/api/v1/admin/orders/bulk-status` | `BulkStatusRequest` | `BulkStatusResult` |
+| POST | `/api/v1/admin/orders/printed` | `OrderIdList` | `PrintedResult` |
+| POST | `/api/v1/admin/orders/print-data` | `OrderIdList` | `PrintData` |
+
+Ready to pack is the list endpoint with `status` forced to `confirmed`. The other query params still apply.
+
+`BulkStatusRequest`: `{ "status": "packed", "ids": ["…"] }`. 1–100 ids, duplicates dropped. The HTTP status is 200 even when some ids fail. One failure does not undo the others.
+
+```json
+{
+  "results": [
+    { "id": "…", "ok": true, "status": "packed", "error": null },
+    { "id": "…", "ok": false, "status": null, "error": "Order not found" }
+  ]
+}
+```
+
+An unknown id is a per-order error, not a 404 for the batch. Cancel and return in the batch restore stock. Cancel gives the coupon use back. Return keeps it. An online cancel can still send the Telegram cancel alert. An offline cancel does not.
+
+`OrderIdList`: `{ "ids": ["…"] }`, 1–100, duplicates dropped.
+
+`POST /printed` sets `printed_at` to now and appends an activity row `printed`. A missing id is listed in `missing` and is not a 404. Reprint is allowed.
+
+```json
+{ "printed": ["…"], "missing": ["…"] }
+```
+
+`POST /print-data` does not mark anything printed. Missing ids are listed. Each order includes the invoice id, customer, courier, tracking, items, totals, `paid_amount`, `due_amount`, and `payment_status` so the admin UI can render an invoice or a label. Totals are the stored order totals. This route does not write them.
+
+`invoice_id` is `INV-` plus the eight hex characters of `number` (`IM-AB12CD34` → `INV-AB12CD34`). `order_number` is the same string as `number`. There is no invoice sequence and no new column.
+
+`estimated_delivery_date` is a `YYYY-MM-DD` date, computed when this route is read. It is not stored. The order date is `ordered_at` in Asia/Dhaka when that is set, otherwise `created_at` in Asia/Dhaka. Inside Dhaka and Dhaka-suburban add `DELIVERY_DAYS_INSIDE_DHAKA` (default 2). Outside Dhaka adds `DELIVERY_DAYS_OUTSIDE_DHAKA` (default 5). Changing those settings changes the printed date on the next read, including for old orders. It does not change `created_at`, `ordered_at`, or any money column.
+
+`email` is `""` when the order has none. `full_address` is `address`, `area`, and `district` joined with `", "`, skipping blanks. The three parts are still returned on their own.
+
+Each item: `title` is the product name, `variant_label` is the option labels joined with `" / "` (`""` when there are none), `sku` is the snapshotted SKU, `product_id_short` is the first 8 hex characters of the product UUID (`""` when the product was deleted), then `quantity`, `unit_price`, and `line_total`. `selection` is still the option list.
+
+```json
+{
+  "orders": [
+    {
+      "id": "…",
+      "invoice_id": "INV-AB12CD34",
+      "number": "IM-AB12CD34",
+      "order_number": "IM-AB12CD34",
+      "status": "confirmed",
+      "origin": "offline",
+      "ordered_at": "2026-11-16T00:00:00+06:00",
+      "created_at": "2026-11-16T09:00:00+00:00",
+      "estimated_delivery_date": "2026-11-18",
+      "customer_name": "Karim Uddin",
+      "phone": "01800000000",
+      "email": "",
+      "district": "Dhaka",
+      "area": "Gulshan",
+      "address": "House 4, Road 12, Gulshan",
+      "full_address": "House 4, Road 12, Gulshan, Gulshan, Dhaka",
+      "notes": "Counter sale",
+      "courier_name": "Pathao",
+      "tracking_number": "TRK-1",
+      "payment_method": "cash",
+      "payment_status": "partial",
+      "subtotal": 1000,
+      "manual_discount": 100,
+      "coupon_discount": null,
+      "shipping": 80,
+      "total": 980,
+      "paid_amount": 200,
+      "due_amount": 780,
+      "items": [
+        {
+          "title": "Counter lamp",
+          "variant_label": "",
+          "sku": "",
+          "product_id_short": "123e4567",
+          "quantity": 2,
+          "unit_price": 500,
+          "line_total": 1000,
+          "selection": []
+        }
+      ]
+    }
+  ],
+  "missing": []
+}
+```
+
+Writes on this router use the product-write rate limit and return 429 `rate_limited` when it is exceeded. Errors use `{ "error": { "code", "message", "details" } }`.
 
 ## `admin/pages/about`
 
@@ -632,6 +891,19 @@ The server reads `now` (UTC) first. Rows are `created_at > since` and `created_a
 | GET | `/api/v1/admin/site/header` | admin (editor, superadmin) | — | `HeaderAdmin` |
 | PUT | `/api/v1/admin/site/header` | admin (editor, superadmin) | `HeaderWrite` | `HeaderAdmin` |
 
+## `admin/site/settings`
+
+Home/default storefront SEO. There is no separate settings resource; this is the one row.
+
+`SiteSettings`: `seo_title` (string ≤ 70, or `null`), `seo_description` (string ≤ 170, or `null`), `seo_title_template` (string ≤ 80, or `null`). `null` means the storefront keeps its built-in copy for that field. A template that is set contains `%s` exactly once, for example `%s | Implesia Mart`, and no other `%`. The storefront replaces `%s` with the page title.
+
+PATCH omits a field to keep it. `null` or `""` clears it (stored and returned as `null`). Whitespace is collapsed. An unknown field is 422. Editor or above. A viewer is 403. Anonymous is 401. Admin responses are `Cache-Control: no-store`. A successful PATCH is an `ADMIN_WRITE` audit row.
+
+| Method | Path | Access | Request body | Response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/v1/admin/site/settings` | admin (editor, superadmin) | — | `SiteSettings` |
+| PATCH | `/api/v1/admin/site/settings` | admin (editor, superadmin) | `SiteSettingsUpdate` (partial) | `SiteSettings` |
+
 ## `auth`
 
 | Method | Path | Access | Request body | Response |
@@ -775,7 +1047,90 @@ Codes: `coupon_not_found`, `coupon_inactive`, `coupon_not_started`, `coupon_expi
 
 `OrderCreate.tracking` is optional: `{ "fbp": string|null, "fbc": string|null, "event_source_url": string|null }`. Each field is optional. A value that is not a string, is blank, or is longer than 500 characters is dropped. Unknown keys inside `tracking` are dropped. A missing `tracking`, or a `tracking` that is not an object, is ignored and the order is still placed. Other unknown fields on the order body are still `422`.
 
-`POST /orders` returns `order_number` (same string as `number`) and `analytics_event_id` (`purchase_<order_number>`). When `META_PIXEL_ID` and `META_CAPI_TOKEN` are both set, a successful create also sends one Meta Conversions API `Purchase` with that event id after the order is committed. `custom_data.value` is the post-coupon total. When `coupon_code` is set, `custom_data.coupon` is that code. The response does not wait on Meta and does not change if Meta fails. A replay of the same `Idempotency-Key` returns the same ids and does not send again. `POST /orders/quote` and `POST /orders/lookup` do not accept `tracking` and do not return `analytics_event_id`. Lookup does return `coupon_code` and `coupon_discount`.
+`POST /orders` returns `order_number` (same string as `number`) and `analytics_event_id` (`purchase_<order_number>`). When `META_PIXEL_ID` and `META_CAPI_TOKEN` are both set, a successful create also sends one Meta Conversions API `Purchase` with that event id after the order is committed. `custom_data.value` is the post-coupon total. When `coupon_code` is set, `custom_data.coupon` is that code. The response does not wait on Meta and does not change if Meta fails. A replay of the same `Idempotency-Key` returns the same ids and does not send again. `POST /orders/quote` and `POST /orders/lookup` do not accept the Meta `tracking` object and do not return `analytics_event_id`. Lookup does return `coupon_code` and `coupon_discount`.
+
+### Public order lookup
+
+`POST /api/v1/orders/lookup` is public and `no-store`. It is the only order-status lookup. Rate limit: `RATE_LIMIT_ORDER_LOOKUP` (default `30/minute`) per client address. Over the limit is `429` with `error.code` `rate_limited`.
+
+`OrderLookup` (`extra` forbidden). `phone` is required (the same Bangladesh mobile forms as checkout, compared as `01XXXXXXXXX`). Send exactly one of `number` or `tracking_number`. Both, or neither, is `422` with message `Send the order number or the tracking number, and the phone`.
+
+- `number`: `IM-` plus 8 hex characters. Spaces are removed and letters are upper-cased. A wrong shape is `422`.
+- `tracking_number`: the courier consignment id, trimmed, 1–120 characters. Match is exact and case-insensitive. It is not a search prefix.
+
+A wrong phone, an unknown number, and an unknown tracking id all return the same `404` body, `Order not found`. The response does not say which part failed. When several orders share one tracking id and the same phone, the newest `created_at` (then `id`) is returned. A tracking id that belongs to a different phone is `404`.
+
+```json
+{ "number": "IM-AB12CD34", "phone": "01700000000" }
+```
+
+```json
+{ "tracking_number": "Pathao-9", "phone": "01700000000" }
+```
+
+`PublicOrderRead` adds `timeline` and `items[].variant_label`. It still has no order id, email, street address, area, district, notes, staff fields, costs, or the SMS claim timestamps.
+
+`due_amount` is the cash still to collect. For COD that is the delivery amount. For Bangla QR it is the remainder after the advance. An older order whose `due_amount` column is NULL is returned as the total minus the advance.
+
+`items` is the summary: `title`, `variant_label` (option labels joined with `" / "`, `""` when there are none), `quantity`, `unit_price`, `line_total`, plus `slug`, `product_id` (null after the product is deleted), `image_src`, and `selection` so the page can link to `/products/{id}`.
+
+`timeline` is only `{ "status", "at" }`. `status` is the stored value (`new`, `confirmed`, `packed`, `shipped`, `delivered`, `cancelled`, `returned`). The first event is `new` at `created_at`. Later events are the `status_changed` activity times. `delivered_at` and `returned_at` are added when those columns are set and no activity row recorded that status. There is no actor and no note. An order from before the activity log may only have the placed event, plus delivery or return when those columns were filled. The current `status` field is still the order's status even when the timeline has no time for it.
+
+```json
+{
+  "number": "IM-AB12CD34",
+  "status": "shipped",
+  "customer_name": "Rina Akter",
+  "phone": "017••••000",
+  "delivery_zone": "outside",
+  "subtotal": 900,
+  "shipping": 130,
+  "total": 1030,
+  "coupon_code": null,
+  "coupon_discount": null,
+  "courier_name": "Pathao",
+  "tracking_number": "Pathao-9",
+  "payment_method": "cod",
+  "advance_percent": null,
+  "advance_amount": 0,
+  "due_amount": 1030,
+  "items": [
+    {
+      "title": "Track gown",
+      "slug": "track-gown",
+      "product_id": "…",
+      "image_src": "/media/products/gown.jpg",
+      "unit_price": 900,
+      "quantity": 1,
+      "line_total": 900,
+      "variant_label": "M",
+      "selection": [{ "name": "Size", "label": "M", "swatch": "" }]
+    }
+  ],
+  "timeline": [
+    { "status": "new", "at": "2026-11-16T09:00:00Z" },
+    { "status": "confirmed", "at": "2026-11-16T10:00:00Z" },
+    { "status": "shipped", "at": "2026-11-16T12:00:00Z" }
+  ],
+  "created_at": "2026-11-16T09:00:00Z"
+}
+```
+
+The storefront order-status page should read `number` from the query (`/order-status?number=IM-AB12CD34`) and still require the phone before calling this route. The link in the customer message uses that query. The phone is not put in the URL.
+
+### Customer status messages
+
+There is no new route. When a single `PATCH` or `POST /bulk-status` actually moves an order to `confirmed` or `shipped`, the API may queue a short Bengali SMS for that order's phone. Online and offline orders are both included. Packed, delivered, cancelled, and returned do not send. An order that is already in the target status does not send again.
+
+The queue runs after the status commit. A send error, a timeout, or an exception does not change the HTTP status of the update. The `PATCH` body is built before the send finishes, so `activity` on that response may not include the message row yet. The next read of the order does.
+
+The activity action is `customer_message`. `detail` is `{ "status": "confirmed"|"shipped", "result": "logged"|"skipped"|"failed", "provider": "log"|"noop" }`. It has no phone, no message body, and no token. `actor_user_id` is null.
+
+Sending is off unless `CUSTOMER_SMS_ENABLED` is true. `CUSTOMER_SMS_ON_CONFIRMED` and `CUSTOMER_SMS_ON_SHIPPED` default true and apply only when the master flag is on. `CUSTOMER_SMS_PROVIDER` is `log` (write the text to the API log, result `logged`) or `noop` (drop it, result `skipped`). An empty phone is skipped and not claimed. The claim is one conditional update of `customer_sms_confirmed_at` or `customer_sms_shipped_at`. Those columns are not in any response. A failed send still keeps the claim, so the same status is not sent again.
+
+Confirmed text: `Implesia: অর্ডার {number} নিশ্চিত। মোট ৳{total}, বাকি ৳{due}। স্ট্যাটাস: {url}`. Shipped text: `Implesia: অর্ডার {number} পাঠানো হয়েছে। কুরিয়ার {courier}, ট্র্যাকিং {tracking}। স্ট্যাটাস: {url}`. A missing courier or tracking is left out of that sentence. `{url}` is `{ADMIN_BASE_URL}/order-status?number={number}` and the whole status sentence is left out when `ADMIN_BASE_URL` is empty. The phone number is not in the text. `বাকি` is `due_amount`, or the total minus the advance when that column is NULL.
+
+No SMS or WhatsApp gateway is called. The SSL Wireless keys in `.env.example` are not read. Setting them does not send a message.
 
 ## `pages/about`
 
@@ -898,6 +1253,14 @@ Codes: `coupon_not_found`, `coupon_inactive`, `coupon_not_started`, `coupon_expi
 | Method | Path | Access | Request body | Response |
 | --- | --- | --- | --- | --- |
 | GET | `/api/v1/site/header` | public | — | `HeaderPublic` |
+
+## `site/settings`
+
+Same `SiteSettings` object as `GET /api/v1/admin/site/settings`. `null` means the storefront keeps its built-in title, description, or title template. `Cache-Control: public, max-age=60`. The API does not cache the row itself.
+
+| Method | Path | Access | Request body | Response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/v1/site/settings` | public (`Cache-Control: public, max-age=60`) | — | `SiteSettings` (`seo_title`, `seo_description`, `seo_title_template`; each string or `null`) |
 
 ## `users`
 
