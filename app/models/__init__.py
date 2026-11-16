@@ -53,7 +53,7 @@ from app.models.home.showcase import HomeShowcase, HomeShowcaseItem, HomeShowcas
 from app.models.home.trust import HomeTrust, HomeTrustItem
 from app.models.inquiry import Inquiry, InquiryStatus, InquiryType
 from app.models.inventory import ImportBatch, Purchase, PurchaseItem, StockMovement, Supplier
-from app.models.order import Order, OrderIdempotency, OrderItem
+from app.models.order import Order, OrderActivity, OrderIdempotency, OrderItem
 from app.models.payment_settings import PaymentSettings
 from app.models.pricing import PricingSettings
 from app.models.privacy.collection import PrivacyCollection, PrivacyCollectionCard
@@ -188,6 +188,7 @@ __all__ = [
     "HomeTrust",
     "HomeTrustItem",
     "Order",
+    "OrderActivity",
     "OrderIdempotency",
     "OrderItem",
     "PrivacyCollection",

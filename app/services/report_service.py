@@ -117,6 +117,7 @@ class _CouponShares:
     matched: int = 0
     known: int = 0
     unknown: int = 0
+    coupon_only: int = 0
 
 
 def window_bounds(
@@ -342,7 +343,9 @@ def _coupon_share_query(scope: ReportScope, dialect: str) -> Any:
         .group_by(OrderItem.order_id)
         .subquery()
     )
-    discount = func.coalesce(Order.coupon_discount, 0)
+    coupon_only = func.coalesce(Order.coupon_discount, 0)
+    # manual_discount is the staff order-level discount. 0 on every older row.
+    discount = coupon_only + func.coalesce(Order.manual_discount, 0)
     stmt = (
         select(
             Order.id.label("order_id"),
@@ -350,6 +353,9 @@ def _coupon_share_query(scope: ReportScope, dialect: str) -> Any:
             _coupon_ratio(discount, parts.c.matched_lines, parts.c.merch, dialect).label("matched"),
             _coupon_ratio(discount, parts.c.known_lines, parts.c.merch, dialect).label("known"),
             _coupon_ratio(discount, parts.c.unknown_lines, parts.c.merch, dialect).label("unknown"),
+            _coupon_ratio(coupon_only, parts.c.matched_lines, parts.c.merch, dialect).label(
+                "coupon_only"
+            ),
         )
         .select_from(Order)
         .join(parts, parts.c.order_id == Order.id)
@@ -373,10 +379,16 @@ async def _coupon_shares(db: AsyncSession, scope: ReportScope) -> _CouponShares:
                 func.coalesce(func.sum(shares.c.matched), 0),
                 func.coalesce(func.sum(shares.c.known), 0),
                 func.coalesce(func.sum(shares.c.unknown), 0),
+                func.coalesce(func.sum(shares.c.coupon_only), 0),
             )
         )
     ).one()
-    return _CouponShares(matched=_whole(row[0]), known=_whole(row[1]), unknown=_whole(row[2]))
+    return _CouponShares(
+        matched=_whole(row[0]),
+        known=_whole(row[1]),
+        unknown=_whole(row[2]),
+        coupon_only=_whole(row[3]),
+    )
 
 
 async def sales_summary(
@@ -393,7 +405,7 @@ async def sales_summary(
         units_sold=totals.units,
         gross_sales=totals.gross,
         discount=discount,
-        coupon_discount=coupon.matched,
+        coupon_discount=coupon.coupon_only,
         delivery_charge=shipping,
         net_sales=totals.merchandise + shipping - coupon.matched,
     )
@@ -439,7 +451,7 @@ def _product_groups(scope: ReportScope, dialect: str) -> Any:
         .group_by(OrderItem.order_id)
         .subquery()
     )
-    discount = func.coalesce(Order.coupon_discount, 0)
+    discount = func.coalesce(Order.coupon_discount, 0) + func.coalesce(Order.manual_discount, 0)
     share = case(
         (
             and_(delivered, order_merch.c.merch > 0),

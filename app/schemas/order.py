@@ -1,17 +1,24 @@
 import re
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.models.order import OrderStatus
+from app.models.order import CallStatus, OrderStatus
 from app.schemas.common import page_count
 from app.schemas.inquiry import normalize_phone
-from app.schemas.payment import ADVANCE_PERCENTS, AdvanceOption, PaymentMethod
+from app.schemas.payment import (
+    ADVANCE_PERCENTS,
+    AdvanceOption,
+    AnyPaymentMethod,
+    OfflinePaymentMethod,
+    PaymentMethod,
+)
 from app.schemas.pricing import QUANTITY_CEILING, Percent
 from app.schemas.product import OptionChoice, SelectedOption
+from app.schemas.report import ReportMoney
 
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _REFERENCE = re.compile(r"^[A-Za-z0-9+\-]{4,64}$")
@@ -271,7 +278,7 @@ class PublicOrderRead(BaseModel):
     coupon_discount: int | None = None
     courier_name: str
     tracking_number: str
-    payment_method: PaymentMethod
+    payment_method: AnyPaymentMethod
     advance_percent: int | None = None
     advance_amount: int = 0
     due_amount: int = 0
@@ -283,8 +290,12 @@ class OrderRead(BaseModel):
     id: uuid.UUID
     number: str
     source: OrderSourceName
+    # online: checkout. offline: entered by staff. Not `source` (cart vs direct).
+    origin: Literal["online", "offline"] = "online"
     status: str
-    payment_method: PaymentMethod
+    call_status: CallStatus = CallStatus.NOT_CALLED
+    payment_method: AnyPaymentMethod
+    payment_status: Literal["unpaid", "partial", "paid"] = "unpaid"
     advance_percent: int | None = None
     advance_amount: int = 0
     due_amount: int = 0
@@ -303,10 +314,18 @@ class OrderRead(BaseModel):
     total: int
     coupon_code: str | None = None
     coupon_discount: int | None = None
+    # Staff discount, whole taka. 0 on checkout orders. Already taken off `total`.
+    manual_discount: int = 0
+    paid_amount: int = 0
     courier_name: str
     tracking_number: str
+    printed_at: datetime | None = None
+    ordered_at: datetime | None = None
     items: list[OrderItemRead]
     created_at: datetime
+    customer_history: "CustomerHistory" = Field(default_factory=lambda: CustomerHistory(phone=""))
+    duplicate_warning: bool = False
+    activity: list["OrderActivityRead"] = Field(default_factory=list)
     # First time the order was delivered or returned. Null until that happens, and on orders
     # whose change was never recorded. Public order lookup does not include these.
     delivered_at: datetime | None = None
@@ -321,16 +340,24 @@ class OrderUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: OrderStatus | None = None
+    call_status: CallStatus | None = None
     courier_name: str | None = Field(default=None, max_length=120)
     tracking_number: str | None = Field(default=None, max_length=120)
+    notes: str | None = Field(default=None, max_length=500)
 
     @model_validator(mode="after")
     def at_least_one(self) -> "OrderUpdate":
-        if self.status is None and self.courier_name is None and self.tracking_number is None:
+        if (
+            self.status is None
+            and self.call_status is None
+            and self.courier_name is None
+            and self.tracking_number is None
+            and self.notes is None
+        ):
             raise ValueError("Nothing to update")
         return self
 
-    @field_validator("courier_name", "tracking_number")
+    @field_validator("courier_name", "tracking_number", "notes")
     @classmethod
     def _strip_optional(cls, value: str | None) -> str | None:
         if value is None:
@@ -342,6 +369,7 @@ class AdminOrderMetrics(BaseModel):
     orders: int
     new: int
     confirmed: int
+    packed: int = 0
     shipped: int
     delivered: int
     cancelled: int
@@ -350,9 +378,26 @@ class AdminOrderMetrics(BaseModel):
     revenue: int
 
 
+class StatusCounts(BaseModel):
+    new: int = 0
+    confirmed: int = 0
+    packed: int = 0
+    shipped: int = 0
+    delivered: int = 0
+    cancelled: int = 0
+    returned: int = 0
+
+
 class AdminOrderQuery(BaseModel):
     q: str | None = Field(default=None, max_length=80)
     status: OrderStatus | None = None
+    origin: Literal["online", "offline"] | None = None
+    payment_method: AnyPaymentMethod | None = None
+    payment_status: Literal["unpaid", "partial", "paid"] | None = None
+    call_status: CallStatus | None = None
+    courier: str | None = Field(default=None, max_length=120)
+    date_from: date | None = None
+    date_to: date | None = None
     scope: Literal["all", "transit"] = "all"
     sort: Literal["newest", "oldest", "high", "low"] = "newest"
     page: int = Field(1, ge=1, le=10_000)
@@ -362,6 +407,23 @@ class AdminOrderQuery(BaseModel):
     def offset(self) -> int:
         return (self.page - 1) * self.page_size
 
+    @field_validator("courier")
+    @classmethod
+    def _courier(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    @model_validator(mode="after")
+    def _dates(self) -> "AdminOrderQuery":
+        if self.date_from is not None and self.date_to is not None:
+            if self.date_from > self.date_to:
+                raise ValueError("date_from is after date_to")
+            if (self.date_to - self.date_from).days > 366:
+                raise ValueError("Date range is longer than 366 days")
+        return self
+
 
 class AdminOrderList(BaseModel):
     items: list[OrderRead]
@@ -370,6 +432,8 @@ class AdminOrderList(BaseModel):
     page_size: int
     pages: int
     metrics: AdminOrderMetrics
+    # Counts for the current filters, ignoring the status filter so the tabs stay filled.
+    status_counts: StatusCounts = Field(default_factory=StatusCounts)
 
 
 def order_page_count(total: int, page_size: int) -> int:
@@ -397,10 +461,248 @@ class NewOrderItem(BaseModel):
     number: str
     customer_name: str
     total: int
-    payment_method: PaymentMethod
+    payment_method: AnyPaymentMethod
     created_at: datetime
 
 
 class NewOrderFeed(BaseModel):
     now: datetime
     items: list[NewOrderItem]
+
+
+_MONEY_CAP = 2_000_000_000
+
+
+class CustomerHistory(BaseModel):
+    phone: str
+    total_orders: int = 0
+    delivered: int = 0
+    # Returned plus cancelled. One number, as the fraud screen asks for both together.
+    returned_cancelled: int = 0
+
+
+class OrderActivityRead(BaseModel):
+    id: uuid.UUID
+    actor_user_id: uuid.UUID | None
+    actor_name: str | None = None
+    action: str
+    summary: str
+    detail: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class AdminOrderLineInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    product_id: uuid.UUID
+    variant_id: uuid.UUID | None = None
+    quantity: int = Field(ge=1, le=QUANTITY_CEILING)
+    selection: list[OptionChoice] = Field(default_factory=list, max_length=6)
+    # Omitted: the server uses the current selling price, including quantity tiers.
+    # Set: this whole-taka unit price is charged and line_total is price × quantity.
+    unit_price: int | None = Field(default=None, ge=0, le=_MONEY_CAP)
+
+
+class OfflineOrderCreate(BaseModel):
+    """An order typed by staff. Totals are computed on the server."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    customer_name: str = Field(min_length=2, max_length=160)
+    phone: str = Field(min_length=11, max_length=20)
+    email: str = Field("", max_length=320)
+    district: str = Field(min_length=2, max_length=80)
+    area: str = Field(min_length=2, max_length=120)
+    address: str = Field(min_length=8, max_length=500)
+    notes: str = Field("", max_length=500)
+    items: list[AdminOrderLineInput] = Field(min_length=1, max_length=12)
+    manual_discount: int = Field(0, ge=0, le=_MONEY_CAP)
+    # Omitted: the delivery-zone fee. Set: this whole-taka charge, including 0.
+    delivery_charge: int | None = Field(default=None, ge=0, le=_MONEY_CAP)
+    payment_method: OfflinePaymentMethod
+    paid_amount: int = Field(ge=0, le=_MONEY_CAP)
+    payment_reference: str = Field("", max_length=80)
+    order_date: date | None = None
+
+    @field_validator("payment_reference")
+    @classmethod
+    def _reference(cls, value: str) -> str:
+        return re.sub(r"\s+", "", value)
+
+    @field_validator("customer_name", "district", "area", "address", "notes", "email")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("phone")
+    @classmethod
+    def _phone(cls, value: str) -> str:
+        phone = normalize_phone(value)
+        if phone is None:
+            raise ValueError("Phone must be an 11-digit Bangladesh mobile number")
+        return phone
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, value: str) -> str:
+        if value and not _EMAIL.fullmatch(value):
+            raise ValueError("Email is invalid")
+        return value
+
+    @model_validator(mode="after")
+    def _reference_shape(self) -> "OfflineOrderCreate":
+        if self.payment_reference and not _REFERENCE.fullmatch(self.payment_reference):
+            raise ValueError(
+                "Payment reference must be 4–64 letters, digits, + or -"
+            )
+        return self
+
+
+class OrderItemsUpdate(BaseModel):
+    """Replace the lines of an order that is still new. Totals are recomputed."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[AdminOrderLineInput] = Field(min_length=1, max_length=12)
+    manual_discount: int | None = Field(default=None, ge=0, le=_MONEY_CAP)
+    delivery_charge: int | None = Field(default=None, ge=0, le=_MONEY_CAP)
+
+
+class OrderIdList(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def _unique(self) -> "OrderIdList":
+        self.ids = list(dict.fromkeys(self.ids))
+        return self
+
+
+class BulkStatusRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: OrderStatus
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def _unique(self) -> "BulkStatusRequest":
+        self.ids = list(dict.fromkeys(self.ids))
+        return self
+
+
+class BulkStatusItem(BaseModel):
+    id: uuid.UUID
+    ok: bool
+    status: str | None = None
+    error: str | None = None
+
+
+class BulkStatusResult(BaseModel):
+    results: list[BulkStatusItem]
+
+
+class PrintedResult(BaseModel):
+    printed: list[uuid.UUID]
+    missing: list[uuid.UUID]
+
+
+class PrintLine(BaseModel):
+    title: str
+    sku: str
+    quantity: int
+    unit_price: int
+    line_total: int
+    selection: list[SelectedOption] = Field(default_factory=list)
+
+
+class PrintOrder(BaseModel):
+    id: uuid.UUID
+    number: str
+    status: str
+    origin: Literal["online", "offline"]
+    ordered_at: datetime | None
+    created_at: datetime
+    customer_name: str
+    phone: str
+    district: str
+    area: str
+    address: str
+    notes: str
+    courier_name: str
+    tracking_number: str
+    payment_method: AnyPaymentMethod
+    payment_status: Literal["unpaid", "partial", "paid"]
+    subtotal: int
+    manual_discount: int
+    coupon_discount: int | None
+    shipping: int
+    total: int
+    paid_amount: int
+    due_amount: int
+    items: list[PrintLine]
+
+
+class PrintData(BaseModel):
+    orders: list[PrintOrder]
+    missing: list[uuid.UUID]
+
+
+class PeriodTotals(BaseModel):
+    orders: int
+    revenue: int
+
+
+class OriginSplit(BaseModel):
+    origin: Literal["online", "offline"]
+    orders: int
+    revenue: int
+
+
+class OverviewOrder(BaseModel):
+    id: uuid.UUID
+    number: str
+    status: str
+    origin: Literal["online", "offline"]
+    total: int
+    customer_name: str
+    phone: str
+    created_at: datetime
+    ordered_at: datetime | None
+
+
+class OrderOverview(BaseModel):
+    timezone: Literal["Asia/Dhaka"] = "Asia/Dhaka"
+    today: PeriodTotals
+    week: PeriodTotals
+    month: PeriodTotals
+    pending_confirm: int
+    ready_to_pack: int
+    shipped: int
+    return_rate_percent: ReportMoney | None
+    cancel_rate_percent: ReportMoney | None
+    origins: list[OriginSplit]
+    status_counts: StatusCounts
+    recent: list[OverviewOrder]
+
+
+class CustomerMatch(BaseModel):
+    phone: str
+    customer_name: str
+    email: str
+    district: str
+    area: str
+    address: str
+    orders: int
+    last_ordered_at: datetime
+
+
+class CustomerSearchQuery(BaseModel):
+    q: str = Field(min_length=2, max_length=80)
+
+
+class CustomerSearch(BaseModel):
+    items: list[CustomerMatch]
+
+
+OrderRead.model_rebuild()

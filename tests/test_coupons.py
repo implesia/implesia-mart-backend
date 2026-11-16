@@ -370,7 +370,7 @@ async def test_a_return_keeps_the_redemption(
     placed = await _place(client, product["id"], coupon_code="KEEP", phone="01710000009")
     assert placed.status_code == 201, placed.text
     order_id = placed.json()["id"]
-    for status in ("confirmed", "shipped", "delivered", "returned"):
+    for status in ("confirmed", "packed", "shipped", "delivered", "returned"):
         moved = await _move(client, auth_headers, order_id, status)
         assert moved.status_code == 200, moved.text
     detail = await client.get(f"{ADMIN}/{coupon['id']}", headers=auth_headers)
@@ -621,7 +621,7 @@ async def test_reports_are_net_of_the_coupon_and_export(
     assert discounted.status_code == 201, discounted.text
     assert untouched.status_code == 201, untouched.text
     for order_id in (discounted.json()["id"], untouched.json()["id"]):
-        for status in ("confirmed", "shipped", "delivered"):
+        for status in ("confirmed", "packed", "shipped", "delivered"):
             moved = await _move(client, auth_headers, order_id, status)
             assert moved.status_code == 200, moved.text
 

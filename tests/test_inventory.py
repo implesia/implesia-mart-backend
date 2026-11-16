@@ -308,7 +308,7 @@ async def test_order_claim_cancel_and_return_write_movements(
         },
     )
     assert returned.status_code == 201, returned.text
-    for status in ("confirmed", "shipped", "returned"):
+    for status in ("confirmed", "packed", "shipped", "returned"):
         assert (await _move(client, auth_headers, returned.json()["id"], status)).status_code == 200
     assert (await _stock(client, auth_headers, product_id))["quantity"] == 8
     returns = await _movements(client, auth_headers, product_id, "return")
@@ -326,7 +326,7 @@ async def test_order_claim_cancel_and_return_write_movements(
         },
     )
     assert delivered.status_code == 201, delivered.text
-    for status in ("confirmed", "shipped", "delivered"):
+    for status in ("confirmed", "packed", "shipped", "delivered"):
         delivered_move = await _move(client, auth_headers, delivered.json()["id"], status)
         assert delivered_move.status_code == 200
     assert (await _stock(client, auth_headers, product_id))["quantity"] == 7

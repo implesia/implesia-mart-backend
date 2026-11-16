@@ -1,0 +1,52 @@
+meta {
+  name: Offline Order
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/orders/offline
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Idempotency-Key: offline-demo-1
+}
+
+body:json {
+  {
+    "customer_name": "Karim Uddin",
+    "phone": "01800000000",
+    "email": "",
+    "district": "Dhaka",
+    "area": "Gulshan",
+    "address": "House 4, Road 12, Gulshan",
+    "notes": "Counter sale",
+    "items": [
+      { "product_id": "{{PRODUCT_ID}}", "quantity": 1, "unit_price": 500 }
+    ],
+    "manual_discount": 50,
+    "delivery_charge": 0,
+    "payment_method": "cash",
+    "paid_amount": 200
+  }
+}
+
+docs {
+  # POST /api/v1/admin/orders/offline
+
+  Editor or superadmin. Requires `Idempotency-Key` (8–80 letters, digits, `_`, `-`). The same key returns the original order.
+
+  Omit `unit_price` to use the current selling price, including quantity tiers. Set it to charge that whole-taka price times quantity. Omit `delivery_charge` to use the zone fee. The server computes `subtotal`, `total`, and `due_amount`. `paid_amount` cannot exceed the total.
+
+  `payment_method` is `cash`, `bkash`, `nagad`, `card`, or `due`. Stock is deducted. No customer notification, Telegram new-order alert, Meta CAPI, or GA event is sent.
+
+  422 when stock is short, the discount is larger than the merchandise, or the paid amount is over the total. 409 when the idempotency key belongs to someone else.
+}

@@ -1,7 +1,7 @@
 """Shop overview for the admin dashboard.
 
 Figures are SQL aggregates. Revenue leaves out cancelled and returned orders
-and follows the order's creation time. "Delivered" counts orders whose
+and follows ordered_at when set, otherwise the creation time. "Delivered" counts orders whose
 delivered_at falls in the window, including an order that was later returned.
 Customers are unique checkout phones. "Today" is compared with the same hours
 of yesterday in Asia/Dhaka.
@@ -35,7 +35,9 @@ from app.schemas.dashboard import (
 from app.services.category_service import CategoryIndex, load_index
 from app.services.shop_sql import SHOP, at_or_after, before, dhaka_day, dhaka_hour, dialect_name
 
-STATUSES = ("new", "confirmed", "shipped", "delivered", "cancelled", "returned")
+STATUSES = ("new", "confirmed", "packed", "shipped", "delivered", "cancelled", "returned")
+# Offline orders carry the counter date in ordered_at. Online rows leave it empty.
+_PLACED = func.coalesce(Order.ordered_at, Order.created_at)
 _NOT_SALE = ("cancelled", "returned")
 MAX_DAYS = 366
 _GRAIN_LABEL = {"hour": "Hourly", "day": "Daily", "week": "Weekly", "month": "Monthly"}
@@ -154,8 +156,8 @@ async def _metrics(db: AsyncSession, window: _Window, dialect: str) -> _Metrics:
                 func.count(distinct(key)),
                 func.coalesce(func.sum(case((Order.status == "new", 1), else_=0)), 0),
             ).where(
-                at_or_after(Order.created_at, window.start, dialect),
-                before(Order.created_at, window.end, dialect),
+                at_or_after(_PLACED, window.start, dialect),
+                before(_PLACED, window.end, dialect),
             )
         )
     ).one()
@@ -203,15 +205,15 @@ async def _grouped(
     dialect: str,
 ) -> tuple[list[tuple[datetime, int, int]], timedelta]:
     hourly = grain == "hour"
-    key = dhaka_hour(Order.created_at, dialect) if hourly else dhaka_day(Order.created_at, dialect)
+    key = dhaka_hour(_PLACED, dialect) if hourly else dhaka_day(_PLACED, dialect)
     step = timedelta(hours=1) if hourly else timedelta(days=1)
     sale_total = case((Order.status.notin_(_NOT_SALE), Order.total), else_=0)
     rows = (
         await db.execute(
             select(key, func.count(), func.coalesce(func.sum(sale_total), 0))
             .where(
-                at_or_after(Order.created_at, start, dialect),
-                before(Order.created_at, end, dialect),
+                at_or_after(_PLACED, start, dialect),
+                before(_PLACED, end, dialect),
             )
             .group_by(key)
         )
@@ -292,8 +294,8 @@ async def _statuses(db: AsyncSession, window: _Window) -> list[DashboardStatusSl
     rows = (
         await db.execute(
             select(Order.status, func.count()).where(
-                at_or_after(Order.created_at, window.start, dialect_name(db)),
-                before(Order.created_at, window.end, dialect_name(db)),
+                at_or_after(_PLACED, window.start, dialect_name(db)),
+                before(_PLACED, window.end, dialect_name(db)),
             ).group_by(Order.status)
         )
     ).all()
@@ -329,8 +331,8 @@ async def _sellers(
             .join(Order, Order.id == OrderItem.order_id)
             .outerjoin(Product, Product.id == OrderItem.product_id)
             .where(
-                at_or_after(Order.created_at, window.start, dialect_name(db)),
-                before(Order.created_at, window.end, dialect_name(db)),
+                at_or_after(_PLACED, window.start, dialect_name(db)),
+                before(_PLACED, window.end, dialect_name(db)),
                 Order.status.notin_(_NOT_SALE),
             )
             .group_by(key)
@@ -365,8 +367,8 @@ async def _recent_orders(db: AsyncSession, window: _Window) -> list[DashboardRec
             await db.scalars(
                 select(Order)
                 .where(
-                    at_or_after(Order.created_at, window.start, dialect_name(db)),
-                    before(Order.created_at, window.end, dialect_name(db)),
+                    at_or_after(_PLACED, window.start, dialect_name(db)),
+                    before(_PLACED, window.end, dialect_name(db)),
                 )
                 .options(selectinload(Order.items))
                 .order_by(Order.created_at.desc())
@@ -386,8 +388,8 @@ async def _areas(db: AsyncSession, window: _Window, total: int) -> list[Dashboar
         await db.execute(
             select(name, func.count(), func.coalesce(func.sum(money), 0))
             .where(
-                at_or_after(Order.created_at, window.start, dialect_name(db)),
-                before(Order.created_at, window.end, dialect_name(db)),
+                at_or_after(_PLACED, window.start, dialect_name(db)),
+                before(_PLACED, window.end, dialect_name(db)),
             )
             .group_by(name)
             .order_by(func.count().desc(), func.sum(money).desc())
@@ -434,8 +436,8 @@ async def _categories(
             .join(Order, Order.id == OrderItem.order_id)
             .join(Product, Product.id == OrderItem.product_id)
             .where(
-                at_or_after(Order.created_at, window.start, dialect_name(db)),
-                before(Order.created_at, window.end, dialect_name(db)),
+                at_or_after(_PLACED, window.start, dialect_name(db)),
+                before(_PLACED, window.end, dialect_name(db)),
                 Order.status.notin_(_NOT_SALE),
                 Product.category_id.is_not(None),
             )

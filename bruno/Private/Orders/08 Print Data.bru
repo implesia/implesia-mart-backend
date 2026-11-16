@@ -1,0 +1,36 @@
+meta {
+  name: Print Data
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/orders/print-data
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "ids": ["{{ORDER_ID}}"]
+  }
+}
+
+docs {
+  # POST /api/v1/admin/orders/print-data
+
+  Editor or superadmin. Returns invoice fields for the ids that exist. Missing ids are listed and are not a 404. This does not mark the order printed.
+
+  Mark printed with POST /api/v1/admin/orders/printed and the same body. A reprint is allowed and each print is written to the activity log. `printed_at` is the latest time.
+
+  Ready to pack is GET /api/v1/admin/orders/ready-to-pack (confirmed orders). POST bulk-status with `packed` moves them on.
+}

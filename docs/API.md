@@ -78,7 +78,7 @@ Generated from the FastAPI routers (`app/api/v1/router.py` and `app/api/v1/endpo
 | --- | --- | --- | --- | --- |
 | GET | `/api/v1/admin/dashboard` | admin (editor, superadmin) | — | `DashboardOverview` |
 
-Query: `range` is `today`, `yesterday`, `7d` (default), `30d`, `this-month`, `last-month`, or `custom`. Custom also needs `from` and `to` (`YYYY-MM-DD`, Asia/Dhaka). Longer than 366 days is 422. Revenue, orders, customers, pending, statuses, best sellers, areas, categories, and the chart follow `created_at` and leave cancelled and returned orders out of revenue. `delivered.value` counts orders whose `delivered_at` is in the window, including an order that was later returned. The figures are SQL aggregates. `Cache-Control: no-store`. Viewer is 403.
+Query: `range` is `today`, `yesterday`, `7d` (default), `30d`, `this-month`, `last-month`, or `custom`. Custom also needs `from` and `to` (`YYYY-MM-DD`, Asia/Dhaka). Longer than 366 days is 422. Revenue, orders, customers, pending, statuses, best sellers, areas, categories, and the chart follow `ordered_at` when it is set, otherwise `created_at`. Cancelled and returned orders are left out of revenue. `delivered.value` counts orders whose `delivered_at` is in the window, including an order that was later returned. `statuses` has seven slices: `new`, `confirmed`, `packed`, `shipped`, `delivered`, `cancelled`, `returned`. The figures are SQL aggregates. `Cache-Control: no-store`. Viewer is 403.
 
 ## `admin/reports`
 
@@ -422,9 +422,253 @@ The server reads `now` (UTC) first. Rows are `created_at > since` and `created_a
 }
 ```
 
-`payment_method` is the stored value: `cod` or `bangla_qr`. `total` is the order total in whole taka. The select list is only these columns. `ix_orders_created_at` (migration 0005) supports the filter.
+`payment_method` is the stored value: `cod`, `bangla_qr`, or an offline method (`cash`, `bkash`, `nagad`, `card`, `due`). `total` is the order total in whole taka. The select list is only these columns. `ix_orders_created_at` (migration 0005) supports the filter.
 
 `OrderRead` includes `delivered_at` and `returned_at` (ISO datetime or `null`). They are set the first time the status becomes `delivered` or `returned` and are not replaced later. `PublicOrderRead` (order lookup) does not include them. `POST /orders` returns them as `null` on a new order. `OrderRead` also includes `order_number` (the same value as `number`) and `analytics_event_id` (`purchase_` plus that number). Those two fields are derived. They do not cause a Meta call on admin reads or status updates.
+
+`POST /api/v1/orders` still returns `OrderRead`, and it omits the staff fields: `origin`, `call_status`, `printed_at`, `ordered_at`, `manual_discount`, `paid_amount`, `payment_status`, `customer_history`, `duplicate_warning`, `activity`. A public status can be `packed`.
+
+### Status
+
+`new` → `confirmed` → `packed` → `shipped` → `delivered`, plus `cancelled` and `returned`.
+
+| From | Allowed |
+| --- | --- |
+| `new` | `confirmed`, `cancelled` |
+| `confirmed` | `packed`, `cancelled` |
+| `packed` | `shipped`, `cancelled` |
+| `shipped` | `delivered`, `returned` |
+| `delivered` | `returned` |
+| `cancelled`, `returned` | none |
+
+`confirmed` is the ready-to-pack queue. There is no extra status for that queue. Existing rows are not rewritten. An order that was already `confirmed` must be packed before it can ship. An illegal move is 409 `conflict`. The message is `Cannot change an order from {current} to {target}. Allowed: {allowed}`. A concurrent change is 409 `conflict` with "This order was changed by someone else. Reload and try again."
+
+`orders.source` stays `cart` or `direct`. Online versus offline is `orders.origin` (`online` or `offline`). `orders.channel` stays `website` on checkout and is `offline` on a counter order.
+
+### List
+
+`GET /api/v1/admin/orders`. Editor or superadmin. Viewer is 403. Anonymous is 401. `Cache-Control: no-store`.
+
+Query: `page` (1–10000), `page_size` (1–50, default 10), `q` (order number, name, phone, address, or line title), `status`, `scope` (`all` or `transit`), `sort` (`newest`, `oldest`, `high`, `low`), `origin` (`online` or `offline`), `payment_method`, `payment_status` (`unpaid`, `partial`, `paid`), `call_status` (`not_called`, `confirmed`, `no_answer`, `fake`), `courier` (case-insensitive, `%` and `_` are escaped), `date_from`, `date_to` (`YYYY-MM-DD`, Asia/Dhaka, inclusive). `date_from` after `date_to`, or a span longer than 366 days, is 422. The date filter uses `ordered_at` when set, otherwise `created_at`. `scope=transit` is `confirmed`, `packed`, and `shipped`. A page past the end returns `items: []` and the same meta.
+
+```json
+{
+  "items": [],
+  "total": 0,
+  "page": 1,
+  "page_size": 10,
+  "pages": 0,
+  "metrics": {
+    "orders": 0,
+    "new": 0,
+    "confirmed": 0,
+    "packed": 0,
+    "shipped": 0,
+    "delivered": 0,
+    "cancelled": 0,
+    "returned": 0,
+    "in_transit": 0,
+    "revenue": 0
+  },
+  "status_counts": {
+    "new": 0,
+    "confirmed": 0,
+    "packed": 0,
+    "shipped": 0,
+    "delivered": 0,
+    "cancelled": 0,
+    "returned": 0
+  }
+}
+```
+
+`metrics` is the whole table and ignores the query. `in_transit` is confirmed + packed + shipped. `revenue` excludes cancelled and returned. `status_counts` uses every filter except `status` and `scope`, so the status tabs stay filled. Each item is an `OrderRead` without `activity` (that list is on the detail). `customer_history` and `duplicate_warning` are filled for the page.
+
+### Detail and update
+
+`GET /api/v1/admin/orders/{order_id}` returns `OrderRead` plus `activity` (newest 100). A missing id is 404 `not_found` with "Order not found". A non-UUID is 422.
+
+`OrderRead` adds, on top of the checkout fields: `origin`, `call_status`, `payment_status`, `manual_discount`, `paid_amount`, `printed_at`, `ordered_at`, `customer_history`, `duplicate_warning`, `activity`, `next_statuses`.
+
+```json
+{
+  "customer_history": {
+    "phone": "01800000000",
+    "total_orders": 2,
+    "delivered": 1,
+    "returned_cancelled": 0
+  },
+  "duplicate_warning": true,
+  "activity": [
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "actor_user_id": "00000000-0000-4000-8000-000000000003",
+      "actor_name": "Implesia Mart Admin",
+      "action": "status_changed",
+      "summary": "Status new to confirmed",
+      "detail": { "from": "new", "to": "confirmed" },
+      "created_at": "2026-11-16T09:00:00+00:00"
+    }
+  ]
+}
+```
+
+`PATCH` body is `OrderUpdate` (`extra` forbidden). At least one of `status`, `call_status`, `courier_name`, `tracking_number`, `notes`. Empty object is 422. Courier and tracking are stripped strings, max 120. Notes max 500.
+
+`PUT /api/v1/admin/orders/{order_id}/items` replaces the lines while status is `new`. After that, 422 "Items can be edited only while the order is new". Body:
+
+```json
+{
+  "items": [
+    { "product_id": "…", "variant_id": null, "quantity": 1, "unit_price": 400 }
+  ],
+  "manual_discount": 100,
+  "delivery_charge": 80
+}
+```
+
+`items` is required, 1–12 lines. `manual_discount` and `delivery_charge` are optional; omit them to keep the current values. Omit `unit_price` to reprice from the catalog. The response is the updated `OrderRead`. Stock moves with the quantity change. A removed product is 422 "A product on this order was removed". A discount larger than the merchandise is 422 "Discount is larger than the merchandise total". A collected amount above the new total is 422 "Paid amount is larger than the new total".
+
+### Overview
+
+`GET /api/v1/admin/orders/overview`. Editor or superadmin.
+
+`today`, `week` (Monday through today), and `month` (the 1st through today) are Asia/Dhaka, half-open through tomorrow 00:00. Each is `{ "orders", "revenue" }`. Order counts include every status. Revenue skips cancelled and returned. The date is `ordered_at` when set, otherwise `created_at`.
+
+`pending_confirm` is the current count of `new`. `ready_to_pack` is the current count of `confirmed`. `shipped` is the current count of `shipped`. These are not limited to the period.
+
+`return_rate_percent` is returned ÷ (delivered + returned) × 100, two decimals, or `null` when that denominator is 0. `cancel_rate_percent` is cancelled ÷ every order × 100, or `null` when there are no orders. Both are all-time.
+
+`origins` always has `online` and `offline`, each `{ "origin", "orders", "revenue" }`. Revenue there also skips cancelled and returned. `status_counts` always has all seven keys. `recent` is up to 8 orders, newest `created_at` first: `id`, `number`, `status`, `origin`, `total`, `customer_name`, `phone`, `created_at`, `ordered_at`.
+
+### Customers
+
+`GET /api/v1/admin/orders/customers?q=`. `q` is required, 2–80 characters. Matches name or phone. A value that is a Bangladesh mobile also matches the stored `01XXXXXXXXX` form. Up to 20 rows, one per phone, latest order first.
+
+```json
+{
+  "items": [
+    {
+      "phone": "01800000000",
+      "customer_name": "Karim Uddin",
+      "email": "",
+      "district": "Dhaka",
+      "area": "Gulshan",
+      "address": "House 4, Road 12, Gulshan",
+      "orders": 2,
+      "last_ordered_at": "2026-11-16T09:00:00+00:00"
+    }
+  ]
+}
+```
+
+### Offline create
+
+`POST /api/v1/admin/orders/offline`. 201 `OrderRead`. Header `Idempotency-Key` is required (same shape as checkout). The same key from the same staff user returns the original order and does not take stock again. A key already used by someone else is 409.
+
+```json
+{
+  "customer_name": "Karim Uddin",
+  "phone": "01800000000",
+  "email": "",
+  "district": "Dhaka",
+  "area": "Gulshan",
+  "address": "House 4, Road 12, Gulshan",
+  "notes": "Counter sale",
+  "items": [
+    { "product_id": "…", "quantity": 2, "unit_price": 500 }
+  ],
+  "manual_discount": 100,
+  "delivery_charge": 80,
+  "payment_method": "cash",
+  "paid_amount": 200,
+  "payment_reference": "",
+  "order_date": "2026-11-16"
+}
+```
+
+`payment_method` is `cash`, `bkash`, `nagad`, `card`, or `due`. Unknown fields are 422. `order_date` must be from 2020-01-01 through today in Asia/Dhaka; omit it to use now. Omit `delivery_charge` to use the zone fee. A closed zone with no charge is 422 "Delivery is not available for this area". A charge of 0 is allowed. Omit `unit_price` to use the current price. The server computes `subtotal`, `shipping`, `total`, `paid_amount`, and `due_amount`. Client totals are not accepted. Not enough stock is 422 with the existing Bengali stock message, and nothing is saved. `paid_amount` above the total is 422 "Paid amount cannot be larger than the order total".
+
+The order is `origin: "offline"`, `source: "direct"`, `channel` stored as `offline`, status `new`. Stock is deducted and `unit_cost` is snapshotted like checkout. No Meta Purchase, no Telegram new-order message, no cancel Telegram if it is later cancelled, and no GA event from the server. Do not fire the browser Purchase event for `origin: "offline"`.
+
+### Bulk, pack, and print
+
+| Method | Path | Body | Response |
+| --- | --- | --- | --- |
+| GET | `/api/v1/admin/orders/ready-to-pack` | — | `AdminOrderList` |
+| POST | `/api/v1/admin/orders/bulk-status` | `BulkStatusRequest` | `BulkStatusResult` |
+| POST | `/api/v1/admin/orders/printed` | `OrderIdList` | `PrintedResult` |
+| POST | `/api/v1/admin/orders/print-data` | `OrderIdList` | `PrintData` |
+
+Ready to pack is the list endpoint with `status` forced to `confirmed`. The other query params still apply.
+
+`BulkStatusRequest`: `{ "status": "packed", "ids": ["…"] }`. 1–100 ids, duplicates dropped. The HTTP status is 200 even when some ids fail. One failure does not undo the others.
+
+```json
+{
+  "results": [
+    { "id": "…", "ok": true, "status": "packed", "error": null },
+    { "id": "…", "ok": false, "status": null, "error": "Order not found" }
+  ]
+}
+```
+
+An unknown id is a per-order error, not a 404 for the batch. Cancel and return in the batch restore stock. Cancel gives the coupon use back. Return keeps it. An online cancel can still send the Telegram cancel alert. An offline cancel does not.
+
+`OrderIdList`: `{ "ids": ["…"] }`, 1–100, duplicates dropped.
+
+`POST /printed` sets `printed_at` to now and appends an activity row `printed`. A missing id is listed in `missing` and is not a 404. Reprint is allowed.
+
+```json
+{ "printed": ["…"], "missing": ["…"] }
+```
+
+`POST /print-data` does not mark anything printed. Missing ids are listed. Each order includes customer, courier, tracking, items, totals, `paid_amount`, `due_amount`, and `payment_status` so the admin UI can render an invoice or a label.
+
+```json
+{
+  "orders": [
+    {
+      "id": "…",
+      "number": "IM-AB12CD34",
+      "status": "confirmed",
+      "origin": "offline",
+      "ordered_at": "2026-11-16T00:00:00+06:00",
+      "created_at": "2026-11-16T09:00:00+00:00",
+      "customer_name": "Karim Uddin",
+      "phone": "01800000000",
+      "district": "Dhaka",
+      "area": "Gulshan",
+      "address": "House 4, Road 12, Gulshan",
+      "notes": "Counter sale",
+      "courier_name": "",
+      "tracking_number": "",
+      "payment_method": "cash",
+      "payment_status": "partial",
+      "subtotal": 1000,
+      "manual_discount": 100,
+      "coupon_discount": null,
+      "shipping": 80,
+      "total": 980,
+      "paid_amount": 200,
+      "due_amount": 780,
+      "items": [
+        {
+          "title": "Counter lamp",
+          "sku": "",
+          "quantity": 2,
+          "unit_price": 500,
+          "line_total": 1000,
+          "selection": []
+        }
+      ]
+    }
+  ],
+  "missing": []
+}
+```
+
+Writes on this router use the product-write rate limit and return 429 `rate_limited` when it is exceeded. Errors use `{ "error": { "code", "message", "details" } }`.
 
 ## `admin/pages/about`
 

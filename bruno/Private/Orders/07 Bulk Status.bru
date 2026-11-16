@@ -1,0 +1,44 @@
+meta {
+  name: Bulk Status
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{PRIVATE_BASE_URL}}/api/v1/admin/orders/bulk-status
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{ACCESS_TOKEN}}
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "status": "packed",
+    "ids": ["{{ORDER_ID}}"]
+  }
+}
+
+docs {
+  # POST /api/v1/admin/orders/bulk-status
+
+  Editor or superadmin. Up to 100 ids. Each order is checked on its own. The response is 200 even when some ids fail.
+
+  ```json
+  {
+    "results": [
+      { "id": "…", "ok": true, "status": "packed", "error": null },
+      { "id": "…", "ok": false, "status": null, "error": "Cannot change an order from new to packed. Allowed: confirmed, cancelled" }
+    ]
+  }
+  ```
+
+  Allowed moves: new to confirmed or cancelled; confirmed to packed or cancelled; packed to shipped or cancelled; shipped to delivered or returned; delivered to returned. Cancelled and returned stop. Cancel puts the coupon use back and restores stock. Return restores stock and keeps the coupon use.
+}

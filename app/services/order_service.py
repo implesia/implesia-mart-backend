@@ -2,11 +2,11 @@ import hmac
 import re
 import secrets
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any, NamedTuple
 
-from sqlalchemy import Select, func, or_, select, update
+from sqlalchemy import Select, and_, case, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -17,10 +17,14 @@ from app.models.audit_event import AuditAction
 from app.models.inventory import MovementType
 from app.models.order import (
     ORDER_TRANSITIONS,
+    PAYMENT_METHODS,
     WEBSITE_CHANNEL,
+    ActivityAction,
     Order,
+    OrderActivity,
     OrderIdempotency,
     OrderItem,
+    OrderOrigin,
     OrderStatus,
     next_statuses,
 )
@@ -30,9 +34,11 @@ from app.schemas.order import (
     AdminOrderList,
     AdminOrderMetrics,
     AdminOrderQuery,
+    CustomerHistory,
     NewOrderFeed,
     NewOrderItem,
     NewOrderQuery,
+    OrderActivityRead,
     OrderCreate,
     OrderItemRead,
     OrderLookup,
@@ -43,6 +49,7 @@ from app.schemas.order import (
     PublicOrderRead,
     QuoteLineRead,
     QuoteRead,
+    StatusCounts,
     order_page_count,
     purchase_event_id,
 )
@@ -61,6 +68,7 @@ from app.services import (
 from app.services.cart_service import Shopper, _cap, _purchasable, open_cart, shopper_actor
 from app.services.product_options import resolve_selection, selection_of
 from app.services.product_service import content_of
+from app.services.shop_sql import SHOP, at_or_after, before, dialect_name
 
 _KEY = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
 _ORDER_LOAD = selectinload(Order.items)
@@ -118,9 +126,26 @@ def _snapshot(item: OrderItem) -> dict[str, Any]:
     }
 
 
+def effective_paid(order: Order) -> int:
+    """Taka already collected. Older Bangla QR rows stored the advance and left paid_amount 0."""
+    if order.paid_amount:
+        return int(order.paid_amount)
+    if order.payment_method == "bangla_qr":
+        return int(order.advance_amount or 0)
+    return 0
+
+
+def payment_status_of(paid: int, total: int) -> str:
+    if paid <= 0:
+        return "unpaid"
+    if paid >= total:
+        return "paid"
+    return "partial"
+
+
 def _payment(order: Order) -> dict[str, Any]:
     """Payment fields for a response. Older orders (no due recorded) owe the whole total."""
-    method = order.payment_method if order.payment_method == "bangla_qr" else "cod"
+    method = order.payment_method if order.payment_method in PAYMENT_METHODS else "cod"
     advance = order.advance_amount or 0
     due = order.due_amount if order.due_amount is not None else max(order.total - advance, 0)
     return {
@@ -131,12 +156,41 @@ def _payment(order: Order) -> dict[str, Any]:
     }
 
 
-def _read(order: Order) -> OrderRead:
+def log_activity(
+    db: AsyncSession,
+    order_id: uuid.UUID,
+    actor_id: uuid.UUID | None,
+    action: str,
+    summary: str,
+    detail: dict[str, Any] | None = None,
+) -> None:
+    db.add(
+        OrderActivity(
+            order_id=order_id,
+            actor_user_id=actor_id,
+            action=action,
+            summary=summary[:200],
+            detail=detail or {},
+        )
+    )
+
+
+def _read(
+    order: Order,
+    *,
+    history: CustomerHistory | None = None,
+    duplicate: bool = False,
+    activity: list[OrderActivityRead] | None = None,
+) -> OrderRead:
+    paid = effective_paid(order)
     return OrderRead(
         id=order.id,
         number=order.number,
         source=order.source,
+        origin=order.origin if order.origin in {"online", "offline"} else "online",
         status=order.status,
+        call_status=order.call_status,
+        payment_status=payment_status_of(paid, order.total),
         **_payment(order),
         payment_reference=order.payment_reference or "",
         anonymous=order.user_id is None,
@@ -153,8 +207,15 @@ def _read(order: Order) -> OrderRead:
         total=order.total,
         coupon_code=order.coupon_code,
         coupon_discount=order.coupon_discount,
+        manual_discount=order.manual_discount,
+        paid_amount=paid,
         courier_name=order.courier_name,
         tracking_number=order.tracking_number,
+        printed_at=order.printed_at,
+        ordered_at=order.ordered_at,
+        customer_history=history or CustomerHistory(phone=order.phone),
+        duplicate_warning=duplicate,
+        activity=activity or [],
         delivered_at=order.delivered_at,
         returned_at=order.returned_at,
         items=[
@@ -332,12 +393,14 @@ async def _claim(
     variant: ProductVariant | None,
     quantity: int,
     rules: pricing_service.Rules,
+    *,
+    enforce_limits: bool = True,
 ) -> tuple[pricing_service.Line, str, str, str, str]:
     """Take stock in one conditional update. The line is priced from the locked row."""
     minimum, maximum = variant_service.order_limits(product, rules.max_quantity)
-    if quantity > maximum:
+    if enforce_limits and quantity > maximum:
         raise UnprocessableError(variant_service.over_limit_message(maximum))
-    if quantity < minimum:
+    if enforce_limits and quantity < minimum:
         raise UnprocessableError(f"The minimum order for this product is {minimum}")
     if variant is not None:
         return await _claim_variant(db, product, variant, quantity, rules)
@@ -622,6 +685,14 @@ async def create_order(
         )
     db.add(order)
     await db.flush()
+    log_activity(
+        db,
+        order.id,
+        None,
+        ActivityAction.CREATED,
+        "Order placed online",
+        {"origin": OrderOrigin.ONLINE.value},
+    )
     if priced_coupon is not None:
         coupon_service.stage_redemption(db, priced_coupon, order.id, payload.phone)
     inventory_service.attach_pending_sales(db, order.id)
@@ -678,23 +749,72 @@ async def _metrics(db: AsyncSession) -> AdminOrderMetrics:
         orders=total,
         new=counts["new"],
         confirmed=counts["confirmed"],
+        packed=counts["packed"],
         shipped=counts["shipped"],
         delivered=counts["delivered"],
         cancelled=counts["cancelled"],
         returned=counts["returned"],
-        in_transit=counts["confirmed"] + counts["shipped"],
+        in_transit=counts["confirmed"] + counts["packed"] + counts["shipped"],
         revenue=revenue,
     )
 
 
-async def list_orders(db: AsyncSession, query: AdminOrderQuery) -> AdminOrderList:
-    conditions = []
+def _status_clause(query: AdminOrderQuery) -> Any | None:
     if query.status is not None:
-        conditions.append(Order.status == query.status.value)
-    elif query.scope == "transit":
-        conditions.append(
-            Order.status.in_([OrderStatus.CONFIRMED.value, OrderStatus.SHIPPED.value])
+        return Order.status == query.status.value
+    if query.scope == "transit":
+        return Order.status.in_(
+            [
+                OrderStatus.CONFIRMED.value,
+                OrderStatus.PACKED.value,
+                OrderStatus.SHIPPED.value,
+            ]
         )
+    return None
+
+
+async def list_orders(db: AsyncSession, query: AdminOrderQuery) -> AdminOrderList:
+    conditions: list[Any] = []
+    status_clause = _status_clause(query)
+    if status_clause is not None:
+        conditions.append(status_clause)
+    if query.origin is not None:
+        conditions.append(Order.origin == query.origin)
+    if query.payment_method is not None:
+        conditions.append(Order.payment_method == query.payment_method)
+    if query.call_status is not None:
+        conditions.append(Order.call_status == query.call_status.value)
+    if query.courier:
+        conditions.append(
+            func.lower(Order.courier_name).like(_like(query.courier), escape="\\")
+        )
+    if query.payment_status is not None:
+        paid = case(
+            (
+                and_(
+                    Order.paid_amount == 0,
+                    Order.payment_method == "bangla_qr",
+                    Order.advance_amount > 0,
+                ),
+                Order.advance_amount,
+            ),
+            else_=Order.paid_amount,
+        )
+        if query.payment_status == "unpaid":
+            conditions.append(paid <= 0)
+        elif query.payment_status == "paid":
+            conditions.append(paid >= Order.total)
+        else:
+            conditions.append(and_(paid > 0, paid < Order.total))
+    if query.date_from is not None or query.date_to is not None:
+        placed = func.coalesce(Order.ordered_at, Order.created_at)
+        dialect = dialect_name(db)
+        if query.date_from is not None:
+            start = datetime.combine(query.date_from, time.min, tzinfo=SHOP)
+            conditions.append(at_or_after(placed, start, dialect))
+        if query.date_to is not None:
+            end = datetime.combine(query.date_to + timedelta(days=1), time.min, tzinfo=SHOP)
+            conditions.append(before(placed, end, dialect))
     if query.q:
         pattern = _like(query.q)
         title_match = (
@@ -738,13 +858,31 @@ async def list_orders(db: AsyncSession, query: AdminOrderQuery) -> AdminOrderLis
         .unique()
         .all()
     )
+    histories, duplicates = await _histories(db, rows)
+    count_filters = [item for item in conditions if item is not status_clause]
+    counted = await db.execute(
+        select(Order.status, func.count())
+        .where(*count_filters)
+        .group_by(Order.status)
+    )
+    status_counts = {status.value: 0 for status in OrderStatus}
+    for status, count in counted.all():
+        status_counts[str(status)] = int(count)
     return AdminOrderList(
-        items=[_read(order) for order in rows],
+        items=[
+            _read(
+                order,
+                history=histories[order.id],
+                duplicate=order.id in duplicates,
+            )
+            for order in rows
+        ],
         total=total,
         page=query.page,
         page_size=query.page_size,
         pages=order_page_count(total, query.page_size),
         metrics=await _metrics(db),
+        status_counts=StatusCounts(**status_counts),
     )
 
 
@@ -848,8 +986,102 @@ async def lookup_order(db: AsyncSession, payload: OrderLookup) -> PublicOrderRea
     return _public(order)
 
 
+async def _histories(
+    db: AsyncSession, orders: list[Order]
+) -> tuple[dict[uuid.UUID, CustomerHistory], set[uuid.UUID]]:
+    """Same-phone counts, and which of these orders have a sibling within 24 hours.
+
+    Counts include the order itself. The window uses created_at, so an offline
+    order dated in the past still warns about a checkout burst that happened now.
+    """
+    histories: dict[uuid.UUID, CustomerHistory] = {}
+    duplicates: set[uuid.UUID] = set()
+    if not orders:
+        return histories, duplicates
+    phones = list({order.phone for order in orders})
+    grouped = (
+        await db.execute(
+            select(Order.phone, Order.status, func.count())
+            .where(Order.phone.in_(phones))
+            .group_by(Order.phone, Order.status)
+        )
+    ).all()
+    by_phone: dict[str, dict[str, int]] = {}
+    for phone, status, count in grouped:
+        by_phone.setdefault(str(phone), {})[str(status)] = int(count)
+    stamps = [_as_utc(order.created_at) for order in orders]
+    low = min(stamps) - timedelta(hours=24)
+    high = max(stamps) + timedelta(hours=24)
+    nearby = (
+        await db.execute(
+            select(Order.id, Order.phone, Order.created_at).where(
+                Order.phone.in_(phones),
+                Order.created_at >= low,
+                Order.created_at <= high,
+            )
+        )
+    ).all()
+    by_phone_times: dict[str, list[tuple[uuid.UUID, datetime]]] = {}
+    for other_id, phone, created in nearby:
+        by_phone_times.setdefault(str(phone), []).append((other_id, _as_utc(created)))
+    for order in orders:
+        counts = by_phone.get(order.phone, {})
+        histories[order.id] = CustomerHistory(
+            phone=order.phone,
+            total_orders=sum(counts.values()),
+            delivered=counts.get(OrderStatus.DELIVERED.value, 0),
+            returned_cancelled=(
+                counts.get(OrderStatus.RETURNED.value, 0)
+                + counts.get(OrderStatus.CANCELLED.value, 0)
+            ),
+        )
+        moment = _as_utc(order.created_at)
+        for other_id, other_at in by_phone_times.get(order.phone, []):
+            if other_id == order.id:
+                continue
+            if abs((moment - other_at).total_seconds()) <= 24 * 60 * 60:
+                duplicates.add(order.id)
+                break
+    return histories, duplicates
+
+
+async def _activities(db: AsyncSession, order_id: uuid.UUID) -> list[OrderActivityRead]:
+    rows = (
+        await db.execute(
+            select(OrderActivity, User.full_name)
+            .outerjoin(User, User.id == OrderActivity.actor_user_id)
+            .where(OrderActivity.order_id == order_id)
+            .order_by(OrderActivity.created_at.desc(), OrderActivity.id.desc())
+            .limit(100)
+        )
+    ).all()
+    return [
+        OrderActivityRead(
+            id=row.id,
+            actor_user_id=row.actor_user_id,
+            actor_name=name,
+            action=row.action,
+            summary=row.summary,
+            detail=row.detail or {},
+            created_at=_as_utc(row.created_at),
+        )
+        for row, name in rows
+    ]
+
+
+async def present(db: AsyncSession, order: Order, *, with_activity: bool = False) -> OrderRead:
+    histories, duplicates = await _histories(db, [order])
+    activity = await _activities(db, order.id) if with_activity else []
+    return _read(
+        order,
+        history=histories[order.id],
+        duplicate=order.id in duplicates,
+        activity=activity,
+    )
+
+
 async def get_order(db: AsyncSession, order_id: uuid.UUID) -> OrderRead:
-    return _read(await _load(db, order_id))
+    return await present(db, await _load(db, order_id), with_activity=True)
 
 
 async def _restore(
@@ -878,52 +1110,83 @@ async def _restore(
     for item in order.items:
         if item.product_id is None:
             continue
-        if item.variant_id is not None:
-            await variant_service.lock_product(db, item.product_id)
-            variant_row = await db.get(ProductVariant, item.variant_id, populate_existing=True)
-            tracked = variant_row is not None and variant_row.quantity is not None
-            await variant_service.release_stock(db, item.variant_id, item.quantity)
-            await variant_service.rollup_by_id(db, item.product_id)
-            if tracked:
-                product = await db.get(Product, item.product_id)
-                inventory_service.add_movement(
-                    db,
-                    product_id=item.product_id,
-                    variant_id=item.variant_id,
-                    quantity=item.quantity,
-                    movement_type=movement_type,
-                    unit_cost=product.cost_price if product is not None else None,
-                    order_id=order.id,
-                    actor_id=actor_id,
-                )
-            continue
-        owner = await db.get(Product, item.product_id, populate_existing=True)
-        if owner is not None and owner.has_variants:
-            continue  # the variant was deleted; its stock row is gone, nothing to give back
-        tracked = owner is not None and owner.quantity is not None
-        await db.execute(
-            update(Product)
-            .where(Product.id == item.product_id, Product.quantity.is_not(None))
-            .values(quantity=Product.quantity + item.quantity)
+        await release_units(
+            db,
+            product_id=item.product_id,
+            variant_id=item.variant_id,
+            quantity=item.quantity,
+            order_id=order.id,
+            actor_id=actor_id,
+            movement_type=movement_type,
         )
-        await db.execute(
-            update(Product)
-            .where(Product.id == item.product_id)
-            .where(Product.status == StockStatus.SOLD_OUT.value)
-            .where(Product.quantity > 0)
-            .values(status=StockStatus.AVAILABLE.value)
-        )
-        if tracked and owner is not None:
+
+
+async def release_units(
+    db: AsyncSession,
+    *,
+    product_id: uuid.UUID,
+    variant_id: uuid.UUID | None,
+    quantity: int,
+    order_id: uuid.UUID,
+    actor_id: uuid.UUID | None,
+    movement_type: str,
+    note: str = "",
+) -> None:
+    """Put `quantity` back onto a tracked bucket and write one movement.
+
+    Unlimited stock (quantity NULL) changes nothing and writes nothing.
+    A missing variant on a variant product has nothing to give back.
+    """
+    if quantity <= 0:
+        return
+    if variant_id is not None:
+        await variant_service.lock_product(db, product_id)
+        variant_row = await db.get(ProductVariant, variant_id, populate_existing=True)
+        tracked = variant_row is not None and variant_row.quantity is not None
+        await variant_service.release_stock(db, variant_id, quantity)
+        await variant_service.rollup_by_id(db, product_id)
+        if tracked:
+            product = await db.get(Product, product_id)
             inventory_service.add_movement(
                 db,
-                product_id=item.product_id,
-                variant_id=None,
-                quantity=item.quantity,
+                product_id=product_id,
+                variant_id=variant_id,
+                quantity=quantity,
                 movement_type=movement_type,
-                unit_cost=owner.cost_price,
-                order_id=order.id,
+                unit_cost=product.cost_price if product is not None else None,
+                order_id=order_id,
                 actor_id=actor_id,
+                note=note,
             )
+        return
+    owner = await db.get(Product, product_id, populate_existing=True)
+    if owner is not None and owner.has_variants:
+        return
+    tracked = owner is not None and owner.quantity is not None
+    await db.execute(
+        update(Product)
+        .where(Product.id == product_id, Product.quantity.is_not(None))
+        .values(quantity=Product.quantity + quantity)
+    )
+    await db.execute(
+        update(Product)
+        .where(Product.id == product_id)
+        .where(Product.status == StockStatus.SOLD_OUT.value)
+        .where(Product.quantity > 0)
+        .values(status=StockStatus.AVAILABLE.value)
+    )
+    if tracked and owner is not None:
+        inventory_service.add_movement(
+            db,
+            product_id=product_id,
+            variant_id=None,
+            quantity=quantity,
+            movement_type=movement_type,
+            unit_cost=owner.cost_price,
+            order_id=order_id,
+            actor_id=actor_id,
+            note=note,
+        )
 
 
 def _status_assignments(target: str) -> dict[str, Any]:
@@ -941,6 +1204,61 @@ def _status_assignments(target: str) -> dict[str, Any]:
     return values
 
 
+async def change_status(
+    db: AsyncSession,
+    order: Order,
+    target: str,
+    *,
+    actor_id: uuid.UUID | None,
+) -> bool:
+    """Move one order. Returns whether it became cancelled.
+
+    Does not commit. A compare-and-set miss raises ConflictError without rolling
+    the session back, so a caller that uses a savepoint can keep the other rows.
+    """
+    current = order.status
+    if target not in ORDER_TRANSITIONS.get(current, frozenset()):
+        allowed = ", ".join(next_statuses(current)) or "none (final status)"
+        raise ConflictError(
+            f"Cannot change an order from {current} to {target}. Allowed: {allowed}"
+        )
+    # The delivery/return time is written in the same statement and only while still NULL,
+    # so the first timestamp stays.
+    moved = (
+        await db.execute(
+            update(Order)
+            .where(Order.id == order.id, Order.status == current)
+            .values(**_status_assignments(target))
+            .returning(Order.id)
+        )
+    ).one_or_none()
+    db.expire(order, ["status", "delivered_at", "returned_at"])
+    if moved is None:
+        raise ConflictError("This order was changed by someone else. Reload and try again.")
+    if target in _RESTOCK:
+        await _restore(db, order, stock_reason=target, actor_id=actor_id)
+    if target == OrderStatus.CANCELLED.value:
+        # The use comes back. A return leaves the redemption counted.
+        await coupon_service.cancel_for_order(db, order.id)
+    await audit_service.record(
+        db,
+        actor_id=actor_id,
+        action=AuditAction.ORDER_STATUS_CHANGED,
+        target_type="order",
+        target_id=order.id,
+        metadata={"number": order.number, "from": current, "to": target},
+    )
+    log_activity(
+        db,
+        order.id,
+        actor_id,
+        ActivityAction.STATUS_CHANGED,
+        f"Status {current} to {target}",
+        {"from": current, "to": target},
+    )
+    return target == OrderStatus.CANCELLED.value
+
+
 async def update_order(
     db: AsyncSession,
     order_id: uuid.UUID,
@@ -954,52 +1272,59 @@ async def update_order(
     order = await _load(db, order_id)
     became_cancelled = False
     if payload.status is not None and payload.status.value != order.status:
-        current = order.status
-        target = payload.status.value
-        if target not in ORDER_TRANSITIONS.get(current, frozenset()):
-            allowed = ", ".join(next_statuses(current)) or "none (final status)"
-            raise ConflictError(
-                f"Cannot change an order from {current} to {target}. Allowed: {allowed}"
+        try:
+            became_cancelled = await change_status(
+                db, order, payload.status.value, actor_id=actor_id
             )
-        # Compare-and-set on the status so a concurrent change is not silently overwritten.
-        # The delivery/return time is written in the same statement and only while still NULL,
-        # so every caller (admin, and any later bulk or courier path that uses this function)
-        # keeps the first timestamp.
-        moved = (
-            await db.execute(
-                update(Order)
-                .where(Order.id == order.id, Order.status == current)
-                .values(**_status_assignments(target))
-                .returning(Order.id)
-            )
-        ).one_or_none()
-        db.expire(order, ["status", "delivered_at", "returned_at"])
-        if moved is None:
+        except ConflictError:
             await db.rollback()
-            raise ConflictError("This order was changed by someone else. Reload and try again.")
-        if target in _RESTOCK:
-            await _restore(db, order, stock_reason=target, actor_id=actor_id)
-        if target == OrderStatus.CANCELLED.value:
-            became_cancelled = True
-            # The use comes back. A return leaves the redemption counted.
-            await coupon_service.cancel_for_order(db, order.id)
-        await audit_service.record(
-            db,
-            actor_id=actor_id,
-            action=AuditAction.ORDER_STATUS_CHANGED,
-            target_type="order",
-            target_id=order.id,
-            metadata={"number": order.number, "from": current, "to": target},
-        )
+            raise
+    before_courier = (order.courier_name, order.tracking_number)
     if payload.courier_name is not None:
         order.courier_name = payload.courier_name
     if payload.tracking_number is not None:
         order.tracking_number = payload.tracking_number
+    if (order.courier_name, order.tracking_number) != before_courier:
+        log_activity(
+            db,
+            order.id,
+            actor_id,
+            ActivityAction.COURIER_EDITED,
+            "Courier updated",
+            {
+                "courier_name": order.courier_name,
+                "tracking_number": order.tracking_number,
+                "previous_courier_name": before_courier[0],
+                "previous_tracking_number": before_courier[1],
+            },
+        )
+    if payload.call_status is not None and payload.call_status.value != order.call_status:
+        previous = order.call_status
+        order.call_status = payload.call_status.value
+        log_activity(
+            db,
+            order.id,
+            actor_id,
+            ActivityAction.CALL_STATUS_CHANGED,
+            "Call status updated",
+            {"from": previous, "to": order.call_status},
+        )
+    if payload.notes is not None and payload.notes != order.notes:
+        order.notes = payload.notes
+        log_activity(
+            db,
+            order.id,
+            actor_id,
+            ActivityAction.NOTE_CHANGED,
+            "Note updated",
+            {},
+        )
     order_id = order.id
     await db.commit()
     db.expire_all()
     loaded = await _load(db, order_id)
-    if became_cancelled:
+    # Offline orders do not send the staff cancel alert. Online cancel still does.
+    if became_cancelled and loaded.origin != OrderOrigin.OFFLINE.value:
         telegram_notify.schedule_cancelled(background, loaded)
     telegram_notify.flush_low_stock(db, background)
-    return _read(loaded)
+    return await present(db, loaded, with_activity=True)
