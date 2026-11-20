@@ -22,6 +22,14 @@ class SiteHeader(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     items: Mapped[list[dict[str, Any]]] = mapped_column(
         _JSON, nullable=False, default=list, server_default="[]"
     )
+    # Optional navbar logo: an uploaded `/media/header/..` path (or http(s) link). Empty means the
+    # built-in logo is shown.
+    logo_src: Mapped[str] = mapped_column(
+        String(255), nullable=False, default="", server_default=""
+    )
+    logo_alt: Mapped[str] = mapped_column(
+        String(120), nullable=False, default="", server_default=""
+    )
 
     def __repr__(self) -> str:
         return f"<SiteHeader {self.slug}>"
