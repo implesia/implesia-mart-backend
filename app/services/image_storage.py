@@ -56,6 +56,7 @@ _FOLDERS = frozenset(
         "footer",
         "header",
         "payment",
+        "avatars",
     }
 )
 

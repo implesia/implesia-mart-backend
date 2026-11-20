@@ -60,7 +60,12 @@ async def get_optional_user(
 OptionalUser = Annotated[User | None, Depends(get_optional_user)]
 
 # Higher roles inherit everything the roles below them can do.
-ROLE_RANK = {UserRole.VIEWER: 0, UserRole.EDITOR: 1, UserRole.SUPERADMIN: 2}
+ROLE_RANK = {
+    UserRole.CUSTOMER: -1,
+    UserRole.VIEWER: 0,
+    UserRole.EDITOR: 1,
+    UserRole.SUPERADMIN: 2,
+}
 
 
 def require_role(

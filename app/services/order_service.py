@@ -639,9 +639,19 @@ async def create_order(
         advance_percent = payload.advance_percent
         advance, due = payment_service.advance_split(total, advance_percent or 0)
         reference = payload.payment_reference
+
+    user_id = shopper.user.id if shopper.user is not None else None
+    if user_id is None and payload.phone:
+        from app.services.customer_auth_service import normalize_bd_phone
+        norm_phone = normalize_bd_phone(payload.phone)
+        if norm_phone:
+            matched_user = await db.scalar(select(User).where(User.phone == norm_phone))
+            if matched_user:
+                user_id = matched_user.id
+
     order = Order(
         number=await _number(db),
-        user_id=shopper.user.id if shopper.user is not None else None,
+        user_id=user_id,
         source=payload.source,
         channel=WEBSITE_CHANNEL,
         status=OrderStatus.NEW.value,
@@ -1350,6 +1360,11 @@ async def update_order(
             raise
         if target in customer_notify.SEND_ON:
             sms_status = target
+        if payload.notify_customer:
+            from app.services import notification_service
+            await notification_service.create_order_status_notification(
+                db, order, target, language=payload.notification_language
+            )
     before_courier = (order.courier_name, order.tracking_number)
     if payload.courier_name is not None:
         order.courier_name = payload.courier_name

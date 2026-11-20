@@ -386,6 +386,8 @@ class OrderUpdate(BaseModel):
     courier_name: str | None = Field(default=None, max_length=120)
     tracking_number: str | None = Field(default=None, max_length=120)
     notes: str | None = Field(default=None, max_length=500)
+    notify_customer: bool = False
+    notification_language: str = "bn"
 
     @model_validator(mode="after")
     def at_least_one(self) -> "OrderUpdate":

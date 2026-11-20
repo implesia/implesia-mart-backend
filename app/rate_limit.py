@@ -32,6 +32,15 @@ def login_account_key(request: Request) -> str:
     return f"login-account:{email}"
 
 
+def customer_login_account_key(request: Request) -> str:
+    """One bucket per customer identifier (phone or email), so guesses are tracked per account."""
+    raw = _json_object(request)
+    ident = str(raw.get("identifier") or raw.get("phone") or raw.get("email") or "").strip().lower()
+    if not ident:
+        return f"customer-login:{_rate_limit_key(request)}"
+    return f"customer-login:{ident}"
+
+
 def refresh_account_key(request: Request) -> str:
     """One bucket per account named in a signed refresh token."""
     token = str(_json_object(request).get("refresh_token") or "")

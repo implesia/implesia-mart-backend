@@ -830,7 +830,8 @@ async def test_supplier_soft_delete(
     assert not any(s["id"] == sup_id for s in after["items"])
 
     # Direct get returns 404
-    assert (await client.get(f"{_BASE}/suppliers/{sup_id}", headers=auth_headers)).status_code == 404
+    resp = await client.get(f"{_BASE}/suppliers/{sup_id}", headers=auth_headers)
+    assert resp.status_code == 404
 
     # Historical purchase still retains supplier name
     history = (await client.get(f"{_BASE}/purchases/{purchase['id']}", headers=auth_headers)).json()

@@ -101,6 +101,8 @@ from app.models.sustainability.quality import (
     SustainabilityQualityBadge,
     SustainabilityQualityStep,
 )
+from app.models.notification import CustomerNotification
+from app.models.review import ProductReview
 from app.models.user import User, UserRole
 
 __all__ = [
@@ -248,6 +250,8 @@ __all__ = [
     "SiteHeader",
     "SiteSettings",
     "SustainabilityQualityStep",
+    "CustomerNotification",
+    "ProductReview",
     "User",
     "UserRole",
 ]
