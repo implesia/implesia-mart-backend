@@ -13,6 +13,7 @@ from decimal import Decimal
 from enum import StrEnum
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -61,6 +62,12 @@ class Supplier(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         String(500), nullable=False, default="", server_default=""
     )
     note: Mapped[str] = mapped_column(String(500), nullable=False, default="", server_default="")
+    is_deleted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false"), index=True
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     def __repr__(self) -> str:
         return f"<Supplier {self.name}>"

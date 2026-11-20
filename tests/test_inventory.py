@@ -803,3 +803,47 @@ async def test_movement_update_and_delete_are_rejected(
     kept = await _movements(client, auth_headers, product["id"], "opening")
     assert len(kept) == 1
     assert kept[0]["note"] == "Opening stock from the current count"
+
+
+async def test_supplier_soft_delete(
+    client: AsyncClient, auth_headers: dict[str, str], db_session: AsyncSession
+) -> None:
+    del db_session
+    supplier = await _supplier(client, auth_headers, name="Temporary Supplier")
+    sup_id = supplier["id"]
+
+    # In list
+    listed = (await client.get(f"{_BASE}/suppliers", headers=auth_headers)).json()
+    assert any(s["id"] == sup_id for s in listed["items"])
+
+    # Create a product and a purchase before deleting
+    product = await _create(client, auth_headers, title="Purchase Target", price=100, quantity=0)
+    purchase = await _buy(client, auth_headers, sup_id, product["id"], 5, "40.00")
+    assert purchase["supplier_name"] == "Temporary Supplier"
+
+    # Soft delete the supplier
+    res = await client.delete(f"{_BASE}/suppliers/{sup_id}", headers=auth_headers)
+    assert res.status_code == 204
+
+    # No longer in active suppliers list
+    after = (await client.get(f"{_BASE}/suppliers", headers=auth_headers)).json()
+    assert not any(s["id"] == sup_id for s in after["items"])
+
+    # Direct get returns 404
+    assert (await client.get(f"{_BASE}/suppliers/{sup_id}", headers=auth_headers)).status_code == 404
+
+    # Historical purchase still retains supplier name
+    history = (await client.get(f"{_BASE}/purchases/{purchase['id']}", headers=auth_headers)).json()
+    assert history["supplier_name"] == "Temporary Supplier"
+
+    # Cannot create new purchase with deleted supplier
+    bad_buy = await client.post(
+        f"{_BASE}/purchases",
+        headers=auth_headers,
+        json={
+            "supplier_id": sup_id,
+            "purchased_on": "2026-11-20",
+            "items": [{"product_id": product["id"], "quantity": 1, "unit_cost": "10"}],
+        },
+    )
+    assert bad_buy.status_code == 404

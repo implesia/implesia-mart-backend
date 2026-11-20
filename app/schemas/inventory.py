@@ -49,6 +49,7 @@ class SupplierRead(WriteModel):
     phone: str
     address: str
     note: str
+    is_deleted: bool = False
     created_at: datetime
     updated_at: datetime
 

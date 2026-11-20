@@ -3,7 +3,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentUser, DbSession, RequireEditor, no_store
@@ -72,6 +72,18 @@ async def update_supplier(
 ) -> SupplierRead:
     del request
     return await inventory_service.update_supplier(db, supplier_id, payload, actor)
+
+
+@router.delete("/suppliers/{supplier_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(settings.rate_limit_product_writes)
+async def delete_supplier(
+    request: Request,
+    db: DbSession,
+    actor: RequireEditor,
+    supplier_id: uuid.UUID,
+) -> None:
+    del request
+    await inventory_service.delete_supplier(db, supplier_id, actor)
 
 
 @router.get("/purchases", response_model=PurchaseList)

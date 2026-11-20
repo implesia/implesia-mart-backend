@@ -247,7 +247,7 @@ def add_movement(
 
 
 async def list_suppliers(db: AsyncSession, query: SupplierQuery) -> SupplierList:
-    filters: list[_Expr] = []
+    filters: list[_Expr] = [Supplier.is_deleted.is_(False)]
     if query.q and query.q.strip():
         filters.append(func.lower(Supplier.name).like(_contains(query.q), escape="\\"))
     total = await _count(db, Supplier, filters)
@@ -308,6 +308,16 @@ async def update_supplier(
     return _supplier_read(row)
 
 
+async def delete_supplier(
+    db: AsyncSession, supplier_id: uuid.UUID, actor: User
+) -> None:
+    del actor
+    row = await _supplier(db, supplier_id)
+    row.is_deleted = True
+    row.deleted_at = func.now()
+    await db.commit()
+
+
 async def list_purchases(db: AsyncSession, query: PurchaseQuery) -> PurchaseList:
     filters = _purchase_filters(query)
     total = await _count(db, Purchase, filters)
@@ -345,7 +355,7 @@ async def create_purchase(
 ) -> PurchaseRead:
     telegram_notify.discard_low_stock(db)
     supplier = await db.get(Supplier, payload.supplier_id)
-    if supplier is None:
+    if supplier is None or supplier.is_deleted:
         raise NotFoundError("Supplier not found")
     lines: list[tuple[uuid.UUID, uuid.UUID | None, int, Decimal]] = []
     for item in payload.items:
@@ -1466,7 +1476,7 @@ async def _count(
 
 async def _supplier(db: AsyncSession, supplier_id: uuid.UUID) -> Supplier:
     row = await db.get(Supplier, supplier_id)
-    if row is None:
+    if row is None or row.is_deleted:
         raise NotFoundError("Supplier not found")
     return row
 
@@ -1491,6 +1501,7 @@ def _supplier_read(row: Supplier) -> SupplierRead:
         phone=row.phone,
         address=row.address,
         note=row.note,
+        is_deleted=row.is_deleted,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
