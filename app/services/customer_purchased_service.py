@@ -1,13 +1,11 @@
 import uuid
-from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import NotFoundError
-from app.models.order import Order, OrderItem, OrderStatus
-from app.models.product import Product
+from app.models.order import Order, OrderStatus
 from app.models.review import ProductReview
 from app.schemas.customer import OrderTrackingDetail, PurchasedProductItem, TrackingTimelineStep
 
@@ -62,7 +60,7 @@ async def get_purchased_products(
 
     for order in orders:
         for item in order.items:
-            if item.product_id in seen_products:
+            if item.product_id is None or item.product_id in seen_products:
                 continue
             seen_products.add(item.product_id)
 

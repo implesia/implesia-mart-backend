@@ -1,6 +1,5 @@
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,15 +24,24 @@ TEMPLATES: dict[str, dict[str, dict[str, str]]] = {
         },
         "shipped": {
             "title": "অর্ডার ডেলিভারির পথে",
-            "message": "আপনার অর্ডার #{number} কুরিয়ারে হস্তান্তর করা হয়েছে। কুরিয়ার: {courier} (ট্র্যাকিং: {tracking})।",
+            "message": (
+                "আপনার অর্ডার #{number} কুরিয়ারে হস্তান্তর করা হয়েছে। "
+                "কুরিয়ার: {courier} (ট্র্যাকিং: {tracking})।"
+            ),
         },
         "delivered": {
             "title": "অর্ডার সফলভাবে পৌঁছেছে",
-            "message": "আপনার অর্ডার #{number} সফলভাবে ডেলিভারি সম্পন্ন হয়েছে। Implesia Mart-এর সাথে থাকার জন্য ধন্যবাদ!",
+            "message": (
+                "আপনার অর্ডার #{number} সফলভাবে ডেলিভারি সম্পন্ন হয়েছে। "
+                "Implesia Mart-এর সাথে থাকার জন্য ধন্যবাদ!"
+            ),
         },
         "cancelled": {
             "title": "অর্ডার বাতিল হয়েছে",
-            "message": "আপনার অর্ডার #{number} বাতিল করা হয়েছে। কোনো জিজ্ঞাসা থাকলে আমাদের সাপোর্টে যোগাযোগ করুন।",
+            "message": (
+                "আপনার অর্ডার #{number} বাতিল করা হয়েছে। "
+                "কোনো জিজ্ঞাসা থাকলে আমাদের সাপোর্টে যোগাযোগ করুন।"
+            ),
         },
         "returned": {
             "title": "অর্ডার রিটার্ন সম্পন্ন",
@@ -59,11 +67,17 @@ TEMPLATES: dict[str, dict[str, dict[str, str]]] = {
         },
         "delivered": {
             "title": "Order Delivered",
-            "message": "Your order #{number} has been delivered. Thank you for shopping with Implesia Mart!",
+            "message": (
+                "Your order #{number} has been delivered. "
+                "Thank you for shopping with Implesia Mart!"
+            ),
         },
         "cancelled": {
             "title": "Order Cancelled",
-            "message": "Your order #{number} was cancelled. Please contact support if you need help.",
+            "message": (
+                "Your order #{number} was cancelled. "
+                "Please contact support if you need help."
+            ),
         },
         "returned": {
             "title": "Order Returned",
@@ -158,7 +172,7 @@ async def purge_expired_notifications(db: AsyncSession) -> int:
     stmt = delete(CustomerNotification).where(CustomerNotification.created_at < cutoff)
     result = await db.execute(stmt)
     await db.commit()
-    return int(result.rowcount)
+    return int(getattr(result, "rowcount", 0) or 0)
 
 
 async def mark_read(
@@ -176,7 +190,8 @@ async def mark_read(
     )
     res = await db.execute(stmt)
     await db.commit()
-    return bool(res.rowcount and res.rowcount > 0)
+    count = getattr(res, "rowcount", 0) or 0
+    return bool(count > 0)
 
 
 async def mark_all_read(db: AsyncSession, user_id: uuid.UUID) -> int:
@@ -190,4 +205,4 @@ async def mark_all_read(db: AsyncSession, user_id: uuid.UUID) -> int:
     )
     res = await db.execute(stmt)
     await db.commit()
-    return int(res.rowcount or 0)
+    return int(getattr(res, "rowcount", 0) or 0)

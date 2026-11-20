@@ -14,7 +14,12 @@ class ProductReview(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "product_reviews"
     __table_args__ = (
         CheckConstraint("rating >= 1 AND rating <= 5", name="ck_product_reviews_rating_range"),
-        Index("ix_product_reviews_product_id_is_published_created_at", "product_id", "is_published", "created_at"),
+        Index(
+            "ix_product_reviews_product_id_is_published_created_at",
+            "product_id",
+            "is_published",
+            "created_at",
+        ),
         Index("ix_product_reviews_user_product", "user_id", "product_id"),
     )
 
@@ -39,9 +44,11 @@ class ProductReview(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     is_verified_purchase: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_published: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    user: Mapped[User] = relationship("User", foreign_keys=[user_id])
-    product: Mapped[Product] = relationship("Product", foreign_keys=[product_id])
-    order: Mapped[Order | None] = relationship("Order", foreign_keys=[order_id])
+    user: Mapped[User] = relationship("User", foreign_keys=[user_id], lazy="selectin")
+    product: Mapped[Product | None] = relationship(
+        "Product", foreign_keys=[product_id], lazy="noload"
+    )
+    order: Mapped[Order | None] = relationship("Order", foreign_keys=[order_id], lazy="noload")
 
     def __repr__(self) -> str:
         return f"<ProductReview {self.id} (product={self.product_id}, rating={self.rating})>"

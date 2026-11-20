@@ -32,8 +32,8 @@ class CustomerNotification(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     language: Mapped[str] = mapped_column(String(8), default="bn", nullable=False)
 
-    user: Mapped[User] = relationship("User", foreign_keys=[user_id])
-    order: Mapped[Order | None] = relationship("Order", foreign_keys=[order_id])
+    user: Mapped[User] = relationship("User", foreign_keys=[user_id], lazy="selectin")
+    order: Mapped[Order | None] = relationship("Order", foreign_keys=[order_id], lazy="selectin")
 
     def __repr__(self) -> str:
         return f"<CustomerNotification {self.id} (user={self.user_id}, read={self.is_read})>"

@@ -1,20 +1,22 @@
 import io
 import uuid
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.order import Order, OrderItem, OrderStatus
-from app.models.product import Product
+from app.models.product import Product, StockStatus
 from app.models.user import User, UserRole
-from app.services import customer_auth_service, notification_service, refresh_token_service
+from app.services import notification_service, refresh_token_service
 
 
 @pytest.mark.asyncio
 async def test_notifications_flow(
     client: AsyncClient,
-    db: AsyncSession,
+    db_session: AsyncSession,
 ) -> None:
+    db = db_session
     # 1. Create customer
     user = User(
         full_name="Notification Tester",
@@ -33,6 +35,7 @@ async def test_notifications_flow(
     order = Order(
         number="IM-NOTIF01",
         user_id=user.id,
+        source="direct",
         channel="website",
         status=OrderStatus.CONFIRMED.value,
         payment_method="cod",
@@ -81,8 +84,9 @@ async def test_notifications_flow(
 @pytest.mark.asyncio
 async def test_purchased_products_and_tracking(
     client: AsyncClient,
-    db: AsyncSession,
+    db_session: AsyncSession,
 ) -> None:
+    db = db_session
     user = User(
         full_name="Tracking Tester",
         phone="01811223388",
@@ -100,6 +104,8 @@ async def test_purchased_products_and_tracking(
         title="Tracking Test Product",
         slug=f"track-prod-{uuid.uuid4().hex[:6]}",
         price=1200,
+        status=StockStatus.AVAILABLE.value,
+        content={},
         published=True,
     )
     db.add(product)
@@ -109,6 +115,7 @@ async def test_purchased_products_and_tracking(
     order = Order(
         number="IM-TRACK01",
         user_id=user.id,
+        source="direct",
         channel="website",
         status=OrderStatus.SHIPPED.value,
         payment_method="cod",
@@ -165,8 +172,9 @@ async def test_purchased_products_and_tracking(
 @pytest.mark.asyncio
 async def test_product_reviews_flow(
     client: AsyncClient,
-    db: AsyncSession,
+    db_session: AsyncSession,
 ) -> None:
+    db = db_session
     # 1. Customer who hasn't bought product
     user1 = User(
         full_name="Non Purchaser",
@@ -185,6 +193,8 @@ async def test_product_reviews_flow(
         title="Reviewable Dress",
         slug=f"review-dress-{uuid.uuid4().hex[:6]}",
         price=2500,
+        status=StockStatus.AVAILABLE.value,
+        content={},
         published=True,
     )
     db.add_all([user1, user2, product])
@@ -192,10 +202,13 @@ async def test_product_reviews_flow(
     await db.refresh(user1)
     await db.refresh(user2)
     await db.refresh(product)
+    product_id = product.id
+    user2_name = user2.full_name
 
     order = Order(
         number="IM-REV01",
         user_id=user2.id,
+        source="direct",
         channel="website",
         status=OrderStatus.DELIVERED.value,
         payment_method="cod",
@@ -215,7 +228,7 @@ async def test_product_reviews_flow(
 
     order_item = OrderItem(
         order_id=order.id,
-        product_id=product.id,
+        product_id=product_id,
         title=product.title,
         slug=product.slug,
         unit_price=2500,
@@ -231,7 +244,7 @@ async def test_product_reviews_flow(
 
     # User 1 cannot review
     can_resp1 = await client.get(
-        f"/api/v1/products/{product.id}/can-review",
+        f"/api/v1/products/{product_id}/can-review",
         headers={"Authorization": f"Bearer {tokens1.access_token}"},
     )
     assert can_resp1.status_code == 200
@@ -239,7 +252,7 @@ async def test_product_reviews_flow(
 
     # User 2 can review
     can_resp2 = await client.get(
-        f"/api/v1/products/{product.id}/can-review",
+        f"/api/v1/products/{product_id}/can-review",
         headers={"Authorization": f"Bearer {tokens2.access_token}"},
     )
     assert can_resp2.status_code == 200
@@ -252,26 +265,26 @@ async def test_product_reviews_flow(
         "comment": "কাপড়ের মান খুবই ভালো এবং সময়মতো ডেলিভারি পেয়েছি।",
     }
     rev_post = await client.post(
-        f"/api/v1/products/{product.id}/reviews",
+        f"/api/v1/products/{product_id}/reviews",
         json=review_payload,
         headers={"Authorization": f"Bearer {tokens2.access_token}"},
     )
     assert rev_post.status_code == 201
     rev_data = rev_post.json()
     assert rev_data["rating"] == 5
-    assert rev_data["user_name"] == user2.full_name
+    assert rev_data["user_name"] == user2_name
     assert rev_data["is_verified_purchase"] is True
 
     # User 2 tries to review again -> ConflictError (409)
     rev_post_again = await client.post(
-        f"/api/v1/products/{product.id}/reviews",
+        f"/api/v1/products/{product_id}/reviews",
         json=review_payload,
         headers={"Authorization": f"Bearer {tokens2.access_token}"},
     )
     assert rev_post_again.status_code == 409
 
     # Public review list & summary
-    pub_list = await client.get(f"/api/v1/products/{product.id}/reviews")
+    pub_list = await client.get(f"/api/v1/products/{product_id}/reviews")
     assert pub_list.status_code == 200
     pub_data = pub_list.json()
     assert pub_data["total"] == 1
@@ -283,8 +296,9 @@ async def test_product_reviews_flow(
 @pytest.mark.asyncio
 async def test_avatar_upload(
     client: AsyncClient,
-    db: AsyncSession,
+    db_session: AsyncSession,
 ) -> None:
+    db = db_session
     user = User(
         full_name="Avatar Tester",
         phone="01511223355",

@@ -133,7 +133,7 @@ async def merge_cart(
 ) -> CartRead:
     shopper = Shopper(user=user, guest_token=payload.guest_token)
     cart, _ = await cart_service._open(db, shopper, create=True)
-    fees = await delivery_service.store_fees(db)
+    fees = await delivery_service.fees(db)
     rules = await pricing_service.store_rules(db)
     assert cart is not None
     return cart_service._read(cart, None, fees, rules)

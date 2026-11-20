@@ -34,8 +34,18 @@ def upgrade() -> None:
         sa.Column("message", sa.String(length=1000), nullable=False),
         sa.Column("is_read", sa.Boolean(), server_default=sa.text("false"), nullable=False),
         sa.Column("language", sa.String(length=8), server_default="bn", nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(["order_id"], ["orders.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
@@ -61,10 +71,22 @@ def upgrade() -> None:
         sa.Column("rating", sa.Integer(), nullable=False),
         sa.Column("headline", sa.String(length=160), server_default="", nullable=False),
         sa.Column("comment", sa.String(length=2000), server_default="", nullable=False),
-        sa.Column("is_verified_purchase", sa.Boolean(), server_default=sa.text("true"), nullable=False),
+        sa.Column(
+            "is_verified_purchase", sa.Boolean(), server_default=sa.text("true"), nullable=False
+        ),
         sa.Column("is_published", sa.Boolean(), server_default=sa.text("true"), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.CheckConstraint("rating >= 1 AND rating <= 5", name="ck_product_reviews_rating_range"),
         sa.ForeignKeyConstraint(["order_id"], ["orders.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["product_id"], ["products.id"], ondelete="CASCADE"),
@@ -85,9 +107,13 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index("ix_product_reviews_user_product", table_name="product_reviews")
-    op.drop_index("ix_product_reviews_product_id_is_published_created_at", table_name="product_reviews")
+    op.drop_index(
+        "ix_product_reviews_product_id_is_published_created_at", table_name="product_reviews"
+    )
     op.drop_table("product_reviews")
     op.drop_index("ix_customer_notifications_user_id_is_read", table_name="customer_notifications")
-    op.drop_index("ix_customer_notifications_user_id_created_at", table_name="customer_notifications")
+    op.drop_index(
+        "ix_customer_notifications_user_id_created_at", table_name="customer_notifications"
+    )
     op.drop_table("customer_notifications")
     op.drop_column("users", "avatar_url")
