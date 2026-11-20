@@ -2,7 +2,37 @@
 
 Open items found in the code and in recent work. Remove an item when it is done.
 
-## Open
+## Done (not live / pending production deployment)
+
+- **Customer Authentication, Notifications & Product Reviews (2026-11-21).**
+  - **Alembic Migration 0101:** Added `customer` role to `UserRole` enum, added `phone` (with index and partial unique constraint), `district`, `area`, `address` to `User` model.
+  - **Alembic Migration 0103:** Added `avatar_url` (varchar 500) to `User` model; created `customer_notifications` table (with cascade delete, user index, unread index); created `product_reviews` table (rating 1-5, headline, comment, purchase verification, published index).
+  - **Customer Auth & Profile Service:** BD phone normalization (`01XXXXXXXXX`), password hashing, JWT access/refresh token rotation, session invalidation on logout.
+  - **Endpoints:**
+    - `POST /api/v1/customer/auth/register`, `login`, `refresh`, `logout`.
+    - `GET` & `PATCH /api/v1/customer/profile`.
+    - `POST /api/v1/customer/change-password`.
+    - `POST /api/v1/customer/avatar` (profile photo upload).
+    - `POST /api/v1/customer/cart/merge` (merge guest cart into customer account on login).
+    - `GET /api/v1/customer/orders` & `GET /api/v1/customer/orders/{number}/tracking`.
+    - `GET /api/v1/customer/purchased-products`.
+    - `GET /api/v1/customer/dashboard-summary`.
+    - `GET /api/v1/customer/notifications` & `PATCH /api/v1/customer/notifications/{id}/read`.
+    - `GET /api/v1/products/{id}/reviews`, `GET /api/v1/products/{id}/can-review`, `POST /api/v1/products/{id}/reviews`.
+  - **Automated Order Notifications:**
+    - Moving order status (processing, shipped, delivered) creates an in-app customer notification when customer `user_id` is linked.
+  - **Test Suite:** 11 comprehensive automated tests in `tests/test_customer_auth.py` and `tests/test_customer_phase6.py` covering all flows.
+
+## Open / Pending Next Steps
+
+- **Deploy to Production (VPS 72.60.199.155):**
+  - Run `alembic upgrade head` to apply migrations 0101 and 0103 on the production database.
+  - Rebuild API container: `docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build`.
+- **Customer SMS Notifications via SSL Wireless:**
+  - Connect real SMS credentials (`SMS_SSLWIRELESS_API_TOKEN`, `SMS_SSLWIRELESS_SID`) in `.env.production` once account is active.
+- **Frontend Product Reviews UI & Header Notifications Drawer:**
+  - Product review submission and listing on frontend `/products/[ref]`.
+  - Storefront header notification bell with unread count and dropdown drawer.
 
 - **Storefront SEO settings are done, not live**: migration 0099 creates `site_settings` with three nullable columns and does not seed a row. It sits on 0098 from the orders desk branch. Do not run it against production from a laptop, and do not run it ahead of 0097 and 0098. Empty fields stay null so the storefront keeps its built-in title, description, and title template until an editor saves them.
 - **Order print, tracking, and customer SMS are done, not live**: migration 0098 adds two nullable claim timestamps, a tracking index, and the `customer_message` activity value. It does not rewrite totals or statuses. Do not run it against production from a laptop. Estimated delivery is computed on print, not stored. Public lookup is still `POST /api/v1/orders/lookup`. Customer texts are not delivered. `CUSTOMER_SMS_ENABLED` stays false. `CUSTOMER_SMS_PROVIDER` is `log` or `noop` only. To send real SMS, open an SSL Wireless ISMS Plus (SMS Plus) account at the panel behind `https://ismsplus.sslwireless.com/api-documentation` and supply `SMS_SSLWIRELESS_API_TOKEN` (their `api_token`) and `SMS_SSLWIRELESS_SID` (their registered sender id). Whitelist the API server's outbound IP in that panel. Their single-SMS URL is `https://smsplus.sslwireless.com/api/v3/send-sms` (`SMS_SSLWIRELESS_API_URL`). Those three names are comments in `.env.example` and the API does not read them. Setting them does nothing until a provider adapter is added. `ADMIN_BASE_URL` must be the storefront origin or the status link is omitted. Offline orders still do not send Meta CAPI, the Telegram new-order or cancel alert, or a GA event. A low-stock Telegram can still fire from the stock claim.

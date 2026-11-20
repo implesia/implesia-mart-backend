@@ -2,6 +2,36 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Customer Authentication, Customer Notifications & Verified Product Reviews (2026-11-21). Done (not live).**
+  - **Migration 0101:** Added `customer` role to `UserRole` enum. Added nullable columns `phone` (varchar 20), `district` (varchar 80), `area` (varchar 120), and `address` (varchar 500) to `users` model. Added partial unique index on `phone` (where phone is not null).
+  - **Migration 0103:** Added nullable `avatar_url` (varchar 500) to `users`. Created `customer_notifications` table (UUID pk, user_id FK cascade, order_id FK set null, type, title, message, is_read, language, timestamps, composite indexes on user_id + created_at and user_id + is_read). Created `product_reviews` table (UUID pk, product_id FK cascade, user_id FK cascade, order_id FK set null, rating 1-5, headline, comment, is_verified_purchase, is_published, timestamps, indexes on product_id + is_published + created_at and user_id + product_id).
+  - **Customer Authentication & Profile Service:**
+    - Standardized 11-digit Bangladesh phone validation and normalization (`013-019`).
+    - Password hashing and verification with secure JWT session issuance (`access_token` and `refresh_token`).
+    - Customer login accepts either phone or email.
+    - Endpoints: `POST /api/v1/customer/auth/register`, `login`, `refresh`, `logout`, `GET`/`PATCH /api/v1/customer/profile`, `POST /api/v1/customer/change-password`, `POST /api/v1/customer/avatar`, `POST /api/v1/customer/cart/merge`.
+  - **Orders, Tracking & Purchased Products:**
+    - Customer orders list and detail endpoints with authorization check (only owner can view).
+    - Courier tracking endpoint (`/api/v1/customer/orders/{number}/tracking`) returning carrier, tracking code, and timeline.
+    - Purchased products endpoint (`/api/v1/customer/purchased-products`) returning past ordered items and review eligibility (`can_review`).
+    - Customer dashboard statistics endpoint (`/api/v1/customer/dashboard-summary`).
+  - **Verified Product Reviews:**
+    - Customers can only review products from eligible orders (`confirmed`, `packed`, `shipped`, `delivered`).
+    - Duplicate reviews per user/product are blocked with ConflictError (409).
+    - Public reviews list with summary metrics (average rating, review count, 1-5 star histogram).
+  - **Automated Customer In-App Notifications:**
+    - Status updates on orders automatically trigger notification creation for registered customers with localized messages.
+    - Notification feed and mark-as-read endpoints.
+  - Files touched:
+    - `alembic/versions/0101_customer_role_and_fields.py`
+    - `alembic/versions/0103_customer_notifications_and_reviews.py`
+    - `app/models/user.py`, `app/models/notification.py`, `app/models/review.py`
+    - `app/schemas/customer.py`, `app/schemas/review.py`, `app/schemas/order.py`
+    - `app/services/customer_auth_service.py`, `app/services/customer_purchased_service.py`, `app/services/notification_service.py`, `app/services/review_service.py`, `app/services/order_service.py`
+    - `app/api/v1/endpoints/customer_auth.py`, `app/api/v1/endpoints/customer_orders.py`, `app/api/v1/endpoints/reviews.py`
+    - `tests/test_customer_auth.py`, `tests/test_customer_phase6.py`
+    - `docs/TODO.md`, `docs/CHANGELOG.md`
+
 - **Storefront SEO settings (2026-11-16). Done (not live).** Branched from `cursor/admin-orders-management-aaf2` (PR #18) so the migration chain stays one head. Do not merge this ahead of that branch. Do not run the migration against production from a laptop. No new environment variable.
   - There was no site/store settings model. Header, footer, contact, payment, and pricing stay their own resources. This adds one `site_settings` row (slug `main`) for the home/default title, meta description, and optional title template.
   - Migration **0099** (`down_revision` **0098**), additive only. New table `site_settings`. `seo_title` (varchar 70, nullable), `seo_description` (varchar 170, nullable), `seo_title_template` (varchar 80, nullable). No row is seeded. No existing row is updated. Downgrade drops only that table.
