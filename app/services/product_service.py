@@ -355,9 +355,7 @@ async def create_product(
         raise
 
 
-async def _resolve_supplier(
-    db: AsyncSession, supplier_id: uuid.UUID | None
-) -> Supplier | None:
+async def _resolve_supplier(db: AsyncSession, supplier_id: uuid.UUID | None) -> Supplier | None:
     if supplier_id is None:
         return None
     supplier = await db.get(Supplier, supplier_id)

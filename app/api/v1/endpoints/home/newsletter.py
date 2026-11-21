@@ -2,7 +2,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, status
 
-from app.api.deps import DbSession, no_store, require_editor
+from app.api.deps import DbSession, no_store, require_module_for_method
 from app.schemas.common import Message
 from app.schemas.home.newsletter import (
     NewsletterAdmin,
@@ -16,7 +16,9 @@ from app.schemas.home.newsletter import (
 from app.services.home import newsletter_service
 
 public_router = APIRouter()
-admin_router = APIRouter(dependencies=[Depends(require_editor), Depends(no_store)])
+admin_router = APIRouter(
+    dependencies=[Depends(require_module_for_method("cms")), Depends(no_store)]
+)
 
 
 @public_router.get("", response_model=NewsletterPublic)

@@ -92,9 +92,7 @@ async def overview(
         series_end = min(current.end, _next_hour(moment))
     current_groups, step = await _grouped(db, current.start, series_end, grain, dialect)
     previous_groups, _step = await _grouped(db, previous.start, previous.end, grain, dialect)
-    series = _series(
-        current, previous, grain, moment, current_groups, previous_groups, step
-    )
+    series = _series(current, previous, grain, moment, current_groups, previous_groups, step)
     return DashboardOverview(
         range=span,
         period_label=_span_label(current),
@@ -293,10 +291,12 @@ def _overlap(
 async def _statuses(db: AsyncSession, window: _Window) -> list[DashboardStatusSlice]:
     rows = (
         await db.execute(
-            select(Order.status, func.count()).where(
+            select(Order.status, func.count())
+            .where(
                 at_or_after(_PLACED, window.start, dialect_name(db)),
                 before(_PLACED, window.end, dialect_name(db)),
-            ).group_by(Order.status)
+            )
+            .group_by(Order.status)
         )
     ).all()
     counts = {str(status): int(count) for status, count in rows}

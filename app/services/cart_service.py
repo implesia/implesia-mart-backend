@@ -188,7 +188,7 @@ def _owner(cart: Cart) -> CartOwnerRead:
         user_id=cart.user.id,
         email=cart.user.email,
         full_name=cart.user.full_name,
-        role=cart.user.role.value,
+        role=str(cart.user.role),
     )
 
 

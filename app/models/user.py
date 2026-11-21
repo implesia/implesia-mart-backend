@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, DateTime, Enum, Index, String, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -12,6 +12,13 @@ class UserRole(StrEnum):
     EDITOR = "editor"
     VIEWER = "viewer"
     CUSTOMER = "customer"
+
+
+# Staff roles allowed to sign into /admin. Future non-staff roles (e.g. dropshipper)
+# stay outside this set so core admin guards never need to change.
+STAFF_ROLES: frozenset[UserRole] = frozenset(
+    {UserRole.VIEWER, UserRole.EDITOR, UserRole.SUPERADMIN}
+)
 
 
 class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -33,9 +40,11 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     full_name: Mapped[str] = mapped_column(String(160), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(128), nullable=False)
-    role: Mapped[UserRole] = mapped_column(
-        Enum(UserRole, name="user_role", values_callable=lambda e: [m.value for m in e]),
-        default=UserRole.VIEWER,
+    role: Mapped[str] = mapped_column(
+        String(50),
+        ForeignKey("roles.slug", onupdate="CASCADE", ondelete="RESTRICT"),
+        index=True,
+        default=UserRole.VIEWER.value,
         nullable=False,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

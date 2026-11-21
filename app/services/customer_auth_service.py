@@ -73,9 +73,7 @@ async def register_customer(db: AsyncSession, payload: CustomerRegisterRequest) 
 
     # Automatically associate previous guest orders placed with this phone number
     await db.execute(
-        update(Order)
-        .where(Order.user_id.is_(None), Order.phone == phone)
-        .values(user_id=user.id)
+        update(Order).where(Order.user_id.is_(None), Order.phone == phone).values(user_id=user.id)
     )
 
     await db.commit()
@@ -98,9 +96,7 @@ async def authenticate_customer(db: AsyncSession, identifier: str, password: str
     return user
 
 
-async def update_profile(
-    db: AsyncSession, user: User, payload: CustomerProfileUpdate
-) -> User:
+async def update_profile(db: AsyncSession, user: User, payload: CustomerProfileUpdate) -> User:
     data = payload.model_dump(exclude_unset=True)
 
     if "phone" in data:

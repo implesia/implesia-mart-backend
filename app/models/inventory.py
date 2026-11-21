@@ -58,16 +58,12 @@ class Supplier(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     name: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
     phone: Mapped[str] = mapped_column(String(40), nullable=False, default="", server_default="")
-    address: Mapped[str] = mapped_column(
-        String(500), nullable=False, default="", server_default=""
-    )
+    address: Mapped[str] = mapped_column(String(500), nullable=False, default="", server_default="")
     note: Mapped[str] = mapped_column(String(500), nullable=False, default="", server_default="")
     is_deleted: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false"), index=True
     )
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self) -> str:
         return f"<Supplier {self.name}>"

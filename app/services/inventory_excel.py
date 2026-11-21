@@ -155,8 +155,7 @@ def load_table(
         if _blank(raw):
             continue
         cells = {
-            name: raw[position] if position < len(raw) else None
-            for name, position in index.items()
+            name: raw[position] if position < len(raw) else None for name, position in index.items()
         }
         parsed.append((offset, cells))
         if len(parsed) > MAX_IMPORT_ROWS:

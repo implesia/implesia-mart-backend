@@ -68,6 +68,8 @@ from app.models.privacy.usage import PrivacyUsage, PrivacyUsageBadge, PrivacyUsa
 from app.models.product import Product, ProductSlugRedirect, ProductVariant
 from app.models.refresh_token import RefreshToken
 from app.models.review import ProductReview
+from app.models.role import Role
+from app.models.role_permission import RolePermission
 from app.models.shipping.block import (
     ShippingBlock,
     ShippingBlockCard,
@@ -252,6 +254,8 @@ __all__ = [
     "SustainabilityQualityStep",
     "CustomerNotification",
     "ProductReview",
+    "Role",
+    "RolePermission",
     "User",
     "UserRole",
 ]

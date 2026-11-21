@@ -55,13 +55,14 @@ from app.db.base import Base  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.user import UserRole  # noqa: E402
 from app.schemas.user import UserCreate  # noqa: E402
-from app.services import user_service  # noqa: E402
+from app.services import permission_service, user_service  # noqa: E402
 
 TEST_PASSWORD = "sup3r-secret-passphrase"
 
 
 @pytest.fixture
 async def db_session() -> AsyncIterator[AsyncSession]:
+    permission_service.invalidate_permission_cache()
     # StaticPool keeps the in-memory database alive across connections.
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
@@ -73,8 +74,10 @@ async def db_session() -> AsyncIterator[AsyncSession]:
 
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with session_factory() as session:
+        await permission_service.ensure_system_roles(session)
         yield session
 
+    permission_service.invalidate_permission_cache()
     await engine.dispose()
 
 

@@ -1,4 +1,5 @@
 import hashlib
+import time
 import uuid
 from datetime import UTC, datetime
 
@@ -6,7 +7,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.exceptions import AuthenticationError
+from app.core.exceptions import AuthenticationError, PermissionDeniedError
 from app.core.security import (
     InvalidTokenError,
     create_access_token,
@@ -16,6 +17,34 @@ from app.core.security import (
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.schemas.auth import TokenPair
+
+# Grace window for concurrent refresh rotation (parallel requests, multiple tabs,
+# background polling, or Cloudflare Worker isolates). Reuse within this window
+# returns a valid token pair idempotently ONLY while the family still has an active
+# unrevoked successor token. Reuse after this window or after logout still revokes
+# the entire family.
+ROTATION_GRACE_SECONDS = 30
+
+# Short-lived in-process cache: old_jti_hash -> (monotonic_expires_at, family_id, TokenPair)
+_grace_cache: dict[str, tuple[float, uuid.UUID, TokenPair]] = {}
+
+
+def _prune_grace_cache() -> None:
+    now_mono = time.monotonic()
+    expired = [key for key, (exp, _, _) in _grace_cache.items() if exp <= now_mono]
+    for key in expired:
+        _grace_cache.pop(key, None)
+
+
+def _evict_family_grace(family_id: uuid.UUID) -> None:
+    stale = [key for key, (_, fam, _) in _grace_cache.items() if fam == family_id]
+    for key in stale:
+        _grace_cache.pop(key, None)
+
+
+def clear_grace_cache() -> None:
+    """Test helper to clear the in-memory rotation grace cache."""
+    _grace_cache.clear()
 
 
 def hash_jti(jti: str) -> str:
@@ -60,6 +89,7 @@ async def _lock_family(db: AsyncSession, family_id: uuid.UUID) -> None:
 
 
 async def _revoke_family(db: AsyncSession, family_id: uuid.UUID, now: datetime) -> None:
+    _evict_family_grace(family_id)
     await db.execute(
         update(RefreshToken)
         .where(RefreshToken.family_id == family_id, RefreshToken.revoked_at.is_(None))
@@ -96,6 +126,15 @@ async def session_is_live(db: AsyncSession, family_id: uuid.UUID, user_id: uuid.
 
 async def revoke_user_sessions(db: AsyncSession, user_id: uuid.UUID) -> None:
     """Mark every live refresh token for this user revoked. The caller commits."""
+    family_ids = (
+        await db.scalars(
+            select(RefreshToken.family_id)
+            .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
+            .distinct()
+        )
+    ).all()
+    for fam in family_ids:
+        _evict_family_grace(fam)
     await db.execute(
         update(RefreshToken)
         .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
@@ -130,15 +169,19 @@ async def issue_session(db: AsyncSession, user: User) -> TokenPair:
     return _pair(user.id, token, family_id)
 
 
-async def rotate_session(db: AsyncSession, raw: str) -> TokenPair:
+async def rotate_session(
+    db: AsyncSession,
+    raw: str,
+    *,
+    require_staff: bool = False,
+) -> TokenPair:
     claims = _claims(raw)
     user_id = uuid.UUID(claims["sub"])
     family_id = uuid.UUID(claims["fam"])
+    old_jti_hash = hash_jti(claims["jti"])
     now = datetime.now(UTC)
     await _lock_family(db, family_id)
-    current = await db.scalar(
-        select(RefreshToken).where(RefreshToken.jti_hash == hash_jti(claims["jti"]))
-    )
+    current = await db.scalar(select(RefreshToken).where(RefreshToken.jti_hash == old_jti_hash))
     reusable = (
         current is not None
         and current.user_id == user_id
@@ -146,7 +189,56 @@ async def rotate_session(db: AsyncSession, raw: str) -> TokenPair:
         and current.revoked_at is None
         and _as_utc(current.expires_at) > now
     )
-    if current is None or not reusable:
+
+    if current is not None and not reusable:
+        # Check concurrent rotation grace window: only valid if rotated within
+        # ROTATION_GRACE_SECONDS AND the family still has an active unrevoked successor.
+        in_grace = (
+            current.user_id == user_id
+            and current.family_id == family_id
+            and current.revoked_at is not None
+            and _as_utc(current.expires_at) > now
+            and (now - _as_utc(current.revoked_at)).total_seconds() <= ROTATION_GRACE_SECONDS
+        )
+        if in_grace and await session_is_live(db, family_id, user_id):
+            user = await db.get(User, user_id)
+            if user is None or not user.is_active:
+                await _revoke_family(db, family_id, now)
+                await db.commit()
+                raise AuthenticationError("Invalid refresh token")
+            if require_staff:
+                from app.services import permission_service
+
+                if not await permission_service.role_has_admin_access(db, user.role):
+                    await _revoke_family(db, family_id, now)
+                    await db.commit()
+                    raise PermissionDeniedError("Admin access is restricted to staff accounts")
+
+            _prune_grace_cache()
+            cached = _grace_cache.get(old_jti_hash)
+            if cached is not None and cached[0] > time.monotonic():
+                return cached[2]
+
+            # Cross-worker fallback: mint a valid successor in the same family without
+            # revoking the already-active successor token.
+            jti = uuid.uuid4().hex
+            token, expires_at = create_refresh_token(
+                str(user_id), jti=jti, family_id=str(family_id)
+            )
+            _remember(db, user_id=user_id, family_id=family_id, jti=jti, expires_at=expires_at)
+            await db.commit()
+            pair = _pair(user_id, token, family_id)
+            _grace_cache[old_jti_hash] = (
+                time.monotonic() + ROTATION_GRACE_SECONDS,
+                family_id,
+                pair,
+            )
+            return pair
+
+        await _reject_reuse(db, current, family_id, now)
+        raise AuthenticationError("Invalid refresh token")
+
+    if current is None:
         await _reject_reuse(db, current, family_id, now)
         raise AuthenticationError("Invalid refresh token")
 
@@ -155,13 +247,27 @@ async def rotate_session(db: AsyncSession, raw: str) -> TokenPair:
         await _revoke_family(db, family_id, now)
         await db.commit()
         raise AuthenticationError("Invalid refresh token")
+    if require_staff:
+        from app.services import permission_service
+
+        if not await permission_service.role_has_admin_access(db, user.role):
+            await _revoke_family(db, family_id, now)
+            await db.commit()
+            raise PermissionDeniedError("Admin access is restricted to staff accounts")
 
     current.revoked_at = now
     jti = uuid.uuid4().hex
     token, expires_at = create_refresh_token(str(user_id), jti=jti, family_id=str(family_id))
     _remember(db, user_id=user_id, family_id=family_id, jti=jti, expires_at=expires_at)
     await db.commit()
-    return _pair(user_id, token, family_id)
+    pair = _pair(user_id, token, family_id)
+    _prune_grace_cache()
+    _grace_cache[old_jti_hash] = (
+        time.monotonic() + ROTATION_GRACE_SECONDS,
+        family_id,
+        pair,
+    )
+    return pair
 
 
 async def _reject_reuse(

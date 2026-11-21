@@ -6,10 +6,11 @@ from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Form, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
-from app.api.deps import CurrentUser, DbSession, RequireEditor, RequireSuperadmin, no_store
+from app.api.deps import DbSession, no_store, require_module_access
 from app.core.config import settings
 from app.core.exceptions import UnprocessableError
 from app.models.inventory import ImportKind
+from app.models.user import User
 from app.rate_limit import limiter
 from app.schemas.inventory import (
     AdjustmentCreate,
@@ -37,13 +38,17 @@ from app.schemas.inventory import (
 from app.services import inventory_service
 from app.services.inventory_excel import MAX_IMPORT_BYTES
 
+_InvRead = Annotated[User, Depends(require_module_access("inventory", "read"))]
+_InvWrite = Annotated[User, Depends(require_module_access("inventory", "write"))]
+_AuditDeleteFull = Annotated[User, Depends(require_module_access("audit_deletes", "full"))]
+
 router = APIRouter(dependencies=[Depends(no_store)])
 _XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 @router.get("/suppliers", response_model=SupplierList)
 async def list_suppliers(
-    db: DbSession, user: CurrentUser, query: Annotated[SupplierQuery, Depends()]
+    db: DbSession, user: _InvRead, query: Annotated[SupplierQuery, Depends()]
 ) -> SupplierList:
     del user
     return await inventory_service.list_suppliers(db, query)
@@ -52,14 +57,14 @@ async def list_suppliers(
 @router.post("/suppliers", response_model=SupplierRead, status_code=201)
 @limiter.limit(settings.rate_limit_product_writes)
 async def create_supplier(
-    request: Request, db: DbSession, actor: RequireEditor, payload: SupplierCreate
+    request: Request, db: DbSession, actor: _InvWrite, payload: SupplierCreate
 ) -> SupplierRead:
     del request
     return await inventory_service.create_supplier(db, payload, actor)
 
 
 @router.get("/suppliers/{supplier_id}", response_model=SupplierRead)
-async def get_supplier(db: DbSession, user: CurrentUser, supplier_id: uuid.UUID) -> SupplierRead:
+async def get_supplier(db: DbSession, user: _InvRead, supplier_id: uuid.UUID) -> SupplierRead:
     del user
     return await inventory_service.get_supplier(db, supplier_id)
 
@@ -69,7 +74,7 @@ async def get_supplier(db: DbSession, user: CurrentUser, supplier_id: uuid.UUID)
 async def update_supplier(
     request: Request,
     db: DbSession,
-    actor: RequireEditor,
+    actor: _InvWrite,
     supplier_id: uuid.UUID,
     payload: SupplierUpdate,
 ) -> SupplierRead:
@@ -80,7 +85,7 @@ async def update_supplier(
 @router.get("/suppliers/{supplier_id}/delete-impact", response_model=SupplierDeleteImpact)
 async def supplier_delete_impact(
     db: DbSession,
-    actor: RequireSuperadmin,
+    actor: _AuditDeleteFull,
     supplier_id: uuid.UUID,
 ) -> SupplierDeleteImpact:
     del actor
@@ -92,7 +97,7 @@ async def supplier_delete_impact(
 async def delete_supplier(
     request: Request,
     db: DbSession,
-    actor: RequireSuperadmin,
+    actor: _AuditDeleteFull,
     supplier_id: uuid.UUID,
     payload: SupplierDeleteRequest | None = Body(default=None),
 ) -> SupplierDeleteResult:
@@ -102,7 +107,7 @@ async def delete_supplier(
 
 @router.get("/purchases", response_model=PurchaseList)
 async def list_purchases(
-    db: DbSession, user: CurrentUser, query: Annotated[PurchaseQuery, Depends()]
+    db: DbSession, user: _InvRead, query: Annotated[PurchaseQuery, Depends()]
 ) -> PurchaseList:
     del user
     return await inventory_service.list_purchases(db, query)
@@ -113,7 +118,7 @@ async def list_purchases(
 async def create_purchase(
     request: Request,
     db: DbSession,
-    actor: RequireEditor,
+    actor: _InvWrite,
     payload: PurchaseCreate,
     background: BackgroundTasks,
 ) -> PurchaseRead:
@@ -122,14 +127,14 @@ async def create_purchase(
 
 
 @router.get("/purchases/{purchase_id}", response_model=PurchaseRead)
-async def get_purchase(db: DbSession, user: CurrentUser, purchase_id: uuid.UUID) -> PurchaseRead:
+async def get_purchase(db: DbSession, user: _InvRead, purchase_id: uuid.UUID) -> PurchaseRead:
     del user
     return await inventory_service.get_purchase(db, purchase_id)
 
 
 @router.get("/movements", response_model=MovementList)
 async def list_movements(
-    db: DbSession, user: CurrentUser, query: Annotated[MovementQuery, Depends()]
+    db: DbSession, user: _InvRead, query: Annotated[MovementQuery, Depends()]
 ) -> MovementList:
     del user
     return await inventory_service.list_movements(db, query)
@@ -140,7 +145,7 @@ async def list_movements(
 async def adjust_stock(
     request: Request,
     db: DbSession,
-    actor: RequireEditor,
+    actor: _InvWrite,
     payload: AdjustmentCreate,
     background: BackgroundTasks,
 ) -> MovementRead:
@@ -150,9 +155,7 @@ async def adjust_stock(
 
 @router.post("/opening-stock", response_model=OpeningStockResult)
 @limiter.limit(settings.rate_limit_product_writes)
-async def opening_stock(
-    request: Request, db: DbSession, actor: RequireEditor
-) -> OpeningStockResult:
+async def opening_stock(request: Request, db: DbSession, actor: _InvWrite) -> OpeningStockResult:
     del request
     return await inventory_service.record_opening_stock(db, actor_id=actor.id)
 
@@ -160,7 +163,7 @@ async def opening_stock(
 @router.get("/exports/{kind}")
 async def export_inventory(
     db: DbSession,
-    user: CurrentUser,
+    user: _InvRead,
     kind: ExportKind,
     query: Annotated[DateRangeQuery, Depends()],
 ) -> StreamingResponse:
@@ -170,7 +173,7 @@ async def export_inventory(
 
 
 @router.get("/imports/templates/{kind}")
-async def import_template(user: CurrentUser, kind: ImportKind) -> StreamingResponse:
+async def import_template(user: _InvRead, kind: ImportKind) -> StreamingResponse:
     del user
     name, payload = inventory_service.import_template(kind.value)
     return _xlsx(name, payload)
@@ -181,7 +184,7 @@ async def import_template(user: CurrentUser, kind: ImportKind) -> StreamingRespo
 async def preview_import(
     request: Request,
     db: DbSession,
-    user: CurrentUser,
+    user: _InvRead,
     import_type: Annotated[str, Form()],
     file: Annotated[UploadFile, File()],
 ) -> ImportPreview:
@@ -195,7 +198,7 @@ async def preview_import(
 async def confirm_import(
     request: Request,
     db: DbSession,
-    actor: RequireEditor,
+    actor: _InvWrite,
     background: BackgroundTasks,
     import_type: Annotated[str, Form()],
     file: Annotated[UploadFile, File()],

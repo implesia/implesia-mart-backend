@@ -149,7 +149,7 @@ async def test_access_token_is_not_accepted_as_refresh_token(
 
 
 async def test_a_used_refresh_token_cannot_mint_another_session(
-    client: AsyncClient, superadmin_token: str
+    client: AsyncClient, db_session: AsyncSession, superadmin_token: str
 ) -> None:
     login = await client.post(
         "/api/v1/auth/login",
@@ -160,6 +160,15 @@ async def test_a_used_refresh_token_cannot_mint_another_session(
     assert rotated.status_code == 200, rotated.text
     second = rotated.json()["refresh_token"]
     assert second != first
+
+    # Backdate revoked_at beyond the 30s concurrent-rotation grace window.
+    first_jti = jwt.decode(first, options={"verify_signature": False}, algorithms=["HS256"])["jti"]
+    row = await db_session.scalar(
+        select(RefreshToken).where(RefreshToken.jti_hash == hash_jti(first_jti))
+    )
+    assert row is not None
+    row.revoked_at = datetime.now(UTC) - timedelta(seconds=60)
+    await db_session.commit()
 
     reused = await client.post("/api/v1/auth/refresh", json={"refresh_token": first})
     assert reused.status_code == 401

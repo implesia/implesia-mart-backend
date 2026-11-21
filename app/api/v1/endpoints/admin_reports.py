@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
-from app.api.deps import CurrentUser, DbSession, no_store
+from app.api.deps import DbSession, RequireViewer, no_store, require_module_access
 from app.schemas.report import (
     ChannelBreakdownReport,
     CouponReport,
@@ -29,7 +29,9 @@ from app.schemas.report import (
 from app.services import report_service
 from app.services.report_service import ReportRequest
 
-router = APIRouter(dependencies=[Depends(no_store)])
+router = APIRouter(
+    dependencies=[Depends(no_store), Depends(require_module_access("reports", "read"))]
+)
 _XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
@@ -73,14 +75,14 @@ def _xlsx(name: str, payload: bytes) -> StreamingResponse:
 
 
 @router.get("/sales", response_model=SalesSummary)
-async def read_sales(user: CurrentUser, db: DbSession, request: ReportArgs) -> SalesSummary:
+async def read_sales(user: RequireViewer, db: DbSession, request: ReportArgs) -> SalesSummary:
     del user
     return await report_service.sales_summary(db, request)
 
 
 @router.get("/sales/export")
 async def export_sales(
-    user: CurrentUser, db: DbSession, request: ReportArgs
+    user: RequireViewer, db: DbSession, request: ReportArgs
 ) -> StreamingResponse:
     del user
     name, payload = await report_service.sales_workbook(db, request)
@@ -88,14 +90,14 @@ async def export_sales(
 
 
 @router.get("/profit", response_model=ProfitReport)
-async def read_profit(user: CurrentUser, db: DbSession, request: ReportArgs) -> ProfitReport:
+async def read_profit(user: RequireViewer, db: DbSession, request: ReportArgs) -> ProfitReport:
     del user
     return await report_service.profit_report(db, request)
 
 
 @router.get("/profit/export")
 async def export_profit(
-    user: CurrentUser, db: DbSession, request: ReportArgs
+    user: RequireViewer, db: DbSession, request: ReportArgs
 ) -> StreamingResponse:
     del user
     name, payload = await report_service.profit_workbook(db, request)
@@ -104,7 +106,7 @@ async def export_profit(
 
 @router.get("/profit-loss", response_model=ProfitLossReport)
 async def read_profit_loss(
-    user: CurrentUser, db: DbSession, request: ReportArgs
+    user: RequireViewer, db: DbSession, request: ReportArgs
 ) -> ProfitLossReport:
     del user
     return await report_service.profit_loss_report(db, request)
@@ -112,7 +114,7 @@ async def read_profit_loss(
 
 @router.get("/profit-loss/export")
 async def export_profit_loss(
-    user: CurrentUser, db: DbSession, request: ReportArgs
+    user: RequireViewer, db: DbSession, request: ReportArgs
 ) -> StreamingResponse:
     del user
     name, payload = await report_service.profit_loss_workbook(db, request)
@@ -121,21 +123,19 @@ async def export_profit_loss(
 
 @router.get("/products", response_model=ProductReport)
 async def read_products(
-    user: CurrentUser,
+    user: RequireViewer,
     db: DbSession,
     request: ReportArgs,
     page: Annotated[int, Query(ge=1, le=10_000)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> ProductReport:
     del user
-    return await report_service.product_report(
-        db, request, page=page, page_size=page_size
-    )
+    return await report_service.product_report(db, request, page=page, page_size=page_size)
 
 
 @router.get("/products/export")
 async def export_products(
-    user: CurrentUser, db: DbSession, request: ReportArgs
+    user: RequireViewer, db: DbSession, request: ReportArgs
 ) -> StreamingResponse:
     del user
     name, payload = await report_service.product_workbook(db, request)
@@ -144,7 +144,7 @@ async def export_products(
 
 @router.get("/channels", response_model=ChannelBreakdownReport)
 async def read_channels(
-    user: CurrentUser, db: DbSession, request: ReportArgs
+    user: RequireViewer, db: DbSession, request: ReportArgs
 ) -> ChannelBreakdownReport:
     del user
     return await report_service.channel_report(db, request)
@@ -152,7 +152,7 @@ async def read_channels(
 
 @router.get("/channels/export")
 async def export_channels(
-    user: CurrentUser, db: DbSession, request: ReportArgs
+    user: RequireViewer, db: DbSession, request: ReportArgs
 ) -> StreamingResponse:
     del user
     name, payload = await report_service.channel_workbook(db, request)
@@ -161,7 +161,7 @@ async def export_channels(
 
 @router.get("/suppliers", response_model=SupplierPerformanceReport)
 async def read_suppliers(
-    user: CurrentUser, db: DbSession, request: ReportArgs
+    user: RequireViewer, db: DbSession, request: ReportArgs
 ) -> SupplierPerformanceReport:
     del user
     return await report_service.supplier_report(db, request)
@@ -169,7 +169,7 @@ async def read_suppliers(
 
 @router.get("/suppliers/export")
 async def export_suppliers(
-    user: CurrentUser, db: DbSession, request: ReportArgs
+    user: RequireViewer, db: DbSession, request: ReportArgs
 ) -> StreamingResponse:
     del user
     name, payload = await report_service.supplier_workbook(db, request)
@@ -178,7 +178,7 @@ async def export_suppliers(
 
 @router.get("/stock", response_model=StockReport)
 async def read_stock(
-    user: CurrentUser,
+    user: RequireViewer,
     db: DbSession,
     request: ReportArgs,
     page: Annotated[int, Query(ge=1, le=10_000)] = 1,
@@ -190,7 +190,7 @@ async def read_stock(
 
 @router.get("/stock/export")
 async def export_stock(
-    user: CurrentUser, db: DbSession, request: ReportArgs
+    user: RequireViewer, db: DbSession, request: ReportArgs
 ) -> StreamingResponse:
     del user
     name, payload = await report_service.stock_workbook(db, request)
@@ -198,16 +198,14 @@ async def export_stock(
 
 
 @router.get("/movements", response_model=MovementReport)
-async def read_movements(
-    user: CurrentUser, db: DbSession, request: ReportArgs
-) -> MovementReport:
+async def read_movements(user: RequireViewer, db: DbSession, request: ReportArgs) -> MovementReport:
     del user
     return await report_service.movement_report(db, request)
 
 
 @router.get("/movements/export")
 async def export_movements(
-    user: CurrentUser, db: DbSession, request: ReportArgs
+    user: RequireViewer, db: DbSession, request: ReportArgs
 ) -> StreamingResponse:
     del user
     name, payload = await report_service.movement_workbook(db, request)
@@ -215,16 +213,14 @@ async def export_movements(
 
 
 @router.get("/delivery", response_model=DeliveryReport)
-async def read_delivery(
-    user: CurrentUser, db: DbSession, request: ReportArgs
-) -> DeliveryReport:
+async def read_delivery(user: RequireViewer, db: DbSession, request: ReportArgs) -> DeliveryReport:
     del user
     return await report_service.delivery_report(db, request)
 
 
 @router.get("/delivery/export")
 async def export_delivery(
-    user: CurrentUser, db: DbSession, request: ReportArgs
+    user: RequireViewer, db: DbSession, request: ReportArgs
 ) -> StreamingResponse:
     del user
     name, payload = await report_service.delivery_workbook(db, request)
@@ -232,14 +228,14 @@ async def export_delivery(
 
 
 @router.get("/trend", response_model=TrendReport)
-async def read_trend(user: CurrentUser, db: DbSession, request: ReportArgs) -> TrendReport:
+async def read_trend(user: RequireViewer, db: DbSession, request: ReportArgs) -> TrendReport:
     del user
     return await report_service.trend_report(db, request)
 
 
 @router.get("/trend/export")
 async def export_trend(
-    user: CurrentUser, db: DbSession, request: ReportArgs
+    user: RequireViewer, db: DbSession, request: ReportArgs
 ) -> StreamingResponse:
     del user
     name, payload = await report_service.trend_workbook(db, request)
@@ -247,14 +243,14 @@ async def export_trend(
 
 
 @router.get("/coupons", response_model=CouponReport)
-async def read_coupons(user: CurrentUser, db: DbSession, request: ReportArgs) -> CouponReport:
+async def read_coupons(user: RequireViewer, db: DbSession, request: ReportArgs) -> CouponReport:
     del user
     return await report_service.coupon_report(db, request)
 
 
 @router.get("/coupons/export")
 async def export_coupons(
-    user: CurrentUser, db: DbSession, request: ReportArgs
+    user: RequireViewer, db: DbSession, request: ReportArgs
 ) -> StreamingResponse:
     del user
     name, payload = await report_service.coupon_workbook(db, request)

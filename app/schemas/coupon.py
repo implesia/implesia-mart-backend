@@ -39,8 +39,7 @@ def normalize_coupon_code(value: str) -> str:
     code = value.strip().upper()
     if not _CODE.fullmatch(code):
         raise ValueError(
-            "কুপন কোড ৩ থেকে ৩২ অক্ষরের হতে হবে। "
-            "শুধু ইংরেজি A–Z, সংখ্যা, হাইফেন (-) ও আন্ডারস্কোর (_) চলবে।"
+            "কুপন কোড ৩ থেকে ৩২ অক্ষরের হতে হবে। শুধু ইংরেজি A–Z, সংখ্যা, হাইফেন (-) ও আন্ডারস্কোর (_) চলবে।"
         )
     return code
 

@@ -178,9 +178,7 @@ async def _categories_for(
     if not product_ids:
         return {}
     rows = (
-        await db.execute(
-            select(Product.id, Product.category_id).where(Product.id.in_(product_ids))
-        )
+        await db.execute(select(Product.id, Product.category_id).where(Product.id.in_(product_ids)))
     ).all()
     return {row[0]: row[1] for row in rows}
 
@@ -237,9 +235,7 @@ def _eligible(lines: list[MoneyLine], products: set[uuid.UUID], categories: set[
     return total
 
 
-async def _active_uses(
-    db: AsyncSession, coupon_id: uuid.UUID, phone: str | None = None
-) -> int:
+async def _active_uses(db: AsyncSession, coupon_id: uuid.UUID, phone: str | None = None) -> int:
     stmt = (
         select(func.count())
         .select_from(CouponRedemption)

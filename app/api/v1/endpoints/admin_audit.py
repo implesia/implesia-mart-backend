@@ -3,13 +3,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.deps import DbSession, RequireSuperadmin, no_store
+from app.api.deps import DbSession, no_store, require_module_access
 from app.models.audit_event import AuditEvent
 from app.schemas.audit import AuditEventRead
 from app.schemas.common import Page, PaginationParams, page_count
 from app.services import audit_service
 
-router = APIRouter(dependencies=[Depends(no_store)])
+router = APIRouter(
+    dependencies=[Depends(no_store), Depends(require_module_access("audit_deletes", "read"))]
+)
 
 
 def _read(row: AuditEvent) -> AuditEventRead:
@@ -26,7 +28,6 @@ def _read(row: AuditEvent) -> AuditEventRead:
 
 @router.get("", response_model=Page[AuditEventRead])
 async def list_audit_events(
-    _: RequireSuperadmin,
     db: DbSession,
     pagination: Annotated[PaginationParams, Depends()],
     action: Annotated[str | None, Query()] = None,
