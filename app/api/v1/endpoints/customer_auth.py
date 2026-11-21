@@ -20,8 +20,10 @@ from app.schemas.customer import (
     CustomerProfileRead,
     CustomerProfileUpdate,
     CustomerRegisterRequest,
+    NotificationDetailRead,
     NotificationListResponse,
     NotificationRead,
+    NotificationReadStateUpdate,
 )
 from app.services import (
     cart_service,
@@ -161,6 +163,49 @@ async def list_notifications(
     )
 
 
+@router.get("/notifications/{notification_id}", response_model=NotificationDetailRead)
+async def get_notification_detail(
+    db: DbSession,
+    user: CurrentUser,
+    notification_id: uuid.UUID,
+) -> NotificationDetailRead:
+    found = await notification_service.get_notification_detail(db, notification_id, user.id)
+    if found is None:
+        raise NotFoundError("Notification not found")
+    notif, order = found
+    return NotificationDetailRead(
+        id=notif.id,
+        user_id=notif.user_id,
+        order_id=notif.order_id,
+        type=notif.type,
+        title=notif.title,
+        message=notif.message,
+        is_read=notif.is_read,
+        language=notif.language,
+        created_at=notif.created_at,
+        updated_at=notif.updated_at,
+        order_number=order.number if order else None,
+        order_status=order.status if order else None,
+        courier_name=(order.courier_name or None) if order else None,
+        tracking_number=(order.tracking_number or None) if order else None,
+    )
+
+
+@router.patch("/notifications/{notification_id}", response_model=NotificationRead)
+async def update_notification_read_state(
+    db: DbSession,
+    user: CurrentUser,
+    notification_id: uuid.UUID,
+    payload: NotificationReadStateUpdate,
+) -> NotificationRead:
+    updated = await notification_service.set_read_state(
+        db, notification_id, user.id, is_read=payload.is_read
+    )
+    if updated is None:
+        raise NotFoundError("Notification not found")
+    return NotificationRead.model_validate(updated)
+
+
 @router.patch("/notifications/{notification_id}/read", response_model=Message)
 async def mark_notification_read(
     db: DbSession,
@@ -173,6 +218,18 @@ async def mark_notification_read(
     return Message(message="Notification marked as read")
 
 
+@router.patch("/notifications/{notification_id}/unread", response_model=Message)
+async def mark_notification_unread(
+    db: DbSession,
+    user: CurrentUser,
+    notification_id: uuid.UUID,
+) -> Message:
+    ok = await notification_service.mark_unread(db, notification_id, user.id)
+    if not ok:
+        raise NotFoundError("Notification not found")
+    return Message(message="Notification marked as unread")
+
+
 @router.post("/notifications/mark-all-read", response_model=Message)
 async def mark_all_notifications_read(
     db: DbSession,
@@ -180,15 +237,3 @@ async def mark_all_notifications_read(
 ) -> Message:
     count = await notification_service.mark_all_read(db, user.id)
     return Message(message=f"{count} notifications marked as read")
-
-
-@router.delete("/notifications/{notification_id}", response_model=Message)
-async def delete_notification(
-    db: DbSession,
-    user: CurrentUser,
-    notification_id: uuid.UUID,
-) -> Message:
-    ok = await notification_service.delete_notification(db, notification_id, user.id)
-    if not ok:
-        raise NotFoundError("Notification not found")
-    return Message(message="Notification deleted")

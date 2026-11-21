@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     # IPs or CIDRs of reverse proxies allowed to set the client address.
     # A direct caller is never trusted, even if it sends forwarding headers.
     trusted_proxies: CsvList = Field(default_factory=list)
-    access_token_expire_minutes: int = 30
+    access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 14
     # Bearer token a scraper must send to read /metrics. Empty: /metrics is disabled
     # (404) in every environment. SecretStr keeps it out of reprs and logs.

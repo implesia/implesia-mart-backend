@@ -702,21 +702,57 @@ async def test_notification_auto_purge_delete_and_triggers(
     assert len(after_bulk["items"]) == 2
     assert after_bulk["unread_count"] == 2
 
-    # 5. Individual notification delete (owner succeeds, non-owner returns 404)
-    del_other = await client.delete(
+    # 5. Customer CANNOT delete notifications (405), but CAN view detail & toggle read/unread
+    del_customer = await client.delete(
+        f"/api/v1/customer/notifications/{new_notif_id}", headers=cust_headers
+    )
+    assert del_customer.status_code == 405
+
+    # Single detail: owner gets order metadata, non-owner gets 404
+    detail_other = await client.get(
         f"/api/v1/customer/notifications/{other_fresh_id}", headers=cust_headers
     )
-    assert del_other.status_code == 404
+    assert detail_other.status_code == 404
 
-    del_own = await client.delete(
+    detail_own = await client.get(
         f"/api/v1/customer/notifications/{new_notif_id}", headers=cust_headers
     )
-    assert del_own.status_code == 200
+    assert detail_own.status_code == 200, detail_own.text
+    detail_body = detail_own.json()
+    assert detail_body["id"] == new_notif_id
+    assert detail_body["order_number"] == order_number
+    assert detail_body["order_status"] == "confirmed"
 
-    del_again = await client.delete(
-        f"/api/v1/customer/notifications/{new_notif_id}", headers=cust_headers
+    # Toggle Read -> Unread -> Read via PATCH
+    mark_r = await client.patch(
+        f"/api/v1/customer/notifications/{new_notif_id}",
+        headers=cust_headers,
+        json={"is_read": True},
     )
-    assert del_again.status_code == 404
+    assert mark_r.status_code == 200
+    assert mark_r.json()["is_read"] is True
+
+    mark_u = await client.patch(
+        f"/api/v1/customer/notifications/{new_notif_id}/unread",
+        headers=cust_headers,
+    )
+    assert mark_u.status_code == 200
+
+    # 6. Admin delete endpoint: customer is 403, staff editor/superadmin succeeds (204)
+    admin_del_cust = await client.delete(
+        f"/api/v1/admin/notifications/{new_notif_id}", headers=cust_headers
+    )
+    assert admin_del_cust.status_code == 403
+
+    admin_del_ok = await client.delete(
+        f"/api/v1/admin/notifications/{new_notif_id}", headers=auth_headers
+    )
+    assert admin_del_ok.status_code == 204
+
+    admin_del_again = await client.delete(
+        f"/api/v1/admin/notifications/{new_notif_id}", headers=auth_headers
+    )
+    assert admin_del_again.status_code == 404
 
     after_del = (await client.get("/api/v1/customer/notifications", headers=cust_headers)).json()
     assert len(after_del["items"]) == 1

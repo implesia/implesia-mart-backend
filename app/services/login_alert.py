@@ -34,7 +34,7 @@ def clear() -> None:
         _windows.clear()
 
 
-def _admin(email: str, role: UserRole | None) -> bool:
+def _admin(email: str, role: UserRole | str | None) -> bool:
     if email == settings.first_superuser_email.lower():
         return True
     return role == UserRole.SUPERADMIN
@@ -83,7 +83,7 @@ def _alert(kind: str, email: str, failures: int, window: int) -> None:
     )
 
 
-def record_failure(email: str, role: UserRole | None) -> list[str]:
+def record_failure(email: str, role: UserRole | str | None) -> list[str]:
     """Count this failure. Return the alert kinds this attempt crossed."""
     normalized = email.lower()
     LOGIN_FAILURES.inc()
@@ -102,7 +102,7 @@ def record_failure(email: str, role: UserRole | None) -> list[str]:
     return raised
 
 
-async def note_failure(email: str, role: UserRole | None) -> None:
+async def note_failure(email: str, role: UserRole | str | None) -> None:
     try:
         await asyncio.to_thread(record_failure, email, role)
     except Exception:

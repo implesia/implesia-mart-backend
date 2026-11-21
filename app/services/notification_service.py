@@ -32,8 +32,7 @@ TEMPLATES: dict[str, dict[str, dict[str, str]]] = {
         "shipped": {
             "title": "অর্ডার ডেলিভারির পথে",
             "message": (
-                "আপনার অর্ডার #{number} কুরিয়ারে হস্তান্তর করা হয়েছে। "
-                "কুরিয়ার: {courier} (ট্র্যাকিং: {tracking})।"
+                "আপনার অর্ডার #{number} কুরিয়ারে হস্তান্তর করা হয়েছে। কুরিয়ার: {courier} (ট্র্যাকিং: {tracking})।"
             ),
         },
         "delivered": {
@@ -46,8 +45,7 @@ TEMPLATES: dict[str, dict[str, dict[str, str]]] = {
         "cancelled": {
             "title": "অর্ডার বাতিল হয়েছে",
             "message": (
-                "আপনার অর্ডার #{number} বাতিল করা হয়েছে। "
-                "কোনো জিজ্ঞাসা থাকলে আমাদের সাপোর্টে যোগাযোগ করুন।"
+                "আপনার অর্ডার #{number} বাতিল করা হয়েছে। কোনো জিজ্ঞাসা থাকলে আমাদের সাপোর্টে যোগাযোগ করুন।"
             ),
         },
         "returned": {
@@ -82,8 +80,7 @@ TEMPLATES: dict[str, dict[str, dict[str, str]]] = {
         "cancelled": {
             "title": "Order Cancelled",
             "message": (
-                "Your order #{number} was cancelled. "
-                "Please contact support if you need help."
+                "Your order #{number} was cancelled. Please contact support if you need help."
             ),
         },
         "returned": {
@@ -239,15 +236,53 @@ async def get_user_notifications(
     return notifications, unread_count
 
 
-async def delete_notification(
+async def get_notification_detail(
     db: AsyncSession,
     notification_id: uuid.UUID,
     user_id: uuid.UUID,
-) -> bool:
-    stmt = delete(CustomerNotification).where(
-        CustomerNotification.id == notification_id,
-        CustomerNotification.user_id == user_id,
+) -> tuple[CustomerNotification, Order | None] | None:
+    cutoff = _retention_cutoff()
+    stmt = (
+        select(CustomerNotification, Order)
+        .outerjoin(Order, Order.id == CustomerNotification.order_id)
+        .where(
+            CustomerNotification.id == notification_id,
+            CustomerNotification.user_id == user_id,
+            CustomerNotification.created_at >= cutoff,
+        )
     )
+    row = (await db.execute(stmt)).one_or_none()
+    if row is None:
+        return None
+    return row[0], row[1]
+
+
+async def set_read_state(
+    db: AsyncSession,
+    notification_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    is_read: bool,
+) -> CustomerNotification | None:
+    notif = await db.scalar(
+        select(CustomerNotification).where(
+            CustomerNotification.id == notification_id,
+            CustomerNotification.user_id == user_id,
+        )
+    )
+    if notif is None:
+        return None
+    notif.is_read = is_read
+    await db.commit()
+    await db.refresh(notif)
+    return notif
+
+
+async def admin_delete_notification(
+    db: AsyncSession,
+    notification_id: uuid.UUID,
+) -> bool:
+    stmt = delete(CustomerNotification).where(CustomerNotification.id == notification_id)
     res = await db.execute(stmt)
     await db.commit()
     count = getattr(res, "rowcount", 0) or 0
@@ -259,18 +294,15 @@ async def mark_read(
     notification_id: uuid.UUID,
     user_id: uuid.UUID,
 ) -> bool:
-    stmt = (
-        update(CustomerNotification)
-        .where(
-            CustomerNotification.id == notification_id,
-            CustomerNotification.user_id == user_id,
-        )
-        .values(is_read=True)
-    )
-    res = await db.execute(stmt)
-    await db.commit()
-    count = getattr(res, "rowcount", 0) or 0
-    return bool(count > 0)
+    return (await set_read_state(db, notification_id, user_id, is_read=True)) is not None
+
+
+async def mark_unread(
+    db: AsyncSession,
+    notification_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> bool:
+    return (await set_read_state(db, notification_id, user_id, is_read=False)) is not None
 
 
 async def mark_all_read(db: AsyncSession, user_id: uuid.UUID) -> int:

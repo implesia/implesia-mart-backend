@@ -211,15 +211,19 @@ async def get_order_tracking(
         raise NotFoundError("Order not found")
 
     activity_rows = (
-        await db.execute(
-            select(OrderActivity)
-            .where(
-                OrderActivity.order_id == order.id,
-                OrderActivity.action == ActivityAction.STATUS_CHANGED.value,
+        (
+            await db.execute(
+                select(OrderActivity)
+                .where(
+                    OrderActivity.order_id == order.id,
+                    OrderActivity.action == ActivityAction.STATUS_CHANGED.value,
+                )
+                .order_by(OrderActivity.created_at.asc(), OrderActivity.id.asc())
             )
-            .order_by(OrderActivity.created_at.asc(), OrderActivity.id.asc())
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     step_timestamps: dict[str, datetime] = {
         OrderStatus.NEW.value: _as_utc(order.created_at),

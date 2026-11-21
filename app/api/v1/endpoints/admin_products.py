@@ -8,10 +8,11 @@ from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from app.api.deps import DbSession, RequireEditor, no_store, require_editor
+from app.api.deps import DbSession, no_store, require_module_access, require_module_for_method
 from app.core.config import settings
 from app.core.exceptions import ConflictError, UnprocessableError, payload_errors
 from app.core.logging import get_logger
+from app.models.user import User
 from app.rate_limit import limiter
 from app.schemas.badge import MAX_PER_PRODUCT
 from app.schemas.product import (
@@ -28,7 +29,9 @@ from app.schemas.product import (
 from app.schemas.report import ProductAnalyticsReport
 from app.services import category_service, product_service, report_service
 
-router = APIRouter(dependencies=[Depends(require_editor), Depends(no_store)])
+_ProductsWrite = Annotated[User, Depends(require_module_access("products", "write"))]
+
+router = APIRouter(dependencies=[Depends(require_module_for_method("products")), Depends(no_store)])
 
 _PAYLOAD_LIMIT = 200_000
 
@@ -528,9 +531,7 @@ async def create_product(
 
 
 @router.get("/{product_id}/analytics", response_model=ProductAnalyticsReport)
-async def read_product_analytics(
-    db: DbSession, product_id: uuid.UUID
-) -> ProductAnalyticsReport:
+async def read_product_analytics(db: DbSession, product_id: uuid.UUID) -> ProductAnalyticsReport:
     return await report_service.product_analytics(db, product_id)
 
 
@@ -549,7 +550,7 @@ async def read_product(db: DbSession, product_id: uuid.UUID) -> AdminProductRead
 async def update_product(
     request: Request,
     db: DbSession,
-    actor: RequireEditor,
+    actor: _ProductsWrite,
     product_id: uuid.UUID,
     payload: Annotated[str, Form()] = "{}",
     images: Annotated[list[UploadFile] | None, File()] = None,

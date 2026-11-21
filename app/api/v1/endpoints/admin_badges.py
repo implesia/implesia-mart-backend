@@ -1,9 +1,11 @@
 import uuid
+from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, Request, status
 
-from app.api.deps import DbSession, RequireSuperadmin, no_store, require_editor
+from app.api.deps import DbSession, no_store, require_module_access, require_module_for_method
 from app.core.config import settings
+from app.models.user import User
 from app.rate_limit import limiter
 from app.schemas.badge import (
     BadgeAdminList,
@@ -16,7 +18,9 @@ from app.schemas.badge import (
 )
 from app.services import badge_service
 
-router = APIRouter(dependencies=[Depends(require_editor), Depends(no_store)])
+_AuditDeleteFull = Annotated[User, Depends(require_module_access("audit_deletes", "full"))]
+
+router = APIRouter(dependencies=[Depends(require_module_for_method("products")), Depends(no_store)])
 
 
 @router.get("", response_model=BadgeAdminList)
@@ -35,7 +39,7 @@ async def create_badge(request: Request, db: DbSession, payload: BadgeWrite) -> 
 @router.get("/{badge_id}/delete-impact", response_model=BadgeDeleteImpact)
 async def badge_delete_impact(
     db: DbSession,
-    actor: RequireSuperadmin,
+    actor: _AuditDeleteFull,
     badge_id: uuid.UUID,
 ) -> BadgeDeleteImpact:
     del actor
@@ -63,7 +67,7 @@ async def update_badge(
 async def delete_badge(
     request: Request,
     db: DbSession,
-    actor: RequireSuperadmin,
+    actor: _AuditDeleteFull,
     badge_id: uuid.UUID,
     payload: BadgeDeleteRequest | None = Body(default=None),
 ) -> BadgeDeleteResult:

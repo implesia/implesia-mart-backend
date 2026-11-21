@@ -307,9 +307,7 @@ def _matching_line(scope: ReportScope) -> Any | None:
     return stmt.exists()
 
 
-def _order_filters(
-    scope: ReportScope, moment: Any, dialect: str, *extra: Any
-) -> list[Any]:
+def _order_filters(scope: ReportScope, moment: Any, dialect: str, *extra: Any) -> list[Any]:
     conds: list[Any] = [
         at_or_after(moment, scope.start, dialect),
         before(moment, scope.end, dialect),
@@ -393,9 +391,7 @@ async def _order_shipping(db: AsyncSession, scope: ReportScope) -> tuple[int, in
             select(func.count(), func.coalesce(func.sum(Order.shipping), 0))
             .select_from(Order)
             .where(
-                *_order_filters(
-                    scope, Order.delivered_at, dialect_name(db), _realized_order_cond()
-                )
+                *_order_filters(scope, Order.delivered_at, dialect_name(db), _realized_order_cond())
             )
         )
     ).one()
@@ -411,9 +407,7 @@ async def _order_collections(db: AsyncSession, scope: ReportScope) -> tuple[int,
             )
             .select_from(Order)
             .where(
-                *_order_filters(
-                    scope, Order.delivered_at, dialect_name(db), _realized_order_cond()
-                )
+                *_order_filters(scope, Order.delivered_at, dialect_name(db), _realized_order_cond())
             )
         )
     ).one()
@@ -915,9 +909,7 @@ async def _product_page(
     margin_expr = case(
         (
             and_(grouped.c.cost.is_not(None), func.coalesce(grouped.c.known_revenue, 0) > 0),
-            (
-                cast(grouped.c.known_revenue, num) - cast(grouped.c.cost, num)
-            )
+            (cast(grouped.c.known_revenue, num) - cast(grouped.c.cost, num))
             * 100.0
             / cast(grouped.c.known_revenue, num),
         )
@@ -968,9 +960,7 @@ async def _product_page(
     listed = select(grouped)
     if conds:
         listed = listed.where(*conds)
-    rows = (
-        await db.execute(listed.order_by(*order_map[sort]).offset(offset).limit(limit))
-    ).all()
+    rows = (await db.execute(listed.order_by(*order_map[sort]).offset(offset).limit(limit))).all()
     return [_product_row(row) for row in rows], total
 
 
@@ -1077,9 +1067,7 @@ def _group_profit_metrics(
     known_rev = max(bucket.known_merchandise - bucket.known_discount, 0)
     if bucket.cost is not None:
         cogs: Decimal | None = bucket.cost
-        net_val = (Decimal(known_rev) - bucket.cost).quantize(
-            _TWOPLACES, rounding=ROUND_HALF_UP
-        )
+        net_val = (Decimal(known_rev) - bucket.cost).quantize(_TWOPLACES, rounding=ROUND_HALF_UP)
         profit: Decimal | None = net_val
         margin: Decimal | None = (
             (net_val * Decimal(100) / Decimal(known_rev)).quantize(
@@ -1311,9 +1299,7 @@ async def supplier_report(
         if s_cogs is not None:
             known_rev_val = max(s_known_rev or 0, 0)
             row_cogs: Decimal | None = s_cogs
-            net_val = (Decimal(known_rev_val) - s_cogs).quantize(
-                _TWOPLACES, rounding=ROUND_HALF_UP
-            )
+            net_val = (Decimal(known_rev_val) - s_cogs).quantize(_TWOPLACES, rounding=ROUND_HALF_UP)
             row_profit: Decimal | None = net_val
             row_margin: Decimal | None = (
                 (net_val * Decimal(100) / Decimal(known_rev_val)).quantize(
@@ -1357,9 +1343,7 @@ async def supplier_report(
             )
         )
 
-    items.sort(
-        key=lambda r: (-r.sales_revenue, -r.total_purchase_spend, r.supplier_name.lower())
-    )
+    items.sort(key=lambda r: (-r.sales_revenue, -r.total_purchase_spend, r.supplier_name.lower()))
 
     if any_known_sales:
         report_cogs: Decimal | None = total_cogs_acc.quantize(_TWOPLACES, rounding=ROUND_HALF_UP)
@@ -1976,16 +1960,18 @@ async def sales_workbook(
 ) -> tuple[str, bytes]:
     summary = await sales_summary(db, request, now)
     scope = await _scope(db, request, now)
-    rows = [[
-        summary.order_count,
-        summary.units_sold,
-        summary.gross_sales,
-        summary.discount,
-        summary.coupon_discount,
-        summary.manual_discount,
-        summary.delivery_charge,
-        summary.net_sales,
-    ]]
+    rows = [
+        [
+            summary.order_count,
+            summary.units_sold,
+            summary.gross_sales,
+            summary.discount,
+            summary.coupon_discount,
+            summary.manual_discount,
+            summary.delivery_charge,
+            summary.net_sales,
+        ]
+    ]
     headers = [
         "Order count",
         "Units sold",
@@ -2015,17 +2001,19 @@ async def profit_workbook(
         "Unknown cost units",
         "Unknown cost revenue",
     ]
-    rows = [[
-        report.revenue,
-        report.cost,
-        report.profit,
-        report.loss_amount,
-        report.net_profit,
-        report.margin_percent,
-        report.unknown_cost_lines,
-        report.unknown_cost_units,
-        report.unknown_cost_revenue,
-    ]]
+    rows = [
+        [
+            report.revenue,
+            report.cost,
+            report.profit,
+            report.loss_amount,
+            report.net_profit,
+            report.margin_percent,
+            report.unknown_cost_lines,
+            report.unknown_cost_units,
+            report.unknown_cost_revenue,
+        ]
+    ]
     return _filename("profit", scope), _book("Profit", scope, headers, rows, True)
 
 
@@ -2053,25 +2041,27 @@ async def profit_loss_workbook(
         "Unknown cost units",
         "Unknown cost revenue",
     ]
-    rows = [[
-        report.gross_sales,
-        report.product_discount,
-        report.coupon_discount,
-        report.manual_discount,
-        report.delivery_charge,
-        report.returned_order_value,
-        report.net_realized_sales,
-        report.total_cost,
-        report.gross_profit,
-        report.loss_amount,
-        report.net_profit,
-        report.margin_percent,
-        report.collected_amount,
-        report.due_amount,
-        report.unknown_cost_lines,
-        report.unknown_cost_units,
-        report.unknown_cost_revenue,
-    ]]
+    rows = [
+        [
+            report.gross_sales,
+            report.product_discount,
+            report.coupon_discount,
+            report.manual_discount,
+            report.delivery_charge,
+            report.returned_order_value,
+            report.net_realized_sales,
+            report.total_cost,
+            report.gross_profit,
+            report.loss_amount,
+            report.net_profit,
+            report.margin_percent,
+            report.collected_amount,
+            report.due_amount,
+            report.unknown_cost_lines,
+            report.unknown_cost_units,
+            report.unknown_cost_revenue,
+        ]
+    ]
     return _filename("profit-loss", scope), _book("Profit and Loss", scope, headers, rows, True)
 
 
@@ -2159,36 +2149,38 @@ async def channel_workbook(
     ]
     rows: list[list[object]] = []
     for ch in report.channels:
-        rows.append([
-            "Origin",
-            f"{ch.origin} ({ch.channel})",
-            ch.order_count,
-            ch.units,
-            ch.net_sales,
-            ch.cogs,
-            ch.profit,
-            ch.margin_percent,
-            ch.collected,
-            ch.due,
-            ch.unknown_cost_units,
-        ])
+        rows.append(
+            [
+                "Origin",
+                f"{ch.origin} ({ch.channel})",
+                ch.order_count,
+                ch.units,
+                ch.net_sales,
+                ch.cogs,
+                ch.profit,
+                ch.margin_percent,
+                ch.collected,
+                ch.due,
+                ch.unknown_cost_units,
+            ]
+        )
     for pm in report.payment_methods:
-        rows.append([
-            "Payment method",
-            pm.payment_method,
-            pm.order_count,
-            pm.units,
-            pm.net_sales,
-            pm.cogs,
-            pm.profit,
-            pm.margin_percent,
-            pm.collected,
-            pm.due,
-            pm.unknown_cost_units,
-        ])
-    return _filename("channels", scope), _book(
-        "Channels and payments", scope, headers, rows, True
-    )
+        rows.append(
+            [
+                "Payment method",
+                pm.payment_method,
+                pm.order_count,
+                pm.units,
+                pm.net_sales,
+                pm.cogs,
+                pm.profit,
+                pm.margin_percent,
+                pm.collected,
+                pm.due,
+                pm.unknown_cost_units,
+            ]
+        )
+    return _filename("channels", scope), _book("Channels and payments", scope, headers, rows, True)
 
 
 async def supplier_workbook(
@@ -2229,24 +2221,24 @@ async def supplier_workbook(
         ]
         for item in report.items
     ]
-    rows.append([
-        "",
-        "Total",
-        "",
-        "",
-        "",
-        report.total_purchase_spend,
-        "",
-        report.total_sales_revenue,
-        report.total_cogs,
-        report.total_net_profit,
-        "",
-        "",
-        "",
-    ])
-    return _filename("suppliers", scope), _book(
-        "Suppliers performance", scope, headers, rows, True
+    rows.append(
+        [
+            "",
+            "Total",
+            "",
+            "",
+            "",
+            report.total_purchase_spend,
+            "",
+            report.total_sales_revenue,
+            report.total_cogs,
+            report.total_net_profit,
+            "",
+            "",
+            "",
+        ]
     )
+    return _filename("suppliers", scope), _book("Suppliers performance", scope, headers, rows, True)
 
 
 async def stock_workbook(
@@ -2333,26 +2325,30 @@ async def movement_workbook(
         "Adjustment",
         "Closing",
     ]
-    rows = [[
-        report.opening_balance,
-        report.opening,
-        report.purchase,
-        report.sale,
-        report.return_total,
-        report.cancel,
-        report.adjustment,
-        report.closing,
-    ]]
+    rows = [
+        [
+            report.opening_balance,
+            report.opening,
+            report.purchase,
+            report.sale,
+            report.return_total,
+            report.cancel,
+            report.adjustment,
+            report.closing,
+        ]
+    ]
     return _filename("movements", scope), _book(
         "Stock movements",
         scope,
         headers,
         rows,
         False,
-        extra=[[
-            "Note",
-            "Sale is negative. Closing is the sum of every movement before the end date.",
-        ]],
+        extra=[
+            [
+                "Note",
+                "Sale is negative. Closing is the sum of every movement before the end date.",
+            ]
+        ],
     )
 
 
@@ -2362,24 +2358,28 @@ async def delivery_workbook(
     report = await delivery_report(db, request, now)
     scope = await _scope(db, request, now)
     headers = ["Delivered", "Returned", "Returned value", "Cancelled", "Return rate percent"]
-    rows = [[
-        report.delivered,
-        report.returned,
-        report.returned_value,
-        report.cancelled,
-        report.return_rate_percent,
-    ]]
+    rows = [
+        [
+            report.delivered,
+            report.returned,
+            report.returned_value,
+            report.cancelled,
+            report.return_rate_percent,
+        ]
+    ]
     return _filename("delivery", scope), _book(
         "Delivery and returns",
         scope,
         headers,
         rows,
         True,
-        extra=[[
-            "Note",
-            "Delivered uses delivered_at, returned uses returned_at, "
-            "cancelled uses updated_at while status is cancelled.",
-        ]],
+        extra=[
+            [
+                "Note",
+                "Delivered uses delivered_at, returned uses returned_at, "
+                "cancelled uses updated_at while status is cancelled.",
+            ]
+        ],
     )
 
 
@@ -2460,8 +2460,7 @@ async def coupon_workbook(
     scope = await _scope(db, request, now)
     headers = ["Code", "Times used", "Total discount", "Total sales"]
     rows: list[list[object]] = [
-        [item.code, item.times_used, item.total_discount, item.total_sales]
-        for item in report.items
+        [item.code, item.times_used, item.total_discount, item.total_sales] for item in report.items
     ]
     rows.append(["Total", report.times_used, report.total_discount, report.total_sales])
     return _filename("coupons", scope), _book(
@@ -2470,12 +2469,14 @@ async def coupon_workbook(
         headers,
         rows,
         False,
-        extra=[[
-            "Note",
-            "Counts active redemptions placed in the window. "
-            "Cancelled orders are omitted. Returned orders stay. "
-            "Total sales is the order total after the coupon, including delivery.",
-        ]],
+        extra=[
+            [
+                "Note",
+                "Counts active redemptions placed in the window. "
+                "Cancelled orders are omitted. Returned orders stay. "
+                "Total sales is the order total after the coupon, including delivery.",
+            ]
+        ],
     )
 
 

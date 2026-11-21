@@ -181,6 +181,17 @@ class NotificationRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class NotificationDetailRead(NotificationRead):
+    order_number: str | None = None
+    order_status: str | None = None
+    courier_name: str | None = None
+    tracking_number: str | None = None
+
+
+class NotificationReadStateUpdate(BaseModel):
+    is_read: bool
+
+
 class NotificationListResponse(BaseModel):
     items: list[NotificationRead]
     unread_count: int
@@ -228,4 +239,3 @@ class OrderTrackingDetail(BaseModel):
 
 class CartMergeRequest(BaseModel):
     guest_token: str
-

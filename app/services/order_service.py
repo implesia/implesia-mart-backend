@@ -653,6 +653,7 @@ async def create_order(
     user_id = shopper.user.id if shopper.user is not None else None
     if user_id is None and payload.phone:
         from app.services.customer_auth_service import normalize_bd_phone
+
         norm_phone = normalize_bd_phone(payload.phone)
         if norm_phone:
             matched_user = await db.scalar(select(User).where(User.phone == norm_phone))

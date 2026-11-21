@@ -279,9 +279,7 @@ async def get_supplier(db: AsyncSession, supplier_id: uuid.UUID) -> SupplierRead
     return _supplier_read(await _supplier(db, supplier_id))
 
 
-async def create_supplier(
-    db: AsyncSession, payload: SupplierCreate, actor: User
-) -> SupplierRead:
+async def create_supplier(db: AsyncSession, payload: SupplierCreate, actor: User) -> SupplierRead:
     del actor
     row = Supplier(
         id=uuid.uuid4(),
@@ -314,9 +312,7 @@ async def update_supplier(
     return _supplier_read(row)
 
 
-async def supplier_delete_impact(
-    db: AsyncSession, supplier_id: uuid.UUID
-) -> SupplierDeleteImpact:
+async def supplier_delete_impact(db: AsyncSession, supplier_id: uuid.UUID) -> SupplierDeleteImpact:
     row = await _supplier(db, supplier_id)
     purchase_row = (
         await db.execute(
@@ -348,8 +344,7 @@ async def supplier_delete_impact(
         total_purchase_amount=_money(Decimal(str(purchase_row[1] or 0))),
         linked_products_count=linked_products_count,
         available_merge_targets=[
-            SupplierMergeTarget(id=t[0], name=str(t[1]), phone=str(t[2] or ""))
-            for t in target_rows
+            SupplierMergeTarget(id=t[0], name=str(t[1]), phone=str(t[2] or "")) for t in target_rows
         ],
     )
 
@@ -519,9 +514,7 @@ async def create_purchase(
         raise NotFoundError("Supplier not found")
     lines: list[tuple[uuid.UUID, uuid.UUID | None, int, Decimal]] = []
     for item in payload.items:
-        product, variant, errors = await _resolve_target(
-            db, item.product_id, "", item.variant_id
-        )
+        product, variant, errors = await _resolve_target(db, item.product_id, "", item.variant_id)
         if errors or product is None:
             raise UnprocessableError(errors[0] if errors else "Product not found")
         _require_bucket(product, variant)
@@ -609,9 +602,7 @@ async def adjust_stock(
     background: BackgroundTasks | None = None,
 ) -> MovementRead:
     telegram_notify.discard_low_stock(db)
-    product, variant, errors = await _resolve_target(
-        db, payload.product_id, "", payload.variant_id
-    )
+    product, variant, errors = await _resolve_target(db, payload.product_id, "", payload.variant_id)
     if errors or product is None:
         raise UnprocessableError(errors[0] if errors else "Product not found")
     _require_bucket(product, variant)
@@ -730,9 +721,7 @@ def import_template(kind: str) -> tuple[str, bytes]:
     return f"{kind.replace('_', '-')}-template.xlsx", template_bytes(kind)
 
 
-async def preview_import(
-    db: AsyncSession, kind: str, data: bytes, filename: str
-) -> ImportPreview:
+async def preview_import(db: AsyncSession, kind: str, data: bytes, filename: str) -> ImportPreview:
     rows = await _classify(db, kind, data, filename)
     digest = file_hash(data)
     duplicate = await _hash_seen(db, digest)
@@ -946,9 +935,7 @@ async def _import_costs(
         await _persist_bucket(db, bucket, actor_id)
 
 
-async def _classify(
-    db: AsyncSession, kind: str, data: bytes, filename: str
-) -> list[ClassifiedRow]:
+async def _classify(db: AsyncSession, kind: str, data: bytes, filename: str) -> list[ClassifiedRow]:
     columns = _COLUMNS.get(kind)
     if columns is None:
         raise UnprocessableError("Unknown import type")
@@ -1080,8 +1067,10 @@ async def _decide_rows(db: AsyncSession, kind: str, rows: list[ClassifiedRow]) -
         if product is None:
             row.errors.append("No product matches this product_id.")
             continue
-        variant_key = None if kind == ImportKind.COST_PRICE.value else (
-            variant.id if variant is not None else None
+        variant_key = (
+            None
+            if kind == ImportKind.COST_PRICE.value
+            else (variant.id if variant is not None else None)
         )
         key = (product.id, variant_key)
         if kind != ImportKind.PURCHASES.value and key in seen:
@@ -1529,10 +1518,7 @@ async def _export_purchases(db: AsyncSession, query: DateRangeQuery) -> bytes:
     _cap(len(purchases))
     names = await _supplier_names(db, [row.supplier_id for row in purchases])
     variant_ids = [
-        item.variant_id
-        for purchase in purchases
-        for item in purchase.items
-        if item.variant_id
+        item.variant_id for purchase in purchases for item in purchase.items if item.variant_id
     ]
     skus = await _skus(db, variant_ids)
     exported: list[list[object]] = []
@@ -1624,9 +1610,7 @@ def _day_end(day: date) -> datetime:
 
 def _cap(count: int) -> None:
     if count > MAX_EXPORT_ROWS:
-        raise UnprocessableError(
-            "Narrow the date range. An export can contain at most 20000 rows."
-        )
+        raise UnprocessableError("Narrow the date range. An export can contain at most 20000 rows.")
 
 
 def _contains(term: str) -> str:
@@ -1666,9 +1650,7 @@ async def _supplier(db: AsyncSession, supplier_id: uuid.UUID) -> Supplier:
 async def _purchase(db: AsyncSession, purchase_id: uuid.UUID) -> Purchase:
     row = (
         await db.scalars(
-            select(Purchase)
-            .where(Purchase.id == purchase_id)
-            .options(selectinload(Purchase.items))
+            select(Purchase).where(Purchase.id == purchase_id).options(selectinload(Purchase.items))
         )
     ).first()
     if row is None:
@@ -1719,9 +1701,7 @@ async def _supplier_names(db: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.U
     return {row.id: row.name for row in rows}
 
 
-async def _movement_reads(
-    db: AsyncSession, rows: Sequence[StockMovement]
-) -> list[MovementRead]:
+async def _movement_reads(db: AsyncSession, rows: Sequence[StockMovement]) -> list[MovementRead]:
     product_ids = [row.product_id for row in rows if row.product_id is not None]
     products: dict[uuid.UUID, Product] = {}
     if product_ids:

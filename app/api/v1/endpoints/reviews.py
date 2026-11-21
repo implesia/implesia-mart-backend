@@ -21,9 +21,7 @@ async def list_product_reviews(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=50),
 ) -> ProductReviewPage:
-    return await review_service.get_product_reviews(
-        db, product_id, page=page, page_size=page_size
-    )
+    return await review_service.get_product_reviews(db, product_id, page=page, page_size=page_size)
 
 
 @router.get("/products/{product_id}/can-review", response_model=CanReviewResponse)
