@@ -2,6 +2,10 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Daily Handoff & Cross-Device Sync Doc (2026-11-21).**
+  - Added `docs/HANDOFF.md` consolidating today's Planning decisions (Customer Platform Phases 6–10, SaaS Admin Phases A–G, Notification Architecture audit, Bengali communication preference), backend & frontend implementation summary, DevOps live audit & production deployment runbook, pending backlog, and Home Laptop resume steps.
+  - Files touched: `docs/HANDOFF.md`, `docs/CHANGELOG.md`. Matching handoff added in `implesia-mart`.
+
 - **Phase C Admin-Only Safe Deletion, Impact Analysis & Reconciliation (2026-11-21). Done (not live).** Strict `RequireSuperadmin` RBAC, atomic transactions, no new migrations.
   - **Orders (`app/api/v1/endpoints/admin_orders.py`, `app/services/order_admin_service.py`, `app/schemas/order.py`):**
     - Added `GET /api/v1/admin/orders/{order_id}/delete-impact` (`RequireSuperadmin`) returning order summary, held stock restore items, movement count, coupon redemption code, review/notification counts, and report impact warning.
