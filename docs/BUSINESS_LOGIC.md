@@ -7,7 +7,7 @@ Rules enforced by the API, per feature. Code locations are given so the rule can
 - Staff roles: `superadmin` > `editor` > `viewer` (`app/api/deps.py`, `require_role`).
 - Admin writes need `editor` or higher. `viewer` can sign in but gets 403 on admin routers guarded by `require_editor`.
 - Users and audit events need `superadmin`.
-- Shoppers are anonymous. Guest carts use the `X-Cart-Token` header.
+- Shoppers may browse and check out as guests (guest carts use the `X-Cart-Token` header) or sign in with a `customer` role account (`Authorization: Bearer …`) for persistent account carts, order history, notifications, and verified product reviews.
 
 ## Errors contract
 

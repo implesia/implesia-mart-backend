@@ -15,18 +15,24 @@ from app.services.site_header_defaults import DEFAULT_ITEMS
 pytestmark = pytest.mark.postgres
 
 MIGRATION = Path(__file__).parents[2] / "alembic" / "versions" / "0082_site_header.py"
+MIGRATION_0100 = Path(__file__).parents[2] / "alembic" / "versions" / "0100_site_header_logo.py"
 
 
-def _migration():  # type: ignore[no-untyped-def]
-    spec = importlib.util.spec_from_file_location("migration_0082", MIGRATION)
+def _migration(path: Path = MIGRATION, name: str = "migration_0082"):  # type: ignore[no-untyped-def]
+    spec = importlib.util.spec_from_file_location(name, path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-async def _run(db: AsyncSession, direction: str) -> None:
-    module = _migration()
+async def _run(
+    db: AsyncSession,
+    direction: str,
+    path: Path = MIGRATION,
+    name: str = "migration_0082",
+) -> None:
+    module = _migration(path, name)
 
     def go(sync_conn) -> None:  # type: ignore[no-untyped-def]
         with Operations.context(MigrationContext.configure(sync_conn)):
@@ -51,8 +57,6 @@ async def test_0082_creates_the_table_serves_defaults_and_rolls_back(
         await _run(db, "upgrade")
         assert await _exists(db)
         assert (await db.execute(text("SELECT count(*) FROM site_header"))).scalar_one() == 0
-        live = await site_header_service.public_view(db)  # empty table: the previous menu
-        assert [item.href for item in live.items] == [i["href"] for i in DEFAULT_ITEMS]
 
         # Column defaults make a bare insert valid and still render the defaults.
         await db.execute(text("INSERT INTO site_header (id, slug) VALUES (gen_random_uuid(), 'x')"))
@@ -64,4 +68,7 @@ async def test_0082_creates_the_table_serves_defaults_and_rolls_back(
         await _run(db, "downgrade")
         assert not await _exists(db)
         await _run(db, "upgrade")
+        await _run(db, "upgrade", MIGRATION_0100, "migration_0100")
         assert await _exists(db)
+        live = await site_header_service.public_view(db)  # empty table: the previous menu
+        assert [item.href for item in live.items] == [i["href"] for i in DEFAULT_ITEMS]

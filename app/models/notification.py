@@ -14,6 +14,7 @@ class CustomerNotification(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         Index("ix_customer_notifications_user_id_created_at", "user_id", "created_at"),
         Index("ix_customer_notifications_user_id_is_read", "user_id", "is_read"),
+        Index("ix_customer_notifications_order_id", "order_id"),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(

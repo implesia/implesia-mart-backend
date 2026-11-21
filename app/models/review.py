@@ -21,6 +21,7 @@ class ProductReview(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "created_at",
         ),
         Index("ix_product_reviews_user_product", "user_id", "product_id"),
+        Index("ix_product_reviews_order_id", "order_id"),
     )
 
     product_id: Mapped[uuid.UUID] = mapped_column(

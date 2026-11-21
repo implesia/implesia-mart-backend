@@ -2,6 +2,11 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **QA & Migration Polish (2026-11-21). Done (not live).**
+  - **Migration 0104 (`alembic/versions/0104_index_customer_order_fks.py`):** Additive-only indexes `ix_customer_notifications_order_id` and `ix_product_reviews_order_id` (and matching SQLAlchemy model indexes on `CustomerNotification` and `ProductReview`) so every foreign key column leads an index.
+  - Updated `tests/integration/test_site_header_migration.py` to apply migration `0100` before calling `site_header_service.public_view` so the integration suite leaves the schema at HEAD.
+  - Files touched: `alembic/versions/0104_index_customer_order_fks.py`, `app/models/notification.py`, `app/models/review.py`, `tests/integration/test_site_header_migration.py`, `docs/TODO.md`, `docs/CHANGELOG.md`, `docs/BUSINESS_LOGIC.md`.
+
 - **Phase 6 Customer Dashboard Backend Upgrades (2026-11-21). Done (not live).** Additive-only, no new migrations.
   - **Dashboard Summary (`GET /api/v1/customer/dashboard-summary`):** Added `delivered_orders`, `cancelled_orders`, `total_products_purchased` (sum of `OrderItem.quantity` across non-cancelled/non-returned orders), and `unread_notifications` (count within the last 30 days) alongside existing `total_orders`, `active_orders`, `total_spent`, `customer_name`, `phone`, and `email`. Moved query logic into `customer_purchased_service.get_dashboard_summary`.
   - **Profile & Avatar:**
