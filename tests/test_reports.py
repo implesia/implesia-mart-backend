@@ -163,14 +163,17 @@ async def test_reports_count_delivered_at_and_keep_unknown_cost(
     assert body["filters"]["from"] == "2026-11-09"
     assert body["filters"]["to"] == "2026-11-09"
     assert body["filters"]["timezone"] == "Asia/Dhaka"
-    assert body["order_count"] == 2
-    nov9_items = early["items"] + returned["items"]
+    assert body["order_count"] == 1
+    # Returned order is excluded from realized sales, units, shipping, COGS, and profit.
+    nov9_items = early["items"]
     gross = sum(_gross(item) for item in nov9_items)
     merchandise = sum(item["line_total"] for item in nov9_items)
-    shipping = early["shipping"] + returned["shipping"]
-    assert body["units_sold"] == 3
+    shipping = early["shipping"]
+    assert body["units_sold"] == 2
     assert body["gross_sales"] == gross
     assert body["discount"] == gross - merchandise
+    assert body["coupon_discount"] == 0
+    assert body["manual_discount"] == 0
     assert body["delivery_charge"] == shipping
     assert body["net_sales"] == merchandise + shipping
     # The pending order and the order delivered at Dhaka midnight are outside this day.
@@ -191,9 +194,9 @@ async def test_reports_count_delivered_at_and_keep_unknown_cost(
     earned = profit.json()
     assert earned["unknown_cost_lines"] == 0
     assert earned["unknown_cost_units"] == 0
-    assert earned["cost"] == 121.5
+    assert earned["cost"] == 81.0
     assert earned["revenue"] == merchandise
-    assert earned["profit"] == round(merchandise - 121.5, 2)
+    assert earned["profit"] == round(merchandise - 81.0, 2)
     # Current product cost is 99. The report did not use it.
 
     unknown_profit = await client.get(
@@ -229,9 +232,10 @@ async def test_reports_count_delivered_at_and_keep_unknown_cost(
     )
     assert products.status_code == 200, products.text
     rows = {row["title"]: row for row in products.json()["items"]}
-    assert rows["Known lamp"]["units_sold"] == 3
+    assert rows["Known lamp"]["units_sold"] == 2
     assert rows["Known lamp"]["return_count"] == 1
-    assert rows["Known lamp"]["cost"] == 121.5
+    assert rows["Known lamp"]["return_value"] == returned["items"][0]["line_total"]
+    assert rows["Known lamp"]["cost"] == 81.0
     assert "Unknown lamp" not in rows
 
     delivery = await client.get(
@@ -241,6 +245,7 @@ async def test_reports_count_delivered_at_and_keep_unknown_cost(
     flow = delivery.json()
     assert flow["delivered"] == 2
     assert flow["returned"] == 1
+    assert flow["returned_value"] == returned["total"]
     assert flow["cancelled"] == 1
     assert flow["return_rate_percent"] == 50
 

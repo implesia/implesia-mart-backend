@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -69,3 +70,36 @@ class BadgeAdminRead(BadgeRef):
 
 class BadgeAdminList(BaseModel):
     items: list[BadgeAdminRead]
+
+
+class BadgeSampleProduct(BaseModel):
+    id: uuid.UUID
+    title: str
+
+
+class BadgeMergeTarget(BaseModel):
+    id: uuid.UUID
+    name: str
+    slug: str
+
+
+class BadgeDeleteImpact(BaseModel):
+    badge_name: str
+    is_system: bool
+    linked_products_count: int
+    sample_products: list[BadgeSampleProduct]
+    available_merge_targets: list[BadgeMergeTarget]
+
+
+class BadgeDeleteRequest(WriteModel):
+    mode: Literal["unlink", "merge"] = "unlink"
+    target_badge_id: uuid.UUID | None = None
+
+
+class BadgeDeleteResult(BaseModel):
+    message: str = "Badge deleted"
+    deleted_badge_id: uuid.UUID
+    deleted_badge_name: str
+    mode: Literal["unlink", "merge"]
+    affected_products_count: int
+    target_badge_id: uuid.UUID | None = None

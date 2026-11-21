@@ -3,10 +3,10 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Form, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
-from app.api.deps import CurrentUser, DbSession, RequireEditor, no_store
+from app.api.deps import CurrentUser, DbSession, RequireEditor, RequireSuperadmin, no_store
 from app.core.config import settings
 from app.core.exceptions import UnprocessableError
 from app.models.inventory import ImportKind
@@ -26,6 +26,9 @@ from app.schemas.inventory import (
     PurchaseQuery,
     PurchaseRead,
     SupplierCreate,
+    SupplierDeleteImpact,
+    SupplierDeleteRequest,
+    SupplierDeleteResult,
     SupplierList,
     SupplierQuery,
     SupplierRead,
@@ -74,16 +77,27 @@ async def update_supplier(
     return await inventory_service.update_supplier(db, supplier_id, payload, actor)
 
 
-@router.delete("/suppliers/{supplier_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.get("/suppliers/{supplier_id}/delete-impact", response_model=SupplierDeleteImpact)
+async def supplier_delete_impact(
+    db: DbSession,
+    actor: RequireSuperadmin,
+    supplier_id: uuid.UUID,
+) -> SupplierDeleteImpact:
+    del actor
+    return await inventory_service.supplier_delete_impact(db, supplier_id)
+
+
+@router.delete("/suppliers/{supplier_id}", response_model=SupplierDeleteResult)
 @limiter.limit(settings.rate_limit_product_writes)
 async def delete_supplier(
     request: Request,
     db: DbSession,
-    actor: RequireEditor,
+    actor: RequireSuperadmin,
     supplier_id: uuid.UUID,
-) -> None:
+    payload: SupplierDeleteRequest | None = Body(default=None),
+) -> SupplierDeleteResult:
     del request
-    await inventory_service.delete_supplier(db, supplier_id, actor)
+    return await inventory_service.delete_supplier(db, supplier_id, actor, payload=payload)
 
 
 @router.get("/purchases", response_model=PurchaseList)

@@ -9,15 +9,21 @@ from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentUser, DbSession, no_store
 from app.schemas.report import (
+    ChannelBreakdownReport,
     CouponReport,
     DeliveryReport,
     MovementReport,
+    OrderOriginFilter,
     ProductReport,
+    ProductReportSort,
+    ProfitFilter,
+    ProfitLossReport,
     ProfitReport,
     ReportGrain,
     ReportPreset,
     SalesSummary,
     StockReport,
+    SupplierPerformanceReport,
     TrendReport,
 )
 from app.services import report_service
@@ -33,8 +39,12 @@ def _request(
     end: Annotated[date | None, Query(alias="to")] = None,
     product_id: Annotated[uuid.UUID | None, Query()] = None,
     category_id: Annotated[uuid.UUID | None, Query()] = None,
+    supplier_id: Annotated[uuid.UUID | None, Query()] = None,
     channel: Annotated[str | None, Query(max_length=32)] = None,
+    origin: Annotated[OrderOriginFilter | None, Query()] = None,
+    profit_filter: Annotated[ProfitFilter | None, Query()] = None,
     grain: Annotated[ReportGrain | None, Query()] = None,
+    sort: Annotated[ProductReportSort | None, Query()] = None,
 ) -> ReportRequest:
     return ReportRequest(
         preset=preset,
@@ -42,8 +52,12 @@ def _request(
         date_to=end,
         product_id=product_id,
         category_id=category_id,
+        supplier_id=supplier_id,
         channel=channel,
+        origin=origin,
+        profit_filter=profit_filter,
         grain=grain,
+        sort=sort,
     )
 
 
@@ -88,6 +102,23 @@ async def export_profit(
     return _xlsx(name, payload)
 
 
+@router.get("/profit-loss", response_model=ProfitLossReport)
+async def read_profit_loss(
+    user: CurrentUser, db: DbSession, request: ReportArgs
+) -> ProfitLossReport:
+    del user
+    return await report_service.profit_loss_report(db, request)
+
+
+@router.get("/profit-loss/export")
+async def export_profit_loss(
+    user: CurrentUser, db: DbSession, request: ReportArgs
+) -> StreamingResponse:
+    del user
+    name, payload = await report_service.profit_loss_workbook(db, request)
+    return _xlsx(name, payload)
+
+
 @router.get("/products", response_model=ProductReport)
 async def read_products(
     user: CurrentUser,
@@ -108,6 +139,40 @@ async def export_products(
 ) -> StreamingResponse:
     del user
     name, payload = await report_service.product_workbook(db, request)
+    return _xlsx(name, payload)
+
+
+@router.get("/channels", response_model=ChannelBreakdownReport)
+async def read_channels(
+    user: CurrentUser, db: DbSession, request: ReportArgs
+) -> ChannelBreakdownReport:
+    del user
+    return await report_service.channel_report(db, request)
+
+
+@router.get("/channels/export")
+async def export_channels(
+    user: CurrentUser, db: DbSession, request: ReportArgs
+) -> StreamingResponse:
+    del user
+    name, payload = await report_service.channel_workbook(db, request)
+    return _xlsx(name, payload)
+
+
+@router.get("/suppliers", response_model=SupplierPerformanceReport)
+async def read_suppliers(
+    user: CurrentUser, db: DbSession, request: ReportArgs
+) -> SupplierPerformanceReport:
+    del user
+    return await report_service.supplier_report(db, request)
+
+
+@router.get("/suppliers/export")
+async def export_suppliers(
+    user: CurrentUser, db: DbSession, request: ReportArgs
+) -> StreamingResponse:
+    del user
+    name, payload = await report_service.supplier_workbook(db, request)
     return _xlsx(name, payload)
 
 

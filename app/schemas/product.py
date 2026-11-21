@@ -471,6 +471,11 @@ class ProductContent(BaseModel):
 MAX_VARIANTS = 100
 
 
+class SupplierRef(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
 class VariantInput(BaseModel):
     """One variant as the dashboard sends it. `id` is set when editing an existing variant."""
 
@@ -481,6 +486,7 @@ class VariantInput(BaseModel):
     sku: str = ""
     price: int = Field(ge=0, le=MAX_PRICE)
     compare_at_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
+    cost_price: CostPrice | None = None
     quantity: int | None = Field(default=None, ge=0, le=MAX_QUANTITY)
     is_active: bool = True
 
@@ -514,6 +520,7 @@ class VariantRead(BaseModel):
     sku: str
     price: int
     compare_at_price: int | None
+    cost_price: CostPrice | None = None
     quantity: int | None
     is_active: bool
     sort_order: int
@@ -540,6 +547,8 @@ class ProductCreate(BaseModel):
     # Assign by id (preferred) or by slug. The slug form keeps `gadgets` / `fashion` working.
     category_id: uuid.UUID | None = None
     category: str | None = Field(default=None, max_length=80)
+    # Optional primary supplier for admin catalog/purchasing. Never public.
+    supplier_id: uuid.UUID | None = None
     # Required to publish. A draft (`published: false`) may leave it out; it is stored as 0.
     price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     compare_at_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
@@ -651,6 +660,8 @@ class ProductUpdate(BaseModel):
     subtitle: str | None = None
     category_id: uuid.UUID | None = None
     category: str | None = Field(default=None, max_length=80)
+    # Omitted = keep. Null clears it.
+    supplier_id: uuid.UUID | None = None
     price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     compare_at_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     # Omitted = keep. Null clears it.
@@ -747,6 +758,9 @@ class AdminProductCard(BaseModel):
     category_slug: str
     category_name: str
     category_path: list[CategoryRef]
+    supplier_id: uuid.UUID | None = None
+    supplier_name: str | None = None
+    supplier: SupplierRef | None = None
     price: int
     compare_at_price: int | None
     cost_price: CostPrice | None = None
@@ -950,6 +964,7 @@ class AdminProductQuery(BaseModel):
     q: str | None = Field(default=None, max_length=80)
     category: str | None = Field(default=None, max_length=80)
     category_id: uuid.UUID | None = None
+    supplier_id: uuid.UUID | None = None
     include_descendants: bool = True
     status: StockStatus | None = None
     visibility: Visibility | None = None

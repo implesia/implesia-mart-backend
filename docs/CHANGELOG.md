@@ -2,6 +2,80 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Phase C Admin-Only Safe Deletion, Impact Analysis & Reconciliation (2026-11-21). Done (not live).** Strict `RequireSuperadmin` RBAC, atomic transactions, no new migrations.
+  - **Orders (`app/api/v1/endpoints/admin_orders.py`, `app/services/order_admin_service.py`, `app/schemas/order.py`):**
+    - Added `GET /api/v1/admin/orders/{order_id}/delete-impact` (`RequireSuperadmin`) returning order summary, held stock restore items, movement count, coupon redemption code, review/notification counts, and report impact warning.
+    - Added `DELETE /api/v1/admin/orders/{order_id}` (`RequireSuperadmin`, body `{confirm: true, reconcile_stock: bool = true, reason: str}`): atomically locks products/variants, restores held stock AND inserts offsetting positive `adjustment` rows into `stock_movements` (keeping `sum(movements) == on_hand`), writes a full `ORDER_DELETED` audit snapshot in `audit_events`, cleans up cascading order children while nulling `order_id` on historical movements/reviews/notifications, and returns `{deleted_order_number, stock_restored_units, coupon_released, reports_synced}`.
+  - **Badges (`app/api/v1/endpoints/admin_badges.py`, `app/services/badge_service.py`, `app/schemas/badge.py`):**
+    - Restricted `DELETE /api/v1/admin/badges/{badge_id}` to `RequireSuperadmin` and added `GET /api/v1/admin/badges/{badge_id}/delete-impact` (`RequireSuperadmin`).
+    - Upgraded `DELETE /api/v1/admin/badges/{badge_id}` with optional body `{mode: "unlink" | "merge" = "unlink", target_badge_id}`: protects `is_system=True` badges (409), merges or unlinks `ProductBadgeLink` rows (deduplicating products that already carry the target badge), recomputes `products.badge`, logs `BADGE_DELETED` in `audit_events`, and deletes atomically.
+  - **Suppliers (`app/api/v1/endpoints/admin_inventory.py`, `app/services/inventory_service.py`, `app/schemas/inventory.py`):**
+    - Restricted `DELETE /api/v1/admin/inventory/suppliers/{supplier_id}` to `RequireSuperadmin` and added `GET /api/v1/admin/inventory/suppliers/{supplier_id}/delete-impact` (`RequireSuperadmin`).
+    - Upgraded `DELETE /api/v1/admin/inventory/suppliers/{supplier_id}` with optional body `{mode: "merge" | "archive" | "hard_delete" = "archive", target_supplier_id, reason, unlink_products}`: `merge` moves all purchases & products atomically to `target_supplier_id`, logs `SUPPLIER_MERGED`, and hard-deletes the old supplier; `archive` soft-deletes while preserving purchases and unlinking products; `hard_delete` is allowed only when `purchases_count == 0` (409 otherwise).
+  - Files touched:
+    - `app/models/audit_event.py`
+    - `app/schemas/order.py`, `app/schemas/badge.py`, `app/schemas/inventory.py`
+    - `app/services/order_admin_service.py`, `app/services/badge_service.py`, `app/services/inventory_service.py`
+    - `app/api/v1/endpoints/admin_orders.py`, `app/api/v1/endpoints/admin_badges.py`, `app/api/v1/endpoints/admin_inventory.py`
+    - `tests/test_phase_c_safe_delete.py`, `tests/test_product_badges.py`, `tests/test_inventory.py`, `tests/test_phase_a_accounting.py`
+    - `docs/CHANGELOG.md`, `docs/API.md`, `docs/BUSINESS_LOGIC.md`, `docs/TODO.md`
+  - Frontend (`implesia-mart`):
+    - Only `superadmin` users should see Delete controls for Orders, Badges, and Suppliers; call the `/delete-impact` preview endpoint before confirming deletion/merge/archive.
+    - `DELETE /api/v1/admin/inventory/suppliers/{id}` now returns `200 OK` with `SupplierDeleteResult` instead of `204`.
+
+- **Phase B SaaS Reporting APIs & Product Analytics (2026-11-21). Done (not live).** SQL aggregates only, no new migrations.
+  - **Expanded Report Presets & Filters (`app/schemas/report.py`, `app/services/report_service.py`, `app/api/v1/endpoints/admin_reports.py`):**
+    - Expanded `preset` across all report endpoints to `today`, `7d`, `this_week`, `this_month`, `last_month`, `this_year`.
+    - Added optional `supplier_id`, `origin` (`online` / `offline`), and `profit_filter` (`all` / `profit` / `loss` / `unknown_cost`) across report endpoints, plus `sort` (`revenue`, `profit`, `margin`, `units_sold`, `cost`, `stock_value`) on `/products` and `/products/export`.
+  - **Profit & Loss Summary (`GET /api/v1/admin/reports/profit-loss` + `/export`) & Upgraded `ProfitReport`:**
+    - Returns full P&L waterfall: `gross_sales`, `product_discount`, `coupon_discount`, `manual_discount`, `delivery_charge`, `returned_order_value`, `net_realized_sales`, `total_cost` (COGS), `gross_profit`, `loss_amount` (negative-margin line losses), `net_profit`, `margin_percent`, `collected_amount` (paid_amount / settled COD / Bangla QR advance), `due_amount`, `unknown_cost_lines`, `unknown_cost_units`, `unknown_cost_revenue`.
+    - Upgraded `ProfitReport` with additive `loss_amount` and `net_profit`.
+  - **Upgraded Product Performance (`GET /api/v1/admin/reports/products` + `/export`):**
+    - Added per-product `slug`, `sku`, `category_name`, `supplier_id`, `supplier_name`, `avg_selling_price`, `unit_cost_avg`, `current_cost_price`, `current_stock`, `stock_value`, `is_loss`, and `returned_units`, with SQL-level `profit_filter` and `sort`.
+  - **Channel & Payment Method Breakdown (`GET /api/v1/admin/reports/channels` + `/export`):**
+    - Splits realized orders/units/net_sales/COGS/profit/margin/collected/due by `origin` (`online`/`offline`) AND by `payment_method` (`cod`, `bangla_qr`, `cash`, `bkash`, `nagad`, `card`, `due`).
+  - **Supplier Performance Report (`GET /api/v1/admin/reports/suppliers` + `/export`):**
+    - Aggregates per supplier: `linked_products_count`, `purchase_count`, `total_purchased_units`, `total_purchase_spend`, `units_sold`, `sales_revenue`, `cogs`, `net_profit`, `margin_percent`, `current_stock_units`, `current_stock_value`, plus report-wide totals.
+  - **Upgraded Stock Valuation (`GET /api/v1/admin/reports/stock` + `/export`):**
+    - Added `selling_price`, `potential_retail_value`, `expected_profit_on_hand`, `supplier_name` on `StockRow` and `potential_retail_value`, `expected_profit_on_hand`, `missing_cost_count` on `StockSummary`.
+  - **Single Product Performance Analytics (`GET /api/v1/admin/products/{product_id}/analytics`):**
+    - Added editor+ endpoint returning current stock/retail value, lifetime and last-30-day sales/COGS/profit/loss/margin/returns, and the 20 most recent stock movements.
+  - Files touched:
+    - `app/schemas/report.py`
+    - `app/services/report_service.py`
+    - `app/api/v1/endpoints/admin_reports.py`, `app/api/v1/endpoints/admin_products.py`
+    - `tests/test_reports_saas.py`
+    - `docs/CHANGELOG.md`, `docs/API.md`, `docs/BUSINESS_LOGIC.md`, `docs/TODO.md`
+  - Frontend (`implesia-mart`):
+    - Admin Reports Hub can call `/profit-loss`, `/channels`, `/suppliers`, enriched `/products` (with `sort` & `profit_filter`), upgraded `/stock`, and new presets (`today`, `7d`, `this_year`) plus `supplier_id` / `origin` filters and `.xlsx` exports.
+    - Admin Product View page can call `GET /api/v1/admin/products/{product_id}/analytics` for lifetime/30d P&L, stock valuation, and recent stock movements.
+
+- **Phase A Backend Schema & Accounting Fixes (2026-11-21). Done (not live).** Additive-only migration `0105` (`down_revision = "0104"`).
+  - **Optional Supplier on Products + Per-Variant Cost Price (`alembic/versions/0105_product_supplier_and_variant_cost.py`, `app/models/product.py`, `app/schemas/product.py`, `app/services/product_service.py`, `app/services/variant_service.py`, `app/services/inventory_service.py`):**
+    - Added nullable `products.supplier_id` (`UUID`, FK `suppliers.id ON DELETE SET NULL`, indexed `ix_products_supplier_id`) and nullable `product_variants.cost_price` (`Numeric(12, 2)`, check `>= 0`).
+    - Admin product create/update accept optional `supplier_id` (validated active/non-deleted; `null` clears), admin reads return `supplier_id`, `supplier_name`, and `supplier` (`{id, name}`), and `GET /api/v1/admin/products` supports optional `supplier_id` filtering. Public storefront product endpoints never expose supplier or `cost_price`.
+    - Admin variant create/update/read support optional `cost_price` per variant (preserving existing variant cost when omitted on edit). Online checkout, offline order creation/item edits, stock movements, and inventory exports use `variant.cost_price` when set, falling back to `product.cost_price`. `inventory_service.create_purchase` updates per-variant weighted-average `cost_price` when `variant_id` is set.
+  - **Offline Order Complete Sync Fixes (`app/schemas/order.py`, `app/services/order_admin_service.py`, `app/services/order_service.py`, `app/api/v1/endpoints/admin_orders.py`):**
+    - Added `initial_status: Literal["new", "confirmed", "delivered"] = "new"` and `mark_delivered: bool = False` on `OfflineOrderCreate`. Creating an offline order as `delivered` immediately sets `delivered_at = order.ordered_at or now`; delivering an offline order with `ordered_at` later preserves `delivered_at = order.ordered_at` so backdated offline sales align cleanly on their business date across all reports.
+    - Automatically links `Order.user_id` on offline order creation when a registered customer matches `payload.phone`.
+    - Added `POST /api/v1/admin/orders/{order_id}/payments` (`OrderPaymentCreate`) and `paid_amount` / `payment_reference` support on `PATCH /api/v1/admin/orders/{order_id}` (`OrderUpdate`), validating `0 <= paid_amount <= total`, recomputing `due_amount = total - paid_amount`, and logging `payment_updated` activity (migration `0105` widens `order_activities.action`).
+  - **Returned-Order Accounting Bugfix (`app/services/report_service.py`, `app/schemas/report.py`):**
+    - Excluded returned orders (`Order.status != 'returned'`) from realized sales revenue, order count, units sold, shipping, COGS, profit, trend, and no-sale-30d queries while keeping `delivery_report` (`delivered`, `returned`, new `returned_value`, `return_rate_percent`) and `product_report` (`return_count`, new `return_value`) reporting returns separately.
+    - Exposed `manual_discount` separately alongside `coupon_discount` in `SalesSummary` and the sales Excel export.
+  - Files touched:
+    - `alembic/versions/0105_product_supplier_and_variant_cost.py`
+    - `app/models/product.py`, `app/models/order.py`
+    - `app/schemas/product.py`, `app/schemas/order.py`, `app/schemas/report.py`
+    - `app/services/product_service.py`, `app/services/variant_service.py`, `app/services/inventory_service.py`, `app/services/order_service.py`, `app/services/order_admin_service.py`, `app/services/report_service.py`
+    - `app/api/v1/endpoints/admin_products.py`, `app/api/v1/endpoints/admin_orders.py`
+    - `tests/test_phase_a_accounting.py`, `tests/integration/test_0105_migration.py`, `tests/test_reports.py`
+    - `docs/CHANGELOG.md`, `docs/API.md`, `docs/BUSINESS_LOGIC.md`, `docs/TODO.md`
+  - Frontend (`implesia-mart`):
+    - Admin product form & list can send/filter optional `supplier_id`, read `supplier_id`/`supplier_name`/`supplier` on admin product responses, and edit optional per-variant `cost_price`.
+    - Admin offline order form can pass `initial_status: "delivered"` (or `mark_delivered: true`) for walk-in counter sales.
+    - Admin order detail can collect due/partial payments via `POST /api/v1/admin/orders/{order_id}/payments` or update `paid_amount` via `PATCH /api/v1/admin/orders/{order_id}`.
+    - Admin sales/delivery/product report screens can read `SalesSummary.manual_discount`, `DeliveryReport.returned_value`, and `ProductReportRow.return_value`.
+
 - **QA & Migration Polish (2026-11-21). Done (not live).**
   - **Migration 0104 (`alembic/versions/0104_index_customer_order_fks.py`):** Additive-only indexes `ix_customer_notifications_order_id` and `ix_product_reviews_order_id` (and matching SQLAlchemy model indexes on `CustomerNotification` and `ProductReview`) so every foreign key column leads an index.
   - Updated `tests/integration/test_site_header_migration.py` to apply migration `0100` before calling `site_header_service.public_view` so the integration suite leaves the schema at HEAD.

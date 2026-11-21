@@ -8,6 +8,20 @@ Open items found in the code and in recent work. Remove an item when it is done.
   - **Alembic Migration 0102:** Added `customer` role to `UserRole` enum, added `phone` (with index and partial unique constraint), `district`, `area`, `address` to `User` model.
   - **Alembic Migration 0103:** Added `avatar_url` (varchar 500) to `User` model; created `customer_notifications` table (with cascade delete, user index, unread index); created `product_reviews` table (rating 1-5, headline, comment, purchase verification, published index).
   - **Alembic Migration 0104:** Added FK indexes `ix_customer_notifications_order_id` and `ix_product_reviews_order_id` so every foreign key column leads an index.
+- **Phase C Admin-Only Safe Deletion & Reconciliation (2026-11-21).**
+  - Enforced `RequireSuperadmin` on delete and delete-impact endpoints for Orders, Badges, and Suppliers (`GET .../delete-impact` + `DELETE ...`).
+  - Order deletion atomically reconciles held stock with offsetting `stock_movements` `adjustment` rows (`sum(movements) == on_hand`), releases coupon redemptions, preserves reviews/notifications/ledger rows with `order_id=NULL`, and writes a complete `ORDER_DELETED` audit snapshot.
+  - Badge deletion supports `unlink` and `merge` (deduplicating links & recomputing `products.badge`, protecting `is_system` badges with 409). Supplier deletion supports `merge` (preserving all purchase/COGS history), `archive`, and guarded `hard_delete` (`purchases_count == 0`).
+  - Covered by `tests/test_phase_c_safe_delete.py`.
+- **Phase B SaaS Reporting APIs & Product Analytics (2026-11-21).**
+  - Expanded presets (`today`, `7d`, `this_week`, `this_month`, `last_month`, `this_year`) and filters (`supplier_id`, `origin`, `profit_filter`, product `sort`) across admin reports.
+  - Added `GET /api/v1/admin/reports/profit-loss`, `/channels`, `/suppliers` (each with `/export` `.xlsx`), upgraded `/profit`, `/products`, and `/stock` with full SaaS valuation/margin/loss metrics, and added `GET /api/v1/admin/products/{product_id}/analytics`.
+  - Covered by `tests/test_reports_saas.py` (all SQL aggregates, dual SQLite/PostgreSQL compatible).
+- **Phase A Backend Schema & Accounting Fixes (2026-11-21).**
+  - **Alembic Migration 0105:** Added nullable `products.supplier_id` (FK `suppliers.id ON DELETE SET NULL`, indexed), nullable `product_variants.cost_price` (`Numeric(12, 2)`, non-negative check), and widened `order_activities.action` to include `payment_updated`.
+  - Admin product supplier assignment/filter + per-variant `cost_price` (weighted average updated in `create_purchase`, snapshotted to `OrderItem.unit_cost`).
+  - Offline order `initial_status`/`mark_delivered` with business-date `delivered_at` alignment, automatic customer `user_id` linking by phone, and payment collection (`POST /api/v1/admin/orders/{id}/payments` + `PATCH` `paid_amount`).
+  - Returned orders excluded from realized sales/profit/product/trend calculations; `SalesSummary.manual_discount`, `DeliveryReport.returned_value`, and `ProductReportRow.return_value` exposed.
   - **Customer Auth & Profile Service:** BD phone normalization (`01XXXXXXXXX`), password hashing, JWT access/refresh token rotation, session invalidation on logout.
   - **Endpoints:**
     - `POST /api/v1/customer/auth/register`, `login`, `refresh`, `logout`.
@@ -27,7 +41,7 @@ Open items found in the code and in recent work. Remove an item when it is done.
 ## Open / Pending Next Steps
 
 - **Deploy to Production (VPS 72.60.199.155):**
-  - Run `alembic upgrade head` to apply migrations through `0104` (including `0102`, `0103`, and `0104` FK indexes) on the production database.
+  - Run `alembic upgrade head` to apply migrations through `0105` (including `0102`–`0105`) on the production database.
   - Rebuild API container: `docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build`.
 - **Customer SMS Notifications via SSL Wireless:**
   - Connect real SMS credentials (`SMS_SSLWIRELESS_API_TOKEN`, `SMS_SSLWIRELESS_SID`) in `.env.production` once account is active.

@@ -821,9 +821,10 @@ async def test_supplier_soft_delete(
     purchase = await _buy(client, auth_headers, sup_id, product["id"], 5, "40.00")
     assert purchase["supplier_name"] == "Temporary Supplier"
 
-    # Soft delete the supplier
+    # Soft delete (archive) the supplier
     res = await client.delete(f"{_BASE}/suppliers/{sup_id}", headers=auth_headers)
-    assert res.status_code == 204
+    assert res.status_code == 200
+    assert res.json()["mode"] == "archive"
 
     # No longer in active suppliers list
     after = (await client.get(f"{_BASE}/suppliers", headers=auth_headers)).json()

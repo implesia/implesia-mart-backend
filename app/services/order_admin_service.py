@@ -9,25 +9,31 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from starlette.background import BackgroundTasks
 
 from app.core.config import settings
 from app.core.exceptions import AppError, ConflictError, NotFoundError, UnprocessableError
-from app.models.inventory import MovementType
+from app.models.audit_event import AuditAction
+from app.models.coupon import Coupon, CouponRedemption
+from app.models.inventory import MovementType, StockMovement
+from app.models.notification import CustomerNotification
 from app.models.order import (
     OFFLINE_CHANNEL,
     ActivityAction,
     Order,
+    OrderActivity,
     OrderIdempotency,
     OrderItem,
     OrderOrigin,
     OrderSource,
     OrderStatus,
 )
-from app.models.product import Product, ProductVariant
+from app.models.product import Product, ProductVariant, StockStatus
+from app.models.review import ProductReview
 from app.models.user import User
 from app.schemas.inquiry import normalize_phone
 from app.schemas.order import (
@@ -41,9 +47,14 @@ from app.schemas.order import (
     CustomerMatch,
     CustomerSearch,
     OfflineOrderCreate,
+    OrderDeleteImpact,
+    OrderDeleteRequest,
+    OrderDeleteResult,
     OrderItemsUpdate,
     OrderOverview,
+    OrderPaymentCreate,
     OrderRead,
+    OrderStockRestoreItem,
     OriginSplit,
     OverviewOrder,
     PeriodTotals,
@@ -54,6 +65,7 @@ from app.schemas.order import (
     StatusCounts,
 )
 from app.services import (
+    audit_service,
     customer_notify,
     delivery_service,
     inventory_service,
@@ -263,13 +275,27 @@ async def create_offline(
     if payload.paid_amount > total:
         raise UnprocessableError("Paid amount cannot be larger than the order total")
     due = total - payload.paid_amount
+
+    # Link to an existing registered customer when the phone matches (same rule as online checkout).
+    user_id: uuid.UUID | None = None
+    if payload.phone:
+        from app.services.customer_auth_service import normalize_bd_phone
+
+        norm_phone = normalize_bd_phone(payload.phone)
+        if norm_phone:
+            user_id = await db.scalar(select(User.id).where(User.phone == norm_phone))
+
+    ordered_at = _order_date(payload.order_date)
+    initial_status = payload.initial_status
+    delivered_at = ordered_at if initial_status == OrderStatus.DELIVERED.value else None
+
     order = Order(
         number=await order_service._number(db),
-        user_id=None,
+        user_id=user_id,
         source=OrderSource.DIRECT.value,
         origin=OrderOrigin.OFFLINE.value,
         channel=OFFLINE_CHANNEL,
-        status=OrderStatus.NEW.value,
+        status=initial_status,
         payment_method=payload.payment_method,
         advance_percent=None,
         advance_amount=payload.paid_amount,
@@ -288,11 +314,17 @@ async def create_offline(
         shipping=shipping,
         manual_discount=payload.manual_discount,
         total=total,
-        ordered_at=_order_date(payload.order_date),
+        ordered_at=ordered_at,
+        delivered_at=delivered_at,
         inventory_held=True,
     )
     for wanted_line, line in priced:
-        _append_item(order, wanted_line, line, wanted_line.product.cost_price)
+        _append_item(
+            order,
+            wanted_line,
+            line,
+            variant_service.effective_unit_cost(wanted_line.product, wanted_line.variant),
+        )
     db.add(order)
     await db.flush()
     order_service.log_activity(
@@ -301,8 +333,17 @@ async def create_offline(
         actor.id,
         ActivityAction.CREATED,
         "Offline order entered",
-        {"origin": OrderOrigin.OFFLINE.value},
+        {"origin": OrderOrigin.OFFLINE.value, "initial_status": initial_status},
     )
+    if initial_status != OrderStatus.NEW.value:
+        order_service.log_activity(
+            db,
+            order.id,
+            actor.id,
+            ActivityAction.STATUS_CHANGED,
+            f"Status new to {initial_status}",
+            {"from": OrderStatus.NEW.value, "to": initial_status},
+        )
     inventory_service.attach_pending_sales(db, order.id)
     db.add(OrderIdempotency(actor=staff, idempotency_key=key, order_id=order.id))
     order_id = order.id
@@ -409,7 +450,15 @@ async def replace_items(
         catalog = pricing_service.price_product(row.product, row.variant, row.quantity, rules)
         line = _charged(catalog, row.unit_price)
         subtotal += line.line_total
-        _append_item(order, row, line, old_cost.get(row.key, row.product.cost_price))
+        _append_item(
+            order,
+            row,
+            line,
+            old_cost.get(
+                row.key,
+                variant_service.effective_unit_cost(row.product, row.variant),
+            ),
+        )
     coupon = order.coupon_discount or 0
     manual = order.manual_discount if payload.manual_discount is None else payload.manual_discount
     shipping = order.shipping if payload.delivery_charge is None else payload.delivery_charge
@@ -441,6 +490,47 @@ async def replace_items(
     await db.commit()
     db.expire_all()
     telegram_notify.flush_low_stock(db, background)
+    return await order_service.present(db, await order_service._load(db, kept), with_activity=True)
+
+
+async def record_payment(
+    db: AsyncSession,
+    order_id: uuid.UUID,
+    payload: OrderPaymentCreate,
+    *,
+    actor: User,
+) -> OrderRead:
+    """Collect an additional payment against a due/partial order and log an activity entry."""
+    order = await order_service._load(db, order_id)
+    if order.status in _NOT_REVENUE:
+        raise UnprocessableError("Cannot record a payment on a cancelled or returned order")
+    before_paid = order_service.effective_paid(order)
+    new_paid = before_paid + payload.amount
+    if new_paid > order.total:
+        raise UnprocessableError("Paid amount cannot be larger than the order total")
+    order.paid_amount = new_paid
+    order.due_amount = order.total - new_paid
+    if payload.payment_reference:
+        order.payment_reference = payload.payment_reference
+    order_service.log_activity(
+        db,
+        order.id,
+        actor.id,
+        ActivityAction.PAYMENT_UPDATED,
+        f"Payment recorded: {payload.amount} BDT ({new_paid}/{order.total})",
+        {
+            "added": payload.amount,
+            "from_paid": before_paid,
+            "to_paid": new_paid,
+            "due_amount": order.due_amount,
+            "payment_method": payload.payment_method or order.payment_method,
+            "payment_reference": payload.payment_reference or order.payment_reference or "",
+            "note": payload.note,
+        },
+    )
+    kept = order.id
+    await db.commit()
+    db.expire_all()
     return await order_service.present(db, await order_service._load(db, kept), with_activity=True)
 
 
@@ -773,4 +863,280 @@ async def search_customers(db: AsyncSession, q: str) -> CustomerSearch:
             )
             for row in rows
         ]
+    )
+
+
+async def delete_impact(db: AsyncSession, order_id: uuid.UUID) -> OrderDeleteImpact:
+    order = await order_service._load(db, order_id)
+    effective_paid = (
+        order.paid_amount
+        if order.paid_amount > 0
+        else (order.advance_amount if order.payment_method == "bangla_qr" else 0)
+    )
+    effective_due = (
+        order.due_amount if order.due_amount is not None else max(order.total - effective_paid, 0)
+    )
+    restore_items = (
+        [
+            OrderStockRestoreItem(
+                product_id=item.product_id,
+                variant_id=item.variant_id,
+                title=item.title,
+                quantity=item.quantity,
+            )
+            for item in order.items
+            if item.product_id is not None
+        ]
+        if order.inventory_held
+        else []
+    )
+    stock_movements_count = int(
+        await db.scalar(
+            select(func.count())
+            .select_from(StockMovement)
+            .where(StockMovement.order_id == order.id)
+        )
+        or 0
+    )
+    coupon_code = await db.scalar(
+        select(Coupon.code)
+        .join(CouponRedemption, CouponRedemption.coupon_id == Coupon.id)
+        .where(CouponRedemption.order_id == order.id)
+        .limit(1)
+    )
+    reviews_count = int(
+        await db.scalar(
+            select(func.count())
+            .select_from(ProductReview)
+            .where(ProductReview.order_id == order.id)
+        )
+        or 0
+    )
+    notifications_count = int(
+        await db.scalar(
+            select(func.count())
+            .select_from(CustomerNotification)
+            .where(CustomerNotification.order_id == order.id)
+        )
+        or 0
+    )
+    if order.delivered_at is not None and order.status != OrderStatus.RETURNED.value:
+        warning = (
+            "Deleting this delivered order will permanently remove its revenue, COGS, and profit "
+            "from Sales, Profit & Loss, Channel, and Supplier reports."
+        )
+    elif order.status == OrderStatus.RETURNED.value:
+        warning = (
+            "Deleting this returned order will remove it from Delivery & Return reports. "
+            "Stock was already restored on return."
+        )
+    elif effective_paid > 0:
+        warning = (
+            "Deleting this order will remove recorded payment history and order totals from "
+            "operational summaries."
+        )
+    else:
+        warning = (
+            "Deleting this order will permanently remove it from order history and release any "
+            "held stock or coupon redemption."
+        )
+    return OrderDeleteImpact(
+        order_number=order.number,
+        status=order.status,
+        origin=order.origin if order.origin in {"online", "offline"} else "online",
+        total=order.total,
+        paid_amount=effective_paid,
+        due_amount=effective_due,
+        inventory_held=order.inventory_held,
+        stock_restore_items=restore_items,
+        stock_movements_count=stock_movements_count,
+        coupon_redemption_code=str(coupon_code) if coupon_code is not None else None,
+        reviews_count=reviews_count,
+        notifications_count=notifications_count,
+        report_impact_warning=warning,
+    )
+
+
+async def _reconcile_order_stock_for_delete(
+    db: AsyncSession,
+    order: Order,
+    *,
+    reason: str,
+    actor_id: uuid.UUID,
+) -> int:
+    """Restore held stock and insert offsetting adjustment rows so ledger == physical stock."""
+    if not order.inventory_held:
+        return 0
+    order.inventory_held = False
+    product_ids = sorted({item.product_id for item in order.items if item.product_id is not None})
+    for pid in product_ids:
+        await variant_service.lock_product(db, pid)
+    note = f"Reconciled stock from deleted order #{order.number}: {reason}"[:500]
+    restored_units = 0
+    for item in order.items:
+        if item.product_id is None or item.quantity <= 0:
+            continue
+        if item.variant_id is not None:
+            variant_row = await db.get(ProductVariant, item.variant_id, populate_existing=True)
+            if variant_row is None or variant_row.quantity is None:
+                continue
+            await variant_service.release_stock(db, variant_row.id, item.quantity)
+            await variant_service.rollup_by_id(db, item.product_id)
+            product = await db.get(Product, item.product_id)
+            unit_cost = (
+                item.unit_cost
+                if item.unit_cost is not None
+                else (
+                    variant_service.effective_unit_cost(product, variant_row)
+                    if product is not None
+                    else variant_row.cost_price
+                )
+            )
+            inventory_service.add_movement(
+                db,
+                product_id=item.product_id,
+                variant_id=item.variant_id,
+                quantity=item.quantity,
+                movement_type=MovementType.ADJUSTMENT.value,
+                unit_cost=unit_cost,
+                order_id=None,
+                actor_id=actor_id,
+                note=note,
+            )
+            restored_units += item.quantity
+            continue
+        product = await db.get(Product, item.product_id, populate_existing=True)
+        if product is None or product.has_variants or product.quantity is None:
+            continue
+        await db.execute(
+            update(Product)
+            .where(Product.id == product.id, Product.quantity.is_not(None))
+            .values(quantity=Product.quantity + item.quantity)
+        )
+        await db.execute(
+            update(Product)
+            .where(Product.id == product.id)
+            .where(Product.status == StockStatus.SOLD_OUT.value)
+            .where(Product.quantity > 0)
+            .values(status=StockStatus.AVAILABLE.value)
+        )
+        unit_cost = item.unit_cost if item.unit_cost is not None else product.cost_price
+        inventory_service.add_movement(
+            db,
+            product_id=product.id,
+            variant_id=None,
+            quantity=item.quantity,
+            movement_type=MovementType.ADJUSTMENT.value,
+            unit_cost=unit_cost,
+            order_id=None,
+            actor_id=actor_id,
+            note=note,
+        )
+        restored_units += item.quantity
+    return restored_units
+
+
+async def delete_order(
+    db: AsyncSession,
+    order_id: uuid.UUID,
+    payload: OrderDeleteRequest,
+    *,
+    actor: User,
+) -> OrderDeleteResult:
+    if not payload.confirm:
+        raise UnprocessableError("Set confirm=true to delete this order")
+    order = (
+        await db.execute(
+            select(Order)
+            .where(Order.id == order_id)
+            .options(selectinload(Order.items))
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if order is None:
+        raise NotFoundError("Order not found")
+
+    order_number = order.number
+    redemption_id = await db.scalar(
+        select(CouponRedemption.id).where(CouponRedemption.order_id == order.id).limit(1)
+    )
+    coupon_released = redemption_id is not None
+
+    stock_restored_units = 0
+    if order.inventory_held and payload.reconcile_stock:
+        stock_restored_units = await _reconcile_order_stock_for_delete(
+            db, order, reason=payload.reason, actor_id=actor.id
+        )
+
+    total_cost = sum(
+        ((item.unit_cost * item.quantity) for item in order.items if item.unit_cost is not None),
+        Decimal("0.00"),
+    )
+    items_snapshot = [
+        {
+            "product_id": str(item.product_id) if item.product_id else None,
+            "variant_id": str(item.variant_id) if item.variant_id else None,
+            "title": item.title,
+            "sku": item.sku,
+            "quantity": item.quantity,
+            "unit_price": item.unit_price,
+            "line_total": item.line_total,
+            "unit_cost": str(item.unit_cost) if item.unit_cost is not None else None,
+        }
+        for item in order.items
+    ]
+    audit_meta = {
+        "order_number": order_number,
+        "status": order.status,
+        "origin": order.origin,
+        "channel": order.channel,
+        "customer_name": order.customer_name,
+        "phone": order.phone,
+        "subtotal": order.subtotal,
+        "shipping": order.shipping,
+        "coupon_code": order.coupon_code,
+        "coupon_discount": order.coupon_discount,
+        "manual_discount": order.manual_discount,
+        "total": order.total,
+        "paid_amount": order.paid_amount,
+        "due_amount": order.due_amount,
+        "total_cost": str(total_cost),
+        "items": items_snapshot,
+        "reason": payload.reason,
+        "reconcile_stock": payload.reconcile_stock,
+        "stock_restored_units": stock_restored_units,
+        "coupon_released": coupon_released,
+    }
+
+    # Preserve historical movements, reviews, and notifications with order_id = NULL,
+    # and clean up cascade children explicitly so SQLite & PostgreSQL match identically.
+    await db.execute(
+        update(StockMovement).where(StockMovement.order_id == order.id).values(order_id=None)
+    )
+    await db.execute(
+        update(ProductReview).where(ProductReview.order_id == order.id).values(order_id=None)
+    )
+    await db.execute(
+        update(CustomerNotification)
+        .where(CustomerNotification.order_id == order.id)
+        .values(order_id=None)
+    )
+    await db.execute(delete(CouponRedemption).where(CouponRedemption.order_id == order.id))
+    await db.execute(delete(OrderIdempotency).where(OrderIdempotency.order_id == order.id))
+    await db.execute(delete(OrderActivity).where(OrderActivity.order_id == order.id))
+    await db.delete(order)
+    await audit_service.record(
+        db,
+        actor_id=actor.id,
+        action=AuditAction.ORDER_DELETED.value,
+        target_type="order",
+        target_id=order_id,
+        metadata=audit_meta,
+    )
+    await db.commit()
+    return OrderDeleteResult(
+        deleted_order_number=order_number,
+        stock_restored_units=stock_restored_units,
+        coupon_released=coupon_released,
+        reports_synced=True,
     )

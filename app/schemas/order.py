@@ -25,6 +25,7 @@ _REFERENCE = re.compile(r"^[A-Za-z0-9+\-]{4,64}$")
 OrderSourceName = Literal["cart", "direct"]
 DeliveryZone = Literal["inside", "suburban", "outside"]
 _TRACKING_LIMIT = 500
+_MONEY_CAP = 2_000_000_000
 
 
 def purchase_event_id(order_number: str) -> str:
@@ -386,6 +387,8 @@ class OrderUpdate(BaseModel):
     courier_name: str | None = Field(default=None, max_length=120)
     tracking_number: str | None = Field(default=None, max_length=120)
     notes: str | None = Field(default=None, max_length=500)
+    paid_amount: int | None = Field(default=None, ge=0, le=_MONEY_CAP)
+    payment_reference: str | None = Field(default=None, max_length=80)
     notify_customer: bool = True
     notification_language: str = "bn"
 
@@ -397,6 +400,8 @@ class OrderUpdate(BaseModel):
             and self.courier_name is None
             and self.tracking_number is None
             and self.notes is None
+            and self.paid_amount is None
+            and self.payment_reference is None
         ):
             raise ValueError("Nothing to update")
         return self
@@ -406,6 +411,40 @@ class OrderUpdate(BaseModel):
     def _strip_optional(cls, value: str | None) -> str | None:
         if value is None:
             return None
+        return value.strip()
+
+    @field_validator("payment_reference")
+    @classmethod
+    def _strip_payment_reference(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = re.sub(r"\s+", "", value)
+        if cleaned and not _REFERENCE.fullmatch(cleaned):
+            raise ValueError("Payment reference must be 4–64 letters, digits, + or -")
+        return cleaned
+
+
+class OrderPaymentCreate(BaseModel):
+    """Record an additional payment collected against an order (due/partial offline or COD)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    amount: int = Field(gt=0, le=_MONEY_CAP)
+    payment_method: AnyPaymentMethod | None = None
+    payment_reference: str = Field("", max_length=80)
+    note: str = Field("", max_length=200)
+
+    @field_validator("payment_reference")
+    @classmethod
+    def _reference(cls, value: str) -> str:
+        cleaned = re.sub(r"\s+", "", value)
+        if cleaned and not _REFERENCE.fullmatch(cleaned):
+            raise ValueError("Payment reference must be 4–64 letters, digits, + or -")
+        return cleaned
+
+    @field_validator("note")
+    @classmethod
+    def _note(cls, value: str) -> str:
         return value.strip()
 
 
@@ -514,9 +553,6 @@ class NewOrderFeed(BaseModel):
     items: list[NewOrderItem]
 
 
-_MONEY_CAP = 2_000_000_000
-
-
 class CustomerHistory(BaseModel):
     phone: str
     total_orders: int = 0
@@ -567,6 +603,8 @@ class OfflineOrderCreate(BaseModel):
     paid_amount: int = Field(ge=0, le=_MONEY_CAP)
     payment_reference: str = Field("", max_length=80)
     order_date: date | None = None
+    initial_status: Literal["new", "confirmed", "delivered"] = "new"
+    mark_delivered: bool = False
 
     @field_validator("payment_reference")
     @classmethod
@@ -597,6 +635,10 @@ class OfflineOrderCreate(BaseModel):
     def _reference_shape(self) -> "OfflineOrderCreate":
         if self.payment_reference and not _REFERENCE.fullmatch(self.payment_reference):
             raise ValueError("Payment reference must be 4–64 letters, digits, + or -")
+        if self.mark_delivered:
+            if self.initial_status == "confirmed":
+                raise ValueError("Cannot set mark_delivered=true with initial_status='confirmed'")
+            self.initial_status = "delivered"
         return self
 
 
@@ -762,6 +804,52 @@ class CustomerSearchQuery(BaseModel):
 
 class CustomerSearch(BaseModel):
     items: list[CustomerMatch]
+
+
+class OrderStockRestoreItem(BaseModel):
+    product_id: uuid.UUID | None
+    variant_id: uuid.UUID | None
+    title: str
+    quantity: int
+
+
+class OrderDeleteImpact(BaseModel):
+    order_number: str
+    status: str
+    origin: str
+    total: int
+    paid_amount: int
+    due_amount: int
+    inventory_held: bool
+    stock_restore_items: list[OrderStockRestoreItem]
+    stock_movements_count: int
+    coupon_redemption_code: str | None = None
+    reviews_count: int
+    notifications_count: int
+    report_impact_warning: str
+
+
+class OrderDeleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    confirm: bool
+    reconcile_stock: bool = True
+    reason: str = Field(min_length=3, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def _clean_reason(cls, value: str) -> str:
+        cleaned = value.strip()
+        if len(cleaned) < 3:
+            raise ValueError("Reason must be at least 3 characters")
+        return cleaned
+
+
+class OrderDeleteResult(BaseModel):
+    deleted_order_number: str
+    stock_restored_units: int
+    coupon_released: bool
+    reports_synced: bool = True
 
 
 OrderRead.model_rebuild()

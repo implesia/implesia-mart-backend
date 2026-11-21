@@ -51,7 +51,11 @@ from app.schemas.inventory import (
     PurchaseQuery,
     PurchaseRead,
     SupplierCreate,
+    SupplierDeleteImpact,
+    SupplierDeleteRequest,
+    SupplierDeleteResult,
     SupplierList,
+    SupplierMergeTarget,
     SupplierQuery,
     SupplierRead,
     SupplierUpdate,
@@ -132,10 +136,12 @@ class _Bucket:
     quantity: int | None
     status: str
     variants: dict[uuid.UUID, int | None]
+    variant_costs: dict[uuid.UUID, Decimal | None]
     original_cost: Decimal | None
     original_quantity: int | None
     original_status: str
     original_variants: dict[uuid.UUID, int | None]
+    original_variant_costs: dict[uuid.UUID, Decimal | None]
 
 
 def weighted_average_cost(
@@ -308,14 +314,168 @@ async def update_supplier(
     return _supplier_read(row)
 
 
-async def delete_supplier(
-    db: AsyncSession, supplier_id: uuid.UUID, actor: User
-) -> None:
-    del actor
+async def supplier_delete_impact(
+    db: AsyncSession, supplier_id: uuid.UUID
+) -> SupplierDeleteImpact:
     row = await _supplier(db, supplier_id)
+    purchase_row = (
+        await db.execute(
+            select(
+                func.count(func.distinct(Purchase.id)),
+                func.coalesce(func.sum(PurchaseItem.quantity * PurchaseItem.unit_cost), 0),
+            )
+            .select_from(Purchase)
+            .outerjoin(PurchaseItem, PurchaseItem.purchase_id == Purchase.id)
+            .where(Purchase.supplier_id == row.id)
+        )
+    ).one()
+    linked_products_count = int(
+        await db.scalar(
+            select(func.count()).select_from(Product).where(Product.supplier_id == row.id)
+        )
+        or 0
+    )
+    target_rows = (
+        await db.execute(
+            select(Supplier.id, Supplier.name, Supplier.phone)
+            .where(Supplier.is_deleted.is_(False), Supplier.id != row.id)
+            .order_by(Supplier.name.asc(), Supplier.id.asc())
+        )
+    ).all()
+    return SupplierDeleteImpact(
+        supplier_name=row.name,
+        purchases_count=int(purchase_row[0] or 0),
+        total_purchase_amount=_money(Decimal(str(purchase_row[1] or 0))),
+        linked_products_count=linked_products_count,
+        available_merge_targets=[
+            SupplierMergeTarget(id=t[0], name=str(t[1]), phone=str(t[2] or ""))
+            for t in target_rows
+        ],
+    )
+
+
+async def delete_supplier(
+    db: AsyncSession,
+    supplier_id: uuid.UUID,
+    actor: User,
+    payload: SupplierDeleteRequest | None = None,
+) -> SupplierDeleteResult:
+    row = await _supplier(db, supplier_id)
+    req = payload or SupplierDeleteRequest(mode="archive")
+    supplier_name = row.name
+    purchases_count = int(
+        await db.scalar(
+            select(func.count()).select_from(Purchase).where(Purchase.supplier_id == row.id)
+        )
+        or 0
+    )
+    linked_products_count = int(
+        await db.scalar(
+            select(func.count()).select_from(Product).where(Product.supplier_id == row.id)
+        )
+        or 0
+    )
+
+    if req.mode == "merge":
+        if req.target_supplier_id is None:
+            raise UnprocessableError("target_supplier_id is required when mode is merge")
+        if req.target_supplier_id == row.id:
+            raise UnprocessableError("Cannot merge a supplier into itself")
+        target = await _supplier(db, req.target_supplier_id)
+        await db.execute(
+            update(Purchase).where(Purchase.supplier_id == row.id).values(supplier_id=target.id)
+        )
+        await db.execute(
+            update(Product).where(Product.supplier_id == row.id).values(supplier_id=target.id)
+        )
+        await audit_service.record(
+            db,
+            actor_id=actor.id,
+            action=AuditAction.SUPPLIER_MERGED.value,
+            target_type="supplier",
+            target_id=row.id,
+            metadata={
+                "deleted_supplier_name": supplier_name,
+                "target_supplier_id": str(target.id),
+                "target_supplier_name": target.name,
+                "moved_purchases_count": purchases_count,
+                "moved_products_count": linked_products_count,
+                "reason": req.reason,
+            },
+        )
+        await db.delete(row)
+        await db.commit()
+        return SupplierDeleteResult(
+            deleted_supplier_id=supplier_id,
+            deleted_supplier_name=supplier_name,
+            mode="merge",
+            target_supplier_id=target.id,
+            moved_purchases_count=purchases_count,
+            moved_products_count=linked_products_count,
+        )
+
+    if req.mode == "hard_delete":
+        if purchases_count > 0:
+            raise ConflictError(
+                "Cannot hard-delete a supplier with purchase history. "
+                "Merge into another supplier or archive instead.",
+                {"purchases_count": purchases_count},
+            )
+        if linked_products_count > 0:
+            await db.execute(
+                update(Product).where(Product.supplier_id == row.id).values(supplier_id=None)
+            )
+        await audit_service.record(
+            db,
+            actor_id=actor.id,
+            action=AuditAction.SUPPLIER_DELETED.value,
+            target_type="supplier",
+            target_id=row.id,
+            metadata={
+                "deleted_supplier_name": supplier_name,
+                "mode": "hard_delete",
+                "unlinked_products_count": linked_products_count,
+                "reason": req.reason,
+            },
+        )
+        await db.delete(row)
+        await db.commit()
+        return SupplierDeleteResult(
+            deleted_supplier_id=supplier_id,
+            deleted_supplier_name=supplier_name,
+            mode="hard_delete",
+            unlinked_products_count=linked_products_count,
+        )
+
+    unlinked = 0
+    if req.unlink_products and linked_products_count > 0:
+        await db.execute(
+            update(Product).where(Product.supplier_id == row.id).values(supplier_id=None)
+        )
+        unlinked = linked_products_count
     row.is_deleted = True
-    row.deleted_at = func.now()
+    row.deleted_at = datetime.now(UTC)
+    await audit_service.record(
+        db,
+        actor_id=actor.id,
+        action=AuditAction.SUPPLIER_DELETED.value,
+        target_type="supplier",
+        target_id=row.id,
+        metadata={
+            "deleted_supplier_name": supplier_name,
+            "mode": "archive",
+            "purchases_preserved": purchases_count,
+            "unlinked_products_count": unlinked,
+            "reason": req.reason,
+        },
+    )
     await db.commit()
+    return SupplierDeleteResult(
+        deleted_supplier_id=supplier_id,
+        deleted_supplier_name=supplier_name,
+        mode="archive",
+        unlinked_products_count=unlinked,
+    )
 
 
 async def list_purchases(db: AsyncSession, query: PurchaseQuery) -> PurchaseList:
@@ -465,13 +625,18 @@ async def adjust_stock(
     if new_qty < 0:
         raise UnprocessableError("Not enough stock to remove that many")
     _set_bucket_qty(bucket, variant_id, new_qty)
+    unit_cost = (
+        bucket.variant_costs.get(variant_id)
+        if variant_id is not None and bucket.variant_costs.get(variant_id) is not None
+        else bucket.cost
+    )
     movement = add_movement(
         db,
         product_id=product.id,
         variant_id=variant_id,
         quantity=payload.quantity,
         movement_type=MovementType.ADJUSTMENT.value,
-        unit_cost=bucket.cost,
+        unit_cost=unit_cost,
         actor_id=actor.id,
         note=payload.reason,
     )
@@ -518,7 +683,7 @@ async def record_opening_stock(
                     variant_id=variant.id,
                     quantity=variant.quantity or 0,
                     movement_type=MovementType.OPENING.value,
-                    unit_cost=product.cost_price,
+                    unit_cost=variant_service.effective_unit_cost(product, variant),
                     actor_id=actor_id,
                     note="Opening stock from the current count",
                 )
@@ -1089,6 +1254,7 @@ async def _load_bucket(db: AsyncSession, product_id: uuid.UUID) -> _Bucket:
         await db.scalars(select(ProductVariant).where(ProductVariant.product_id == product.id))
     ).all()
     quantities = {row.id: row.quantity for row in variants}
+    variant_costs = {row.id: row.cost_price for row in variants}
     return _Bucket(
         product_id=product.id,
         has_variants=product.has_variants,
@@ -1096,10 +1262,12 @@ async def _load_bucket(db: AsyncSession, product_id: uuid.UUID) -> _Bucket:
         quantity=product.quantity,
         status=product.status,
         variants=dict(quantities),
+        variant_costs=dict(variant_costs),
         original_cost=product.cost_price,
         original_quantity=product.quantity,
         original_status=product.status,
         original_variants=dict(quantities),
+        original_variant_costs=dict(variant_costs),
     )
 
 
@@ -1108,6 +1276,11 @@ def _apply_receipt(
 ) -> None:
     old = _bucket_qty(bucket, variant_id)
     bucket.cost = weighted_average_cost(old, bucket.cost, quantity, unit_cost)
+    if variant_id is not None:
+        old_variant_cost = bucket.variant_costs.get(variant_id)
+        bucket.variant_costs[variant_id] = weighted_average_cost(
+            old, old_variant_cost, quantity, unit_cost
+        )
     if old is None:
         return
     _set_bucket_qty(bucket, variant_id, old + quantity)
@@ -1134,18 +1307,27 @@ async def _persist_bucket(db: AsyncSession, bucket: _Bucket, actor_id: uuid.UUID
     if bucket.has_variants:
         for variant_id, quantity in bucket.variants.items():
             original = bucket.original_variants.get(variant_id)
-            if quantity == original:
+            new_vcost = bucket.variant_costs.get(variant_id)
+            orig_vcost = bucket.original_variant_costs.get(variant_id)
+            qty_changed = quantity != original
+            cost_changed = new_vcost != orig_vcost
+            if not qty_changed and not cost_changed:
                 continue
             cached = await db.get(ProductVariant, variant_id)
             if cached is not None:
                 db.expire(cached)
+            update_values: dict[str, object] = {"updated_at": func.now()}
+            if qty_changed:
+                update_values["quantity"] = quantity
+                variant_changes.append(
+                    {"variant_id": str(variant_id), "from": original, "to": quantity}
+                )
+            if cost_changed:
+                update_values["cost_price"] = new_vcost
             await db.execute(
                 update(ProductVariant)
                 .where(ProductVariant.id == variant_id)
-                .values(quantity=quantity, updated_at=func.now())
-            )
-            variant_changes.append(
-                {"variant_id": str(variant_id), "from": original, "to": quantity}
+                .values(**update_values)
             )
         await db.execute(
             update(Product)
@@ -1313,7 +1495,7 @@ async def _export_products(db: AsyncSession, query: DateRangeQuery) -> bytes:
                         variant.sku,
                         product.title,
                         variant.quantity,
-                        product.cost_price,
+                        variant_service.effective_unit_cost(product, variant),
                         product.status,
                         product.updated_at,
                     ]

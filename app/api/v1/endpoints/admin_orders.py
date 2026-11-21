@@ -1,9 +1,16 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, Request
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Header, Request
 
-from app.api.deps import CurrentUser, DbSession, RequireEditor, no_store, require_editor
+from app.api.deps import (
+    CurrentUser,
+    DbSession,
+    RequireEditor,
+    RequireSuperadmin,
+    no_store,
+    require_editor,
+)
 from app.core.config import settings
 from app.rate_limit import limiter
 from app.schemas.order import (
@@ -16,9 +23,13 @@ from app.schemas.order import (
     NewOrderFeed,
     NewOrderQuery,
     OfflineOrderCreate,
+    OrderDeleteImpact,
+    OrderDeleteRequest,
+    OrderDeleteResult,
     OrderIdList,
     OrderItemsUpdate,
     OrderOverview,
+    OrderPaymentCreate,
     OrderRead,
     OrderUpdate,
     PrintData,
@@ -121,6 +132,29 @@ async def list_orders(
     return await order_service.list_orders(db, query)
 
 
+@router.get("/{order_id}/delete-impact", response_model=OrderDeleteImpact)
+async def order_delete_impact(
+    db: DbSession,
+    actor: RequireSuperadmin,
+    order_id: uuid.UUID,
+) -> OrderDeleteImpact:
+    del actor
+    return await order_admin_service.delete_impact(db, order_id)
+
+
+@router.delete("/{order_id}", response_model=OrderDeleteResult)
+@limiter.limit(settings.rate_limit_product_writes)
+async def delete_order(
+    request: Request,
+    db: DbSession,
+    actor: RequireSuperadmin,
+    order_id: uuid.UUID,
+    payload: OrderDeleteRequest = Body(...),
+) -> OrderDeleteResult:
+    del request
+    return await order_admin_service.delete_order(db, order_id, payload, actor=actor)
+
+
 @router.get("/{order_id}", response_model=OrderRead)
 async def read_order(db: DbSession, order_id: uuid.UUID) -> OrderRead:
     return await order_service.get_order(db, order_id)
@@ -156,3 +190,16 @@ async def replace_order_items(
     return await order_admin_service.replace_items(
         db, order_id, payload, actor=actor, background=background
     )
+
+
+@router.post("/{order_id}/payments", response_model=OrderRead)
+@limiter.limit(settings.rate_limit_product_writes)
+async def record_order_payment(
+    request: Request,
+    db: DbSession,
+    actor: RequireEditor,
+    order_id: uuid.UUID,
+    payload: OrderPaymentCreate,
+) -> OrderRead:
+    del request
+    return await order_admin_service.record_payment(db, order_id, payload, actor=actor)

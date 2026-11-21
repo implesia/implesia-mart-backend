@@ -11,21 +11,30 @@ from collections.abc import Iterable, Sequence
 
 from slugify import slugify
 from sqlalchemy import delete, func, select
+from sqlalchemy import update as sa_update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, NotFoundError, UnprocessableError
+from app.models.audit_event import AuditAction
 from app.models.badge import SYSTEM_BADGES, Badge, BadgeTone, ProductBadgeLink
-from app.models.product import ProductBadge
+from app.models.product import Product, ProductBadge
+from app.models.user import User
 from app.schemas.badge import (
     MAX_PER_PRODUCT,
     BadgeAdminList,
     BadgeAdminRead,
+    BadgeDeleteImpact,
+    BadgeDeleteRequest,
+    BadgeDeleteResult,
+    BadgeMergeTarget,
     BadgeRef,
+    BadgeSampleProduct,
     BadgeUpdate,
     BadgeWrite,
     PublicBadge,
 )
+from app.services import audit_service
 
 _SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _SLUG_MAX = 48
@@ -159,28 +168,141 @@ async def update(db: AsyncSession, badge: Badge, payload: BadgeUpdate) -> Badge:
     return badge
 
 
-async def delete_badge(db: AsyncSession, badge: Badge) -> None:
-    """Refuse to delete a built-in badge or one still on a product.
+async def delete_impact(db: AsyncSession, badge_id: uuid.UUID) -> BadgeDeleteImpact:
+    badge = await get(db, badge_id)
+    linked_count = (await _usage(db, [badge.id])).get(badge.id, 0)
+    sample_rows = (
+        await db.execute(
+            select(Product.id, Product.title)
+            .join(ProductBadgeLink, ProductBadgeLink.product_id == Product.id)
+            .where(ProductBadgeLink.badge_id == badge.id)
+            .order_by(Product.title.asc(), Product.id.asc())
+            .limit(10)
+        )
+    ).all()
+    target_rows = (
+        await db.execute(
+            select(Badge.id, Badge.name, Badge.slug)
+            .where(Badge.id != badge.id)
+            .order_by(Badge.is_system.desc(), Badge.name.asc(), Badge.id.asc())
+        )
+    ).all()
+    return BadgeDeleteImpact(
+        badge_name=badge.name,
+        is_system=badge.is_system,
+        linked_products_count=linked_count,
+        sample_products=[BadgeSampleProduct(id=row[0], title=str(row[1])) for row in sample_rows],
+        available_merge_targets=[
+            BadgeMergeTarget(id=row[0], name=str(row[1]), slug=str(row[2])) for row in target_rows
+        ],
+    )
 
-    Switching a badge off hides it from the storefront at once and keeps every product's
-    choice, so that is the safe path; delete is only for a badge nothing uses.
-    """
+
+async def delete_badge(
+    db: AsyncSession,
+    badge: Badge,
+    *,
+    payload: BadgeDeleteRequest | None = None,
+    actor: User | None = None,
+) -> BadgeDeleteResult:
+    """Delete a custom badge by unlinking it or merging its products into another badge."""
     if badge.is_system:
         raise ConflictError("Built-in badges cannot be deleted. Switch the badge off instead.")
-    used = (await _usage(db, [badge.id])).get(badge.id, 0)
-    if used:
-        noun = "product" if used == 1 else "products"
-        raise ConflictError(
-            f"This badge is on {used} {noun}. Switch it off, or remove it from "
-            f"those products first.",
-            {"product_count": used},
-        )
+    req = payload or BadgeDeleteRequest()
+    affected_ids = list(
+        (
+            await db.scalars(
+                select(ProductBadgeLink.product_id).where(ProductBadgeLink.badge_id == badge.id)
+            )
+        ).all()
+    )
+    target_id: uuid.UUID | None = None
+    target_name: str | None = None
+
+    if req.mode == "merge":
+        if req.target_badge_id is None:
+            raise UnprocessableError("target_badge_id is required when mode is merge")
+        if req.target_badge_id == badge.id:
+            raise UnprocessableError("Cannot merge a badge into itself")
+        target = await db.get(Badge, req.target_badge_id)
+        if target is None:
+            raise NotFoundError("Target badge not found")
+        target_id = target.id
+        target_name = target.name
+        if affected_ids:
+            already_has = set(
+                (
+                    await db.scalars(
+                        select(ProductBadgeLink.product_id).where(
+                            ProductBadgeLink.badge_id == target.id,
+                            ProductBadgeLink.product_id.in_(affected_ids),
+                        )
+                    )
+                ).all()
+            )
+            if already_has:
+                await db.execute(
+                    delete(ProductBadgeLink).where(
+                        ProductBadgeLink.badge_id == badge.id,
+                        ProductBadgeLink.product_id.in_(already_has),
+                    )
+                )
+            to_move = [pid for pid in affected_ids if pid not in already_has]
+            if to_move:
+                await db.execute(
+                    sa_update(ProductBadgeLink)
+                    .where(
+                        ProductBadgeLink.badge_id == badge.id,
+                        ProductBadgeLink.product_id.in_(to_move),
+                    )
+                    .values(badge_id=target.id)
+                )
+    else:
+        if affected_ids:
+            await db.execute(delete(ProductBadgeLink).where(ProductBadgeLink.badge_id == badge.id))
+
+    if affected_ids:
+        await db.flush()
+        grouped = await for_products(db, affected_ids)
+        for pid in affected_ids:
+            await db.execute(
+                sa_update(Product)
+                .where(Product.id == pid)
+                .values(badge=legacy_value(grouped.get(pid, [])))
+            )
+
+    badge_id = badge.id
+    badge_name = badge.name
     await db.delete(badge)
+    await audit_service.record(
+        db,
+        actor_id=actor.id if actor is not None else None,
+        action=AuditAction.BADGE_DELETED.value,
+        target_type="badge",
+        target_id=badge_id,
+        metadata={
+            "badge_name": badge_name,
+            "mode": req.mode,
+            "affected_products_count": len(affected_ids),
+            "target_badge_id": str(target_id) if target_id else None,
+            "target_badge_name": target_name,
+        },
+    )
     try:
         await db.commit()
-    except IntegrityError as exc:  # a product picked it up between the check and the delete
+    except IntegrityError as exc:
         await db.rollback()
-        raise ConflictError("This badge is now on a product. Switch it off instead.") from exc
+        raise ConflictError(
+            "Could not delete badge because its links changed concurrently."
+        ) from exc
+    return BadgeDeleteResult(
+        message="Badge deleted",
+        deleted_badge_id=badge_id,
+        deleted_badge_name=badge_name,
+        mode=req.mode,
+        affected_products_count=len(affected_ids),
+        target_badge_id=target_id,
+    )
 
 
 # ------------------------------------------------------------------ product links

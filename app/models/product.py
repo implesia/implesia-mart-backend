@@ -97,6 +97,7 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index(conv("ix_products_featured"), "published", "featured"),
         Index(conv("ix_products_sort_order"), "sort_order"),
         Index(conv("ix_products_created_at"), "created_at"),
+        Index(conv("ix_products_supplier_id"), "supplier_id"),
     )
 
     slug: Mapped[str] = mapped_column(String(160), unique=True, nullable=False)
@@ -109,6 +110,10 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # cannot be deleted.
     category_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("categories.id", ondelete="RESTRICT"), nullable=True
+    )
+    # Optional primary supplier for admin catalog/purchasing. Never returned on public endpoints.
+    supplier_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("suppliers.id", ondelete="SET NULL"), nullable=True
     )
     # Deprecated: the pre-0075 enum column. Kept (nullable, no CHECK) for one release so a
     # rollback or a reader of the raw table still works; nothing writes it any more.
@@ -208,6 +213,10 @@ class ProductVariant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint("product_id", "option_key", name="uq_product_variants_option_key"),
         CheckConstraint("price >= 0", name="price_non_negative"),
         CheckConstraint(
+            "cost_price IS NULL OR cost_price >= 0",
+            name="cost_price_non_negative",
+        ),
+        CheckConstraint(
             "compare_at_price IS NULL OR compare_at_price >= price", name="compare_at_gte_price"
         ),
         CheckConstraint("quantity IS NULL OR quantity >= 0", name="quantity_non_negative"),
@@ -231,6 +240,8 @@ class ProductVariant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     sku: Mapped[str] = mapped_column(String(64), nullable=False, default="", server_default="")
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     compare_at_price: Mapped[int | None] = mapped_column(Integer)
+    # Optional per-variant wholesale cost. Admin responses only; never public.
+    cost_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     quantity: Mapped[int | None] = mapped_column(Integer)
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")

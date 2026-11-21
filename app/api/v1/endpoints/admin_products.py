@@ -25,7 +25,8 @@ from app.schemas.product import (
     ProductCreate,
     ProductUpdate,
 )
-from app.services import category_service, product_service
+from app.schemas.report import ProductAnalyticsReport
+from app.services import category_service, product_service, report_service
 
 router = APIRouter(dependencies=[Depends(require_editor), Depends(no_store)])
 
@@ -121,6 +122,7 @@ _FIELD_KEYS: Mapping[str, str] = {
     "subtitle": "subtitle",
     "category": "category",
     "category_id": "category",
+    "supplier_id": "supplier",
     "price": "price",
     "compare_at_price": "compareAtPrice",
     "cost_price": "costPrice",
@@ -159,6 +161,7 @@ _LABELS = {
     "title": "প্রোডাক্টের নাম",
     "subtitle": "সাবটাইটেল",
     "category": "ক্যাটাগরি",
+    "supplier": "সাপ্লায়ার",
     "price": "দাম",
     "compareAtPrice": "আগের দাম (compare-at)",
     "costPrice": "ক্রয়মূল্য",
@@ -205,6 +208,11 @@ _KNOWN: Mapping[str, FieldError] = {
         "category",
         "বাছাই করা ক্যাটাগরিটা আর নেই",
         "পেজটা রিফ্রেশ করে আবার একটা ক্যাটাগরি বাছাই করুন",
+    ),
+    "Supplier not found": _err(
+        "supplier",
+        "বাছাই করা সাপ্লায়ারটা আর নেই",
+        "পেজটা রিফ্রেশ করে সক্রিয় একটি সাপ্লায়ার বাছাই করুন অথবা খালি রাখুন",
     ),
     "Category must be a slug such as gadgets": _err(
         "category", "ক্যাটাগরি সঠিক নয়", "তালিকা থেকে একটা ক্যাটাগরি বাছাই করুন"
@@ -517,6 +525,13 @@ async def create_product(
         await db.rollback()
         _logger.error("product_create_failed", error_type=type(exc).__name__, where=_where(exc))
         return _errors_response(500, [_SERVER_ERROR])
+
+
+@router.get("/{product_id}/analytics", response_model=ProductAnalyticsReport)
+async def read_product_analytics(
+    db: DbSession, product_id: uuid.UUID
+) -> ProductAnalyticsReport:
+    return await report_service.product_analytics(db, product_id)
 
 
 @router.get("/{product_id}", response_model=AdminProductRead)

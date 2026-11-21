@@ -1,12 +1,19 @@
 import uuid
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Body, Depends, Request, status
 
-from app.api.deps import DbSession, no_store, require_editor
+from app.api.deps import DbSession, RequireSuperadmin, no_store, require_editor
 from app.core.config import settings
 from app.rate_limit import limiter
-from app.schemas.badge import BadgeAdminList, BadgeAdminRead, BadgeUpdate, BadgeWrite
-from app.schemas.common import Message
+from app.schemas.badge import (
+    BadgeAdminList,
+    BadgeAdminRead,
+    BadgeDeleteImpact,
+    BadgeDeleteRequest,
+    BadgeDeleteResult,
+    BadgeUpdate,
+    BadgeWrite,
+)
 from app.services import badge_service
 
 router = APIRouter(dependencies=[Depends(require_editor), Depends(no_store)])
@@ -25,6 +32,16 @@ async def create_badge(request: Request, db: DbSession, payload: BadgeWrite) -> 
     return await badge_service.admin_read(db, badge)
 
 
+@router.get("/{badge_id}/delete-impact", response_model=BadgeDeleteImpact)
+async def badge_delete_impact(
+    db: DbSession,
+    actor: RequireSuperadmin,
+    badge_id: uuid.UUID,
+) -> BadgeDeleteImpact:
+    del actor
+    return await badge_service.delete_impact(db, badge_id)
+
+
 @router.get("/{badge_id}", response_model=BadgeAdminRead)
 async def get_badge(db: DbSession, badge_id: uuid.UUID) -> BadgeAdminRead:
     return await badge_service.admin_read(db, await badge_service.get(db, badge_id))
@@ -41,10 +58,15 @@ async def update_badge(
     return await badge_service.admin_read(db, badge)
 
 
-@router.delete("/{badge_id}", response_model=Message)
+@router.delete("/{badge_id}", response_model=BadgeDeleteResult)
 @limiter.limit(settings.rate_limit_product_writes)
-async def delete_badge(request: Request, db: DbSession, badge_id: uuid.UUID) -> Message:
+async def delete_badge(
+    request: Request,
+    db: DbSession,
+    actor: RequireSuperadmin,
+    badge_id: uuid.UUID,
+    payload: BadgeDeleteRequest | None = Body(default=None),
+) -> BadgeDeleteResult:
     del request
     badge = await badge_service.get(db, badge_id)
-    await badge_service.delete_badge(db, badge)
-    return Message(message="Badge deleted")
+    return await badge_service.delete_badge(db, badge, payload=payload, actor=actor)

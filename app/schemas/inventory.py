@@ -1,8 +1,9 @@
 import uuid
 from datetime import date, datetime
-from typing import Literal, Self
+from decimal import Decimal
+from typing import Annotated, Literal, Self
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import BaseModel, Field, PlainSerializer, field_validator, model_validator
 
 from app.models.inventory import ImportKind, MovementType
 from app.schemas.common import Page, WriteModel
@@ -244,6 +245,52 @@ class ImportResult(WriteModel):
     saved: int
     skipped: int
     rows: list[ImportPreviewRow]
+
+
+def _money_float(value: Decimal) -> float:
+    return float(value)
+
+
+InventoryMoney = Annotated[
+    Decimal,
+    PlainSerializer(_money_float, return_type=float, when_used="json"),
+]
+
+
+class SupplierMergeTarget(BaseModel):
+    id: uuid.UUID
+    name: str
+    phone: str
+
+
+class SupplierDeleteImpact(BaseModel):
+    supplier_name: str
+    purchases_count: int
+    total_purchase_amount: InventoryMoney
+    linked_products_count: int
+    available_merge_targets: list[SupplierMergeTarget]
+
+
+class SupplierDeleteRequest(WriteModel):
+    mode: Literal["merge", "archive", "hard_delete"] = "archive"
+    target_supplier_id: uuid.UUID | None = None
+    reason: str = Field(default="", max_length=500)
+    unlink_products: bool = True
+
+    @field_validator("reason")
+    @classmethod
+    def _clean_reason(cls, value: str) -> str:
+        return value.strip()
+
+
+class SupplierDeleteResult(BaseModel):
+    deleted_supplier_id: uuid.UUID
+    deleted_supplier_name: str
+    mode: Literal["merge", "archive", "hard_delete"]
+    target_supplier_id: uuid.UUID | None = None
+    moved_purchases_count: int = 0
+    moved_products_count: int = 0
+    unlinked_products_count: int = 0
 
 
 SupplierList = Page[SupplierRead]
