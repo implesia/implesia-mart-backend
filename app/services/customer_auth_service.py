@@ -14,7 +14,7 @@ from app.schemas.customer import (
     CustomerRegisterRequest,
     normalize_bd_phone,
 )
-from app.services import audit_service, refresh_token_service
+from app.services import audit_service, image_storage, refresh_token_service
 
 logger = get_logger("customer_auth")
 
@@ -133,15 +133,34 @@ async def update_profile(
 
     if "full_name" in data and data["full_name"] is not None:
         user.full_name = str(data["full_name"]).strip()
-    if "district" in data:
-        user.district = data["district"]
-    if "area" in data:
-        user.area = data["area"]
-    if "address" in data:
-        user.address = data["address"]
+    for field in ("district", "area", "address"):
+        if field in data:
+            val = data[field]
+            cleaned = val.strip() if isinstance(val, str) else val
+            setattr(user, field, cleaned or None)
 
     await db.commit()
     await db.refresh(user)
+    return user
+
+
+async def set_avatar(db: AsyncSession, user: User, url: str) -> User:
+    previous = user.avatar_url
+    user.avatar_url = url
+    await db.commit()
+    await db.refresh(user)
+    if previous and previous != url:
+        image_storage.delete_owned_media({previous}, folder="avatars")
+    return user
+
+
+async def remove_avatar(db: AsyncSession, user: User) -> User:
+    previous = user.avatar_url
+    user.avatar_url = None
+    await db.commit()
+    await db.refresh(user)
+    if previous:
+        image_storage.delete_owned_media({previous}, folder="avatars")
     return user
 
 

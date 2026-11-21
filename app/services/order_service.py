@@ -62,6 +62,7 @@ from app.services import (
     delivery_service,
     inventory_service,
     meta_capi,
+    notification_service,
     payment_service,
     pricing_service,
     telegram_notify,
@@ -733,6 +734,7 @@ async def create_order(
         meta_capi.schedule_purchase(background, loaded, payload.tracking)
         await telegram_notify.notify_new_order(db, background, loaded)
     telegram_notify.flush_low_stock(db, background)
+    await notification_service.create_order_status_notification(db, loaded, OrderStatus.NEW.value)
     return read
 
 
@@ -1351,6 +1353,7 @@ async def update_order(
     order = await _load(db, order_id)
     became_cancelled = False
     sms_status: str | None = None
+    status_changed_to: str | None = None
     if payload.status is not None and payload.status.value != order.status:
         target = payload.status.value
         try:
@@ -1358,13 +1361,9 @@ async def update_order(
         except ConflictError:
             await db.rollback()
             raise
+        status_changed_to = target
         if target in customer_notify.SEND_ON:
             sms_status = target
-        if payload.notify_customer:
-            from app.services import notification_service
-            await notification_service.create_order_status_notification(
-                db, order, target, language=payload.notification_language
-            )
     before_courier = (order.courier_name, order.tracking_number)
     if payload.courier_name is not None:
         order.courier_name = payload.courier_name
@@ -1415,4 +1414,8 @@ async def update_order(
     if sms_status is not None:
         await customer_notify.schedule(db, background, loaded, sms_status)
     telegram_notify.flush_low_stock(db, background)
+    if status_changed_to is not None and payload.notify_customer:
+        await notification_service.create_order_status_notification(
+            db, loaded, status_changed_to, language=payload.notification_language
+        )
     return await present(db, loaded, with_activity=True)

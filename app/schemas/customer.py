@@ -1,6 +1,7 @@
 import re
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -82,6 +83,16 @@ class CustomerProfileUpdate(BaseModel):
         text = str(v).strip().lower()
         return text if text else None
 
+    @field_validator("district", "area", "address", mode="before")
+    @classmethod
+    def clean_optional_text(cls, v: object) -> object:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            text = v.strip()
+            return text if text else None
+        return v
+
 
 class CustomerPasswordChangeRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=72)
@@ -145,6 +156,10 @@ class CustomerOrderDetail(BaseModel):
 class CustomerDashboardStats(BaseModel):
     total_orders: int
     active_orders: int
+    delivered_orders: int = 0
+    cancelled_orders: int = 0
+    total_products_purchased: int = 0
+    unread_notifications: int = 0
     total_spent: int
     customer_name: str
     phone: str | None = None
@@ -181,9 +196,15 @@ class PurchasedProductItem(BaseModel):
     slug: str
     image_url: str | None = None
     price: int
+    quantity: int = 1
+    line_total: int = 0
     purchased_at: datetime
     order_number: str
+    order_status: str = ""
     payment_method: str
+    paid_amount: int = 0
+    due_amount: int = 0
+    payment_status: str = "cod_due"
     can_review: bool
 
 
@@ -200,6 +221,8 @@ class OrderTrackingDetail(BaseModel):
     status: str
     courier_name: str
     tracking_number: str
+    tracking_url: str | None = None
+    live_events: list[dict[str, Any]] = Field(default_factory=list)
     timeline: list[TrackingTimelineStep]
 
 

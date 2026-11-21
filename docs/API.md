@@ -5,10 +5,10 @@ Generated from the FastAPI routers (`app/api/v1/router.py` and `app/api/v1/endpo
 ## Access levels
 
 - **public**: no token. Storefront and shopper calls. Carts identify a guest by the `X-Cart-Token` header.
+- **signed-in customer**: a valid customer access token (`Authorization: Bearer …`, role `customer`) for `/api/v1/customer/...` and review write/check routes.
 - **any signed-in staff**: a valid staff access token (`Authorization: Bearer …`), any role (`viewer`, `editor`, `superadmin`).
-- **admin (editor, superadmin)**: `require_editor`. A `viewer` gets 403.
+- **admin (editor, superadmin)**: `require_editor`. A `viewer` or `customer` gets 403.
 - **admin (superadmin only)**: `require_superadmin`.
-- There are no customer accounts. Staff are the only signed-in users.
 - A protected route without a token answers 401. A role that is too low answers 403.
 
 ## Errors
@@ -513,7 +513,7 @@ Query: `page` (1–10000), `page_size` (1–50, default 10), `q` (order number, 
 }
 ```
 
-`PATCH` body is `OrderUpdate` (`extra` forbidden). At least one of `status`, `call_status`, `courier_name`, `tracking_number`, `notes`. Empty object is 422. Courier and tracking are stripped strings, max 120. Notes max 500.
+`PATCH` body is `OrderUpdate` (`extra` forbidden). At least one of `status`, `call_status`, `courier_name`, `tracking_number`, `notes`. Empty object is 422. Courier and tracking are stripped strings, max 120. Notes max 500. Optional `notify_customer` (bool, default `true`) and `notification_language` (`"bn"` or `"en"`, default `"bn"`) control in-app customer notifications when `status` changes.
 
 `PUT /api/v1/admin/orders/{order_id}/items` replaces the lines while status is `new`. After that, 422 "Items can be edited only while the order is new". Body:
 
@@ -602,7 +602,7 @@ The order is `origin: "offline"`, `source: "direct"`, `channel` stored as `offli
 
 Ready to pack is the list endpoint with `status` forced to `confirmed`. The other query params still apply.
 
-`BulkStatusRequest`: `{ "status": "packed", "ids": ["…"] }`. 1–100 ids, duplicates dropped. The HTTP status is 200 even when some ids fail. One failure does not undo the others.
+`BulkStatusRequest`: `{ "status": "packed", "ids": ["…"], "notify_customer": true, "notification_language": "bn" }`. 1–100 ids, duplicates dropped. `notify_customer` (default `true`) and `notification_language` (default `"bn"`) are optional and trigger in-app customer notifications for orders whose status changed. The HTTP status is 200 even when some ids fail. One failure does not undo the others.
 
 ```json
 {
@@ -933,6 +933,47 @@ PATCH omits a field to keep it. `null` or `""` clears it (stored and returned as
 | GET | `/api/v1/categories/{slug}/products` | public | — | `PublicProductList` |
 
 `CategoryTree` nodes include `updated_at` (ISO datetime) for sitemap `lastmod`.
+
+## `customer`
+
+Customer account auth, profile, orders, tracking, purchased history, and in-app notifications. All routes return `Cache-Control: no-store`.
+
+| Method | Path | Access | Request body | Response |
+| --- | --- | --- | --- | --- |
+| POST | `/api/v1/customer/auth/register` | public | `CustomerRegisterRequest` | `TokenPair` (201) |
+| POST | `/api/v1/customer/auth/login` | public | `CustomerLoginRequest` | `TokenPair` |
+| POST | `/api/v1/customer/auth/refresh` | public | `RefreshRequest` | `TokenPair` |
+| POST | `/api/v1/customer/auth/logout` | public | `RefreshRequest` | `Message` |
+| GET | `/api/v1/customer/profile` | signed-in customer | — | `CustomerProfileRead` |
+| PATCH | `/api/v1/customer/profile` | signed-in customer | `CustomerProfileUpdate` | `CustomerProfileRead` |
+| POST | `/api/v1/customer/profile/avatar` | signed-in customer | multipart `file` | `CustomerProfileRead` |
+| DELETE | `/api/v1/customer/profile/avatar` | signed-in customer | — | `CustomerProfileRead` |
+| POST | `/api/v1/customer/change-password` | signed-in customer | `CustomerPasswordChangeRequest` | `Message` |
+| POST | `/api/v1/customer/cart/merge` | signed-in customer | `CartMergeRequest` | `CartRead` |
+| GET | `/api/v1/customer/orders` | signed-in customer | — | `Page[CustomerOrderSummary]` |
+| GET | `/api/v1/customer/orders/{order_number}` | signed-in customer | — | `CustomerOrderDetail` |
+| GET | `/api/v1/customer/orders/{order_number}/tracking` | signed-in customer | — | `OrderTrackingDetail` |
+| GET | `/api/v1/customer/dashboard-summary` | signed-in customer | — | `CustomerDashboardStats` |
+| GET | `/api/v1/customer/purchased-products` | signed-in customer | — | `list[PurchasedProductItem]` |
+| GET | `/api/v1/customer/notifications` | signed-in customer | — | `NotificationListResponse` |
+| PATCH | `/api/v1/customer/notifications/{notification_id}/read` | signed-in customer | — | `Message` |
+| POST | `/api/v1/customer/notifications/mark-all-read` | signed-in customer | — | `Message` |
+| DELETE | `/api/v1/customer/notifications/{notification_id}` | signed-in customer | — | `Message` |
+
+- `PATCH /customer/profile`: omits fields to leave them unchanged; explicitly sending `null` or `""` (or whitespace) for optional `email`, `district`, `area`, or `address` clears the stored value to `null`.
+- `DELETE /customer/profile/avatar`: sets `avatar_url` to `null`, removes the owned file under `/media/avatars/`, and returns `CustomerProfileRead`.
+- `GET /customer/dashboard-summary`: returns `total_orders`, `active_orders`, `delivered_orders`, `cancelled_orders`, `total_products_purchased` (sum of `OrderItem.quantity` across non-cancelled/non-returned orders), `unread_notifications` (within the last 30 days), `total_spent`, `customer_name`, `phone`, `email`.
+- `GET /customer/orders/{order_number}/tracking`: returns `order_number`, `status`, `courier_name`, `tracking_number`, `tracking_url` (`null` until live courier API integration), `live_events` (`[]` until live courier API integration), and `timeline` (`status`, `label`, `description`, `timestamp`, `completed`). Timestamps come from `order_activities` (`status_changed`), `order.created_at`, `order.delivered_at`, and `order.returned_at` (never fabricated from `order.updated_at`). `cancelled` and `returned` orders return reached forward steps followed by a completed terminal `cancelled` or `returned` step.
+- `GET /customer/purchased-products`: returns full purchase line history across `confirmed`, `packed`, `shipped`, and `delivered` orders (newest order first; repeat purchases of the same product across orders are preserved). Each item includes `product_id`, `title`, `slug`, `image_url`, `price`, `quantity`, `line_total`, `purchased_at`, `order_number`, `order_status`, `payment_method`, `paid_amount`, `due_amount`, `payment_status` (`paid`, `partial`, `cod_due`, or `unpaid`), and `can_review` (accurate per `product_id`).
+- `GET /customer/notifications`: returns notifications within the last 30 days plus `unread_count`, and automatically purges rows older than 30 days from `customer_notifications`. `DELETE /customer/notifications/{notification_id}` deletes an individual notification owned by the caller (404 otherwise). Notifications are automatically created on new online orders (for logged-in or phone-matched customers), admin single-order status updates, and admin bulk-status updates.
+
+## `reviews`
+
+| Method | Path | Access | Request body | Response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/v1/products/{product_id}/reviews` | public | — | `ProductReviewPage` |
+| GET | `/api/v1/products/{product_id}/can-review` | signed-in customer | — | `CanReviewResponse` |
+| POST | `/api/v1/products/{product_id}/reviews` | signed-in customer | `ProductReviewCreate` | `ProductReviewRead` (201) |
 
 ## `delivery`
 

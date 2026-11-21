@@ -4,7 +4,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, DbSession, no_store
 from app.core.exceptions import NotFoundError
-from app.models.order import Order, OrderStatus
+from app.models.order import Order
 from app.schemas.common import Page, page_count
 from app.schemas.customer import (
     CustomerDashboardStats,
@@ -124,44 +124,7 @@ async def get_dashboard_summary(
     db: DbSession,
     user: CurrentUser,
 ) -> CustomerDashboardStats:
-    total_orders = (
-        await db.scalar(select(func.count(Order.id)).where(Order.user_id == user.id))
-    ) or 0
-
-    active_statuses = [
-        OrderStatus.NEW.value,
-        OrderStatus.CONFIRMED.value,
-        OrderStatus.PACKED.value,
-        OrderStatus.SHIPPED.value,
-    ]
-    active_orders = (
-        await db.scalar(
-            select(func.count(Order.id)).where(
-                Order.user_id == user.id, Order.status.in_(active_statuses)
-            )
-        )
-    ) or 0
-
-    non_revenue_statuses = [
-        OrderStatus.CANCELLED.value,
-        OrderStatus.RETURNED.value,
-    ]
-    total_spent = (
-        await db.scalar(
-            select(func.coalesce(func.sum(Order.total), 0)).where(
-                Order.user_id == user.id, Order.status.notin_(non_revenue_statuses)
-            )
-        )
-    ) or 0
-
-    return CustomerDashboardStats(
-        total_orders=int(total_orders),
-        active_orders=int(active_orders),
-        total_spent=int(total_spent),
-        customer_name=user.full_name,
-        phone=user.phone,
-        email=user.email,
-    )
+    return await customer_purchased_service.get_dashboard_summary(db, user)
 
 
 @router.get("/purchased-products", response_model=list[PurchasedProductItem])

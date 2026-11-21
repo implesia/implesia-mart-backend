@@ -1,3 +1,5 @@
+import contextlib
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -7,6 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.notification import CustomerNotification
 from app.models.order import Order
 from app.models.user import User
+from app.schemas.customer import normalize_bd_phone
+
+RETENTION_DAYS = 30
+_PURGE_INTERVAL_SECONDS = 3600.0
+_last_purge_at: float | None = None
 
 TEMPLATES: dict[str, dict[str, dict[str, str]]] = {
     "bn": {
@@ -95,7 +102,10 @@ async def create_order_status_notification(
 ) -> CustomerNotification | None:
     user_id = order.user_id
     if user_id is None and order.phone:
-        matched = await db.scalar(select(User.id).where(User.phone == order.phone))
+        lookup_phone = order.phone
+        with contextlib.suppress(ValueError):
+            lookup_phone = normalize_bd_phone(order.phone)
+        matched = await db.scalar(select(User.id).where(User.phone == lookup_phone))
         if matched:
             user_id = matched
 
@@ -136,7 +146,69 @@ async def create_order_status_notification(
     db.add(notification)
     await db.commit()
     await db.refresh(notification)
+    await maybe_purge_expired_notifications(db)
     return notification
+
+
+def _retention_cutoff() -> datetime:
+    return datetime.now(UTC) - timedelta(days=RETENTION_DAYS)
+
+
+async def purge_expired_notifications(db: AsyncSession) -> int:
+    """Physically delete notifications older than 30 days from customer_notifications."""
+    global _last_purge_at
+    cutoff = _retention_cutoff()
+    stmt = (
+        delete(CustomerNotification)
+        .where(CustomerNotification.created_at < cutoff)
+        .execution_options(synchronize_session=False)
+    )
+    result = await db.execute(stmt)
+    await db.commit()
+    _last_purge_at = time.monotonic()
+    return int(getattr(result, "rowcount", 0) or 0)
+
+
+async def maybe_purge_expired_notifications(
+    db: AsyncSession,
+    *,
+    force: bool = False,
+) -> int:
+    """Throttled global cleanup so expired notifications are automatically removed."""
+    now = time.monotonic()
+    if force or _last_purge_at is None or (now - _last_purge_at) >= _PURGE_INTERVAL_SECONDS:
+        return await purge_expired_notifications(db)
+    return 0
+
+
+async def _purge_user_expired_notifications(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    cutoff: datetime,
+) -> int:
+    stmt = (
+        delete(CustomerNotification)
+        .where(
+            CustomerNotification.user_id == user_id,
+            CustomerNotification.created_at < cutoff,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    result = await db.execute(stmt)
+    deleted = int(getattr(result, "rowcount", 0) or 0)
+    if deleted > 0:
+        await db.commit()
+    return deleted
+
+
+async def count_unread_notifications(db: AsyncSession, user_id: uuid.UUID) -> int:
+    cutoff = _retention_cutoff()
+    unread_stmt = select(func.count(CustomerNotification.id)).where(
+        CustomerNotification.user_id == user_id,
+        CustomerNotification.is_read.is_(False),
+        CustomerNotification.created_at >= cutoff,
+    )
+    return int((await db.scalar(unread_stmt)) or 0)
 
 
 async def get_user_notifications(
@@ -144,7 +216,13 @@ async def get_user_notifications(
     user_id: uuid.UUID,
     limit: int = 50,
 ) -> tuple[list[CustomerNotification], int]:
-    cutoff = datetime.now(UTC) - timedelta(days=30)
+    cutoff = _retention_cutoff()
+    now = time.monotonic()
+    if _last_purge_at is None or (now - _last_purge_at) >= _PURGE_INTERVAL_SECONDS:
+        await purge_expired_notifications(db)
+    else:
+        await _purge_user_expired_notifications(db, user_id, cutoff)
+
     stmt = (
         select(CustomerNotification)
         .where(
@@ -157,22 +235,23 @@ async def get_user_notifications(
     result = await db.execute(stmt)
     notifications = list(result.scalars().all())
 
-    unread_stmt = select(func.count(CustomerNotification.id)).where(
-        CustomerNotification.user_id == user_id,
-        CustomerNotification.is_read.is_(False),
-        CustomerNotification.created_at >= cutoff,
-    )
-    unread_count = (await db.scalar(unread_stmt)) or 0
-
+    unread_count = await count_unread_notifications(db, user_id)
     return notifications, unread_count
 
 
-async def purge_expired_notifications(db: AsyncSession) -> int:
-    cutoff = datetime.now(UTC) - timedelta(days=30)
-    stmt = delete(CustomerNotification).where(CustomerNotification.created_at < cutoff)
-    result = await db.execute(stmt)
+async def delete_notification(
+    db: AsyncSession,
+    notification_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> bool:
+    stmt = delete(CustomerNotification).where(
+        CustomerNotification.id == notification_id,
+        CustomerNotification.user_id == user_id,
+    )
+    res = await db.execute(stmt)
     await db.commit()
-    return int(getattr(result, "rowcount", 0) or 0)
+    count = getattr(res, "rowcount", 0) or 0
+    return bool(count > 0)
 
 
 async def mark_read(

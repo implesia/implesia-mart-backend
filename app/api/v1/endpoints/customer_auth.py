@@ -119,10 +119,17 @@ async def upload_avatar(
 ) -> CustomerProfileRead:
     image_bytes = await image_storage.read_image(file)
     url = image_storage.store_image(image_bytes, folder="avatars")
-    user.avatar_url = url
-    await db.commit()
-    await db.refresh(user)
-    return CustomerProfileRead.model_validate(user)
+    updated = await customer_auth_service.set_avatar(db, user, url)
+    return CustomerProfileRead.model_validate(updated)
+
+
+@router.delete("/profile/avatar", response_model=CustomerProfileRead)
+async def delete_avatar(
+    db: DbSession,
+    user: CurrentUser,
+) -> CustomerProfileRead:
+    updated = await customer_auth_service.remove_avatar(db, user)
+    return CustomerProfileRead.model_validate(updated)
 
 
 @router.post("/cart/merge", response_model=CartRead)
@@ -173,3 +180,15 @@ async def mark_all_notifications_read(
 ) -> Message:
     count = await notification_service.mark_all_read(db, user.id)
     return Message(message=f"{count} notifications marked as read")
+
+
+@router.delete("/notifications/{notification_id}", response_model=Message)
+async def delete_notification(
+    db: DbSession,
+    user: CurrentUser,
+    notification_id: uuid.UUID,
+) -> Message:
+    ok = await notification_service.delete_notification(db, notification_id, user.id)
+    if not ok:
+        raise NotFoundError("Notification not found")
+    return Message(message="Notification deleted")

@@ -386,7 +386,7 @@ class OrderUpdate(BaseModel):
     courier_name: str | None = Field(default=None, max_length=120)
     tracking_number: str | None = Field(default=None, max_length=120)
     notes: str | None = Field(default=None, max_length=500)
-    notify_customer: bool = False
+    notify_customer: bool = True
     notification_language: str = "bn"
 
     @model_validator(mode="after")
@@ -626,6 +626,8 @@ class BulkStatusRequest(BaseModel):
 
     status: OrderStatus
     ids: list[uuid.UUID] = Field(min_length=1, max_length=100)
+    notify_customer: bool = True
+    notification_language: str = "bn"
 
     @model_validator(mode="after")
     def _unique(self) -> "BulkStatusRequest":

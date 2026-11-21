@@ -2,6 +2,35 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Phase 6 Customer Dashboard Backend Upgrades (2026-11-21). Done (not live).** Additive-only, no new migrations.
+  - **Dashboard Summary (`GET /api/v1/customer/dashboard-summary`):** Added `delivered_orders`, `cancelled_orders`, `total_products_purchased` (sum of `OrderItem.quantity` across non-cancelled/non-returned orders), and `unread_notifications` (count within the last 30 days) alongside existing `total_orders`, `active_orders`, `total_spent`, `customer_name`, `phone`, and `email`. Moved query logic into `customer_purchased_service.get_dashboard_summary`.
+  - **Profile & Avatar:**
+    - Added `DELETE /api/v1/customer/profile/avatar` to clear `avatar_url`, delete the owned file from `avatars/` storage, and return `CustomerProfileRead`. Replacing an avatar via `POST /api/v1/customer/profile/avatar` now also deletes the previous owned avatar file.
+    - Updated `CustomerProfileUpdate` and `customer_auth_service.update_profile` so explicitly sending `null` or `""` (or whitespace) for `email`, `district`, `area`, or `address` cleanly clears the column to `NULL` while omitting a field preserves it.
+  - **Notification 30-Day Auto-Deletion & Complete Triggers:**
+    - Added throttled opportunistic execution of `purge_expired_notifications(db)` on notification list and creation (plus per-user expired cleanup on list and standalone `purge_expired_notifications` helper) so notifications older than 30 days are physically deleted from `customer_notifications`.
+    - Triggered `create_order_status_notification` on new online order placement (`order_service.create_order`, for logged-in or phone-matched customers; skipped on idempotency replays), after commit on admin single-order status updates (`order_service.update_order`, now defaulting `notify_customer=True` and seeing updated courier/tracking fields), and on admin bulk status updates (`order_admin_service.bulk_status`, with optional `notify_customer` / `notification_language` on `BulkStatusRequest`).
+    - Added `DELETE /api/v1/customer/notifications/{notification_id}` for customers to delete their own individual notification (404 if missing or owned by another user).
+  - **Order Tracking Upgrade (`GET /api/v1/customer/orders/{order_number}/tracking`):**
+    - Pulls real step timestamps from `order_activities` (`status_changed` rows) plus `order.created_at`, `order.delivered_at`, and `order.returned_at` instead of reusing `order.updated_at` for every completed step.
+    - Cleanly handles `cancelled` and `returned` terminal statuses (lists reached forward steps followed by the terminal `cancelled` or `returned` step instead of falling back to step 0).
+    - Added future-ready fields `tracking_url: str | None = None` and `live_events: list[dict] = []` on `OrderTrackingDetail` for Steadfast/Pathao live tracking integration.
+  - **Purchased Products History Upgrade (`GET /api/v1/customer/purchased-products`):**
+    - Returns full purchase line history across eligible orders without dropping repeat purchases of the same product across different orders.
+    - Added `quantity`, `line_total`, `order_status`, `paid_amount`, `due_amount`, and `payment_status` (`paid` / `partial` / `cod_due` / `unpaid`) while keeping `can_review` accurate per product.
+  - Files touched:
+    - `app/schemas/customer.py`, `app/schemas/order.py`
+    - `app/services/customer_auth_service.py`, `app/services/customer_purchased_service.py`, `app/services/notification_service.py`, `app/services/order_service.py`, `app/services/order_admin_service.py`
+    - `app/api/v1/endpoints/customer_auth.py`, `app/api/v1/endpoints/customer_orders.py`
+    - `tests/test_customer_phase6.py`
+    - `docs/CHANGELOG.md`, `docs/API.md`, `docs/BUSINESS_LOGIC.md`, `docs/TODO.md`
+  - Frontend (`implesia-mart`):
+    - Dashboard overview can read `delivered_orders`, `cancelled_orders`, `total_products_purchased`, and `unread_notifications` from `GET /api/v1/customer/dashboard-summary`.
+    - Profile page can call `DELETE /api/v1/customer/profile/avatar` to remove an avatar, and send `null` or `""` in `PATCH /api/v1/customer/profile` to clear optional fields (`email`, `district`, `area`, `address`).
+    - Notifications drawer/page can call `DELETE /api/v1/customer/notifications/{notification_id}` to remove individual notifications.
+    - Order tracking view should render `timeline` dynamically (including `cancelled`/`returned` terminal steps and nullable `timestamp`) and may read optional `tracking_url` and `live_events`.
+    - Purchased products list receives full line history (repeat purchases of the same `product_id` across orders; key list items by `order_number + product_id` or index rather than `product_id` alone) and can display `quantity`, `line_total`, `order_status`, `paid_amount`, `due_amount`, and `payment_status`.
+
 - **Customer Authentication, Customer Notifications & Verified Product Reviews (2026-11-21). Done (not live).**
   - **Migration 0101:** Added `customer` role to `UserRole` enum. Added nullable columns `phone` (varchar 20), `district` (varchar 80), `area` (varchar 120), and `address` (varchar 500) to `users` model. Added partial unique index on `phone` (where phone is not null).
   - **Migration 0103:** Added nullable `avatar_url` (varchar 500) to `users`. Created `customer_notifications` table (UUID pk, user_id FK cascade, order_id FK set null, type, title, message, is_read, language, timestamps, composite indexes on user_id + created_at and user_id + is_read). Created `product_reviews` table (UUID pk, product_id FK cascade, user_id FK cascade, order_id FK set null, rating 1-5, headline, comment, is_verified_purchase, is_published, timestamps, indexes on product_id + is_published + created_at and user_id + product_id).

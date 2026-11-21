@@ -57,6 +57,7 @@ from app.services import (
     customer_notify,
     delivery_service,
     inventory_service,
+    notification_service,
     order_service,
     pricing_service,
     telegram_notify,
@@ -455,6 +456,7 @@ async def bulk_status(
     results: list[BulkStatusItem] = []
     notify: list[uuid.UUID] = []
     sms_ids: list[uuid.UUID] = []
+    changed_ids: list[uuid.UUID] = []
     target = payload.status.value
     for order_id in payload.ids:
         try:
@@ -470,6 +472,7 @@ async def bulk_status(
                 became_cancelled = await order_service.change_status(
                     db, order, target, actor_id=actor.id
                 )
+                changed_ids.append(order.id)
                 if became_cancelled and order.origin != OrderOrigin.OFFLINE.value:
                     notify.append(order.id)
                 if target in customer_notify.SEND_ON:
@@ -486,6 +489,14 @@ async def bulk_status(
             db, background, await order_service._load(db, order_id), target
         )
     telegram_notify.flush_low_stock(db, background)
+    if payload.notify_customer:
+        for order_id in changed_ids:
+            await notification_service.create_order_status_notification(
+                db,
+                await order_service._load(db, order_id),
+                target,
+                language=payload.notification_language,
+            )
     return BulkStatusResult(results=results)
 
 

@@ -10,18 +10,18 @@ Open items found in the code and in recent work. Remove an item when it is done.
   - **Customer Auth & Profile Service:** BD phone normalization (`01XXXXXXXXX`), password hashing, JWT access/refresh token rotation, session invalidation on logout.
   - **Endpoints:**
     - `POST /api/v1/customer/auth/register`, `login`, `refresh`, `logout`.
-    - `GET` & `PATCH /api/v1/customer/profile`.
+    - `GET` & `PATCH /api/v1/customer/profile` (clean clearing of optional fields via `null`/`""`).
     - `POST /api/v1/customer/change-password`.
-    - `POST /api/v1/customer/avatar` (profile photo upload).
+    - `POST` & `DELETE /api/v1/customer/profile/avatar` (profile photo upload and removal with owned media cleanup).
     - `POST /api/v1/customer/cart/merge` (merge guest cart into customer account on login).
-    - `GET /api/v1/customer/orders` & `GET /api/v1/customer/orders/{number}/tracking`.
-    - `GET /api/v1/customer/purchased-products`.
-    - `GET /api/v1/customer/dashboard-summary`.
-    - `GET /api/v1/customer/notifications` & `PATCH /api/v1/customer/notifications/{id}/read`.
+    - `GET /api/v1/customer/orders` & `GET /api/v1/customer/orders/{number}/tracking` (activity-sourced timestamps, clean `cancelled`/`returned` handling, future-ready `tracking_url` & `live_events`).
+    - `GET /api/v1/customer/purchased-products` (full repeat-purchase line history with quantities, totals, order status, and payment breakdown).
+    - `GET /api/v1/customer/dashboard-summary` (includes `delivered_orders`, `cancelled_orders`, `total_products_purchased`, `unread_notifications`).
+    - `GET /api/v1/customer/notifications`, `PATCH /api/v1/customer/notifications/{id}/read`, `POST /api/v1/customer/notifications/mark-all-read`, `DELETE /api/v1/customer/notifications/{id}` (with automatic 30-day physical purge).
     - `GET /api/v1/products/{id}/reviews`, `GET /api/v1/products/{id}/can-review`, `POST /api/v1/products/{id}/reviews`.
   - **Automated Order Notifications:**
-    - Moving order status (processing, shipped, delivered) creates an in-app customer notification when customer `user_id` is linked.
-  - **Test Suite:** 11 comprehensive automated tests in `tests/test_customer_auth.py` and `tests/test_customer_phase6.py` covering all flows.
+    - Triggered automatically on new online order creation (logged-in or phone-matched customers), admin single-order status updates, and admin bulk-status updates.
+  - **Test Suite:** Comprehensive automated tests in `tests/test_customer_auth.py` and `tests/test_customer_phase6.py` covering all flows and Phase 6 upgrades.
 
 ## Open / Pending Next Steps
 
