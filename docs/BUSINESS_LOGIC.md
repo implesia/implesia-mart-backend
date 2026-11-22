@@ -292,3 +292,19 @@ Code: `app/services/customer_auth_service.py`, `app/services/customer_purchased_
 - **In-app notifications & 30-day retention:** Notifications are created automatically when a new online order is placed (for logged-in or phone-matched customers; never duplicated on idempotency replays), when admin changes status via single `PATCH` or `POST /bulk-status` (unless `notify_customer` is false). Rows older than 30 days are physically purged opportunistically on notification list/create (global cleanup throttled per hour plus immediate per-user cleanup on list) and via standalone `notification_service.purge_expired_notifications(db)`. Customers may also delete individual own notifications (`DELETE /customer/notifications/{id}`).
 - **Customer order tracking:** Step timestamps come from `order.created_at` (`new`), `order_activities` (`status_changed`), and `order.delivered_at`/`order.returned_at` fallbacks — never fabricated from `order.updated_at`. Terminal statuses `cancelled` and `returned` show the reached forward steps followed by a completed terminal step. `tracking_url` and `live_events` default to `null` and `[]` for future live courier API integration.
 - **Purchased products history:** Returns all line items from eligible orders (`confirmed`, `packed`, `shipped`, `delivered`) newest first without deduplicating repeat purchases across orders. Includes `quantity`, `line_total`, `order_status`, `paid_amount`, `due_amount`, and `payment_status` (`paid` when paid ≥ total, `partial` when 0 < paid < total, `cod_due` when unpaid COD, else `unpaid`). `can_review` is true per product until the customer submits one verified review for that product.
+
+## Direct Communication Engine (Phase 19)
+
+Code: `app/models/communication.py`, `app/services/communication_service.py`, `app/api/v1/endpoints/customer_communication.py`, `app/api/v1/endpoints/admin_communication.py`.
+
+- **Seller-ready thread types & statuses:** Every `conversations` row has `type` in `('customer_support', 'seller_support', 'customer_seller')` and `status` in `('open', 'pending', 'resolved', 'closed')`, with optional `customer_id`, `seller_id`, `order_id`, `product_id`, and `assigned_staff_id`.
+- **Dynamic RBAC (`communication` module):** `superadmin` has `full`, `editor` defaults to `read_write`, `viewer` defaults to `read_only`, `customer` has `none`, and Superadmin can grant `communication` permissions to any custom staff role.
+- **Participant & internal note isolation:**
+  - Customers only access conversations where `customer_id == user.id` (404 otherwise).
+  - Staff internal notes (`is_internal_note=true`) are visible ONLY to staff with `communication:read`, NEVER returned to customers, NEVER overwrite `conversations.last_message_preview`, NEVER increment customer unread counts, and NEVER broadcast to `rt:user:{customer_id}` or non-admin WebSocket connections subscribed to `rt:conv:{id}`.
+  - Starting a customer support thread (`POST /customer/conversations`) reuses an existing `open`/`pending` `customer_support` conversation matching the same `(order_id, product_id)` context.
+- **Scale & anti-spam invariants:**
+  - Message history uses O(1) keyset/cursor pagination (`before_created_at`, `before_id`, `limit <= 50`) backed by `(conversation_id, created_at DESC, id DESC)`.
+  - Conversation unread counts and admin inbox summaries run via single aggregated SQL queries (zero N+1).
+  - Sending messages enforces a Redis sliding-window rate limit of `20 messages / 10 seconds` per user (429), sanitizes control characters, validates 1–2000 character length (unless an image attachment under `/media/chat/` is supplied), and publishes `message.created` via `realtime_hub` after commit.
+  - When staff replies publicly to an offline customer (verified via Redis presence `presence:user:{id}`), an in-app `CustomerNotification` (`type="support_message"`) is created at most once per conversation per 5 minutes (`chat:notify:{conv_id}:{user_id}`).

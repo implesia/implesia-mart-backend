@@ -5,6 +5,7 @@ from app.api.v1.endpoints import (
     admin_audit,
     admin_badges,
     admin_cart,
+    admin_communication,
     admin_coupons,
     admin_delivery,
     admin_inventory,
@@ -18,6 +19,7 @@ from app.api.v1.endpoints import (
     cart,
     categories,
     customer_auth,
+    customer_communication,
     customer_orders,
     dashboard,
     delivery,
@@ -32,6 +34,7 @@ from app.api.v1.endpoints import (
     site_payment,
     site_settings,
     users,
+    ws,
 )
 from app.api.v1.endpoints.about import cta as about_cta
 from app.api.v1.endpoints.about import dress as about_dress
@@ -98,8 +101,20 @@ api_router = APIRouter()
 _AUDITED = [Depends(audit_admin_write)]
 
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(ws.router, tags=["realtime"])
 api_router.include_router(customer_auth.router, prefix="/customer", tags=["customer:auth"])
 api_router.include_router(customer_orders.router, prefix="/customer", tags=["customer:orders"])
+api_router.include_router(
+    customer_communication.router,
+    prefix="/customer",
+    tags=["customer:communication"],
+)
+api_router.include_router(
+    admin_communication.router,
+    prefix="/admin/communication",
+    tags=["admin:communication"],
+    dependencies=_AUDITED,
+)
 api_router.include_router(reviews.router, tags=["reviews"])
 api_router.include_router(
     admin_reviews.router,

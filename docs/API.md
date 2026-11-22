@@ -39,6 +39,20 @@ Generated from the FastAPI routers (`app/api/v1/router.py` and `app/api/v1/endpo
 | GET | `/metrics` | metrics token (setting `METRICS_TOKEN`) | Prometheus metrics |
 | GET, HEAD | `/media/{folder}/{name}` | public | With R2 configured, `307` to `MEDIA_PUBLIC_BASE_URL/{folder}/{name}`. Otherwise the file on disk. Stored values stay `/media/...`. |
 
+## Realtime WebSocket & Tickets
+
+Short-lived single-use tickets authenticate WebSocket connections without putting JWTs in query strings or holding PostgreSQL sessions open inside the WebSocket loop.
+
+| Method | Path | Access | Request body | Response |
+| --- | --- | --- | --- | --- |
+| POST | `/api/v1/auth/ws-ticket` | any signed-in staff (`admin_access=true`) | — | `WSTicketResponse` (`ticket`, `expires_in=30`, `scope="admin"`, `channels`) |
+| POST | `/api/v1/customer/ws-ticket` | signed-in customer | — | `WSTicketResponse` (`ticket`, `expires_in=30`, `scope="customer"`, `channels`) |
+| WS | `/api/v1/ws?ticket={token}` | single-use 30s ticket | JSON frames (`ping`, `typing`, `subscribe_conversation`, `unsubscribe_conversation`) | JSON event envelopes (`connected`, `pong`, `order.new`, `notification.created`, `notification.unread`, `typing`, `subscribed`, `error`) |
+
+- Tickets expire after 30s and are atomically consumed on connect (`GETDEL`); missing, invalid, expired, or reused tickets close with code `4001`.
+- Limits: max 5 concurrent sockets per user (6th closes with `4008`), max frame size 4 KB (`1009`), 60s idle heartbeat timeout (`4000`), sliding-window rate limit 20 events / 10s (`rate_limited` error frame).
+- Channels: `rt:user:{user_id}` (always), `rt:staff:orders` (staff with `orders` read access), `rt:staff:communication` (staff with `inquiries`/`reviews`/`communication` read access), `rt:conv:{conversation_id}` (on authorized `subscribe_conversation`).
+
 ## `admin/audit-events`
 
 | Method | Path | Access | Request body | Response |
@@ -1338,3 +1352,31 @@ Same `SiteSettings` object as `GET /api/v1/admin/site/settings`. `null` means th
 | DELETE | `/api/v1/users/{user_id}` | admin (superadmin only) | — | 204 No Content |
 | GET | `/api/v1/users/{user_id}` | admin (superadmin only) | — | `UserRead` |
 | PATCH | `/api/v1/users/{user_id}` | admin (superadmin only) | `UserUpdate` | `UserRead` |
+
+## `customer/conversations` (Direct Communication — Phase 19)
+
+All routes set `Cache-Control: no-store` and strictly isolate rows to `conversation.customer_id == current_user.id`. Internal staff notes (`is_internal_note=true`) are never returned.
+
+| Method | Path | Access | Request body / Query | Response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/v1/customer/conversations` | signed-in user | `page`, `page_size` (1–50) | `CustomerConversationListResponse` (`items`, `total`, `total_unread`, `page`, `page_size`, `pages`) |
+| POST | `/api/v1/customer/conversations` | signed-in user | `ConversationCreateRequest` (`order_id`, `product_id`, `subject`, `initial_message`) | `201 ConversationRead` (reuses active open/pending support thread for same context) |
+| GET | `/api/v1/customer/conversations/{conversation_id}/messages` | signed-in owner | `before_created_at`, `before_id`, `limit` (1–50) | `MessageCursorPage` |
+| POST | `/api/v1/customer/conversations/{conversation_id}/messages` | signed-in owner | `CustomerMessageCreateRequest` (`body`, `attachment_url`) | `201 MessageRead` |
+| POST | `/api/v1/customer/conversations/{conversation_id}/attachment` | signed-in owner | multipart `file` (image) | `201 AttachmentUploadResponse` (`{"url": "/media/chat/..."}`) |
+| POST | `/api/v1/customer/conversations/{conversation_id}/read` | signed-in owner | — | `MarkReadResponse` |
+
+## `admin/communication` (Direct Communication — Phase 19)
+
+Protected by dynamic RBAC module `communication` (`read` for GET & `/read`; `write` for POST message/attachment and PATCH conversation). All writes are audit-logged and `Cache-Control: no-store`.
+
+| Method | Path | Access | Request body / Query | Response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/v1/admin/communication/summary` | staff (`communication:read`) | — | `AdminCommunicationSummaryResponse` (open/pending/resolved/closed/unassigned/unread counts overall & by channel `type`) |
+| GET | `/api/v1/admin/communication/conversations` | staff (`communication:read`) | `type`, `status`, `assigned` (`unassigned`/`me`/`assigned`/UUID), `assigned_staff_id`, `q`, `page`, `page_size` | `Page[ConversationRead]` |
+| GET | `/api/v1/admin/communication/conversations/{conversation_id}` | staff (`communication:read`) | — | `AdminConversationDetailRead` (includes customer profile, linked order/product, 5 recent orders, `customer_is_online`) |
+| GET | `/api/v1/admin/communication/conversations/{conversation_id}/messages` | staff (`communication:read`) | `before_created_at`, `before_id`, `limit` (1–50) | `MessageCursorPage` (includes internal notes) |
+| POST | `/api/v1/admin/communication/conversations/{conversation_id}/messages` | staff (`communication:write`) | `AdminMessageCreateRequest` (`body`, `attachment_url`, `is_internal_note`) | `201 MessageRead` |
+| POST | `/api/v1/admin/communication/conversations/{conversation_id}/attachment` | staff (`communication:write`) | multipart `file` (image) | `201 AttachmentUploadResponse` |
+| PATCH | `/api/v1/admin/communication/conversations/{conversation_id}` | staff (`communication:write`) | `AdminConversationUpdateRequest` (`status`, `assigned_staff_id` — explicit `null` unassigns) | `ConversationRead` |
+| POST | `/api/v1/admin/communication/conversations/{conversation_id}/read` | staff (`communication:read`) | — | `MarkReadResponse` |

@@ -10,6 +10,7 @@ from app.models.notification import CustomerNotification
 from app.models.order import Order
 from app.models.user import User
 from app.schemas.customer import normalize_bd_phone
+from app.services.realtime_hub import realtime_hub, user_channel
 
 RETENTION_DAYS = 30
 _PURGE_INTERVAL_SECONDS = 3600.0
@@ -144,6 +145,29 @@ async def create_order_status_notification(
     await db.commit()
     await db.refresh(notification)
     await maybe_purge_expired_notifications(db)
+    unread_count = await count_unread_notifications(db, user_id)
+    channel = user_channel(user_id)
+    await realtime_hub.publish(
+        channel,
+        "notification.created",
+        {
+            "id": str(notification.id),
+            "order_id": str(notification.order_id) if notification.order_id else None,
+            "order_number": order.number,
+            "type": notification.type,
+            "title": notification.title,
+            "message": notification.message,
+            "is_read": notification.is_read,
+            "language": notification.language,
+            "created_at": notification.created_at.isoformat(),
+            "unread_count": unread_count,
+        },
+    )
+    await realtime_hub.publish(
+        channel,
+        "notification.unread",
+        {"unread_count": unread_count},
+    )
     return notification
 
 
@@ -275,6 +299,12 @@ async def set_read_state(
     notif.is_read = is_read
     await db.commit()
     await db.refresh(notif)
+    unread_count = await count_unread_notifications(db, user_id)
+    await realtime_hub.publish(
+        user_channel(user_id),
+        "notification.unread",
+        {"unread_count": unread_count},
+    )
     return notif
 
 
@@ -316,4 +346,11 @@ async def mark_all_read(db: AsyncSession, user_id: uuid.UUID) -> int:
     )
     res = await db.execute(stmt)
     await db.commit()
-    return int(getattr(res, "rowcount", 0) or 0)
+    updated_count = int(getattr(res, "rowcount", 0) or 0)
+    unread_count = await count_unread_notifications(db, user_id)
+    await realtime_hub.publish(
+        user_channel(user_id),
+        "notification.unread",
+        {"unread_count": unread_count},
+    )
+    return updated_count

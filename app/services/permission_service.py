@@ -77,6 +77,11 @@ MODULE_DEFINITIONS: tuple[ModuleSpec, ...] = (
         description="Contact form submissions, custom dress inquiries, and status notes",
     ),
     ModuleSpec(
+        key="communication",
+        label="Communication & Live Chat",
+        description="Customer support chat, seller threads, and admin oversight",
+    ),
+    ModuleSpec(
         key="cart",
         label="Active Carts",
         description="Inspect active customer and guest shopping carts",
@@ -181,6 +186,7 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, dict[str, AccessLevel]] = {
         "inventory": "read_write",
         "reviews": "read_write",
         "inquiries": "read_write",
+        "communication": "read_write",
         "cart": "read_only",
         "coupons_pricing": "read_write",
         "cms": "read_write",
@@ -195,6 +201,7 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, dict[str, AccessLevel]] = {
         "inventory": "read_only",
         "reviews": "read_only",
         "inquiries": "read_only",
+        "communication": "read_only",
         "cart": "read_only",
         "coupons_pricing": "read_only",
         "cms": "read_only",

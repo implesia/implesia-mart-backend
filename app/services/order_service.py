@@ -71,6 +71,7 @@ from app.services import (
 from app.services.cart_service import Shopper, _cap, _purchasable, open_cart, shopper_actor
 from app.services.product_options import resolve_selection, selection_of, variant_label
 from app.services.product_service import content_of
+from app.services.realtime_hub import STAFF_ORDERS_CHANNEL, realtime_hub
 from app.services.shop_sql import SHOP, at_or_after, before, dialect_name
 
 _KEY = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
@@ -745,6 +746,20 @@ async def create_order(
         await telegram_notify.notify_new_order(db, background, loaded)
     telegram_notify.flush_low_stock(db, background)
     await notification_service.create_order_status_notification(db, loaded, OrderStatus.NEW.value)
+    await realtime_hub.publish(
+        STAFF_ORDERS_CHANNEL,
+        "order.new",
+        {
+            "id": str(loaded.id),
+            "number": loaded.number,
+            "status": loaded.status,
+            "origin": loaded.origin,
+            "customer_name": loaded.customer_name,
+            "total": loaded.total,
+            "payment_method": loaded.payment_method,
+            "created_at": loaded.created_at.isoformat(),
+        },
+    )
     return read
 
 

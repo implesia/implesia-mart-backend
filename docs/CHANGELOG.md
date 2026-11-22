@@ -2,6 +2,51 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Phase 19 High-Scale, Seller-Ready Direct Communication Engine (2026-11-22). Done (not live).**
+  - **Additive Migration `0108_communication_system.py` (`down_revision = "0107"`) & Models (`app/models/communication.py`, `app/models/__init__.py`):**
+    - Created `conversations` (`customer_support`, `seller_support`, `customer_seller`; status `open`/`pending`/`resolved`/`closed`; `customer_id`, `seller_id`, `order_id`, `product_id`, `assigned_staff_id`; high-scale composite DESC indexes), `messages` (composite keyset index `(conversation_id, created_at DESC, id DESC)`, `is_internal_note`), and `conversation_read_states` (composite PK `(conversation_id, user_id)`).
+    - Idempotently seeded `role_permissions` for module `communication` (`editor=read_write`, `viewer=read_only`).
+  - **Dynamic RBAC (`app/services/permission_service.py`):**
+    - Registered `communication` (`Communication & Live Chat`) in `MODULE_DEFINITIONS` (`superadmin=full`, `editor=read_write`, `viewer=read_only`, grantable to any custom staff role via `/admin/rbac/roles`).
+  - **Communication Service, Schemas & Endpoints (`app/services/communication_service.py`, `app/schemas/communication.py`, `app/api/v1/endpoints/customer_communication.py`, `app/api/v1/endpoints/admin_communication.py`, `app/api/v1/router.py`, `app/services/image_storage.py`, `app/services/redis_client.py`, `app/services/ws_manager.py`, `app/main.py`):**
+    - Strict participant & RBAC isolation: customers access only their own threads and never see `is_internal_note=True` messages, internal previews, or internal WS frames (`WSConnectionManager.dispatch_channel` also enforces scope filtering).
+    - Zero N+1 queries: batched user loading, single aggregated SQL unread counts, O(1) keyset/cursor pagination (`before_created_at`, `before_id`, `limit <= 50`).
+    - Per-user send rate limit (`20 msgs / 10s` via Redis `rl:chat:{user_id}`), text validation (`1–2000` chars), image attachments under `/media/chat/`, real-time `message.created` & `conversation.updated` fan-out via `realtime_hub`, and throttled (`1 per 5 min`) offline `CustomerNotification` (`type="support_message"`).
+    - Wired `communication_service.can_access_conversation` into `ws_manager` for WS `subscribe_conversation` authorization.
+  - Files touched:
+    - `alembic/versions/0108_communication_system.py`
+    - `app/models/communication.py`, `app/models/__init__.py`
+    - `app/schemas/communication.py`
+    - `app/services/communication_service.py`, `app/services/permission_service.py`, `app/services/image_storage.py`, `app/services/redis_client.py`, `app/services/ws_manager.py`
+    - `app/api/v1/endpoints/customer_communication.py`, `app/api/v1/endpoints/admin_communication.py`, `app/api/v1/router.py`, `app/main.py`
+    - `tests/test_communication.py`, `tests/test_0108_migration.py`
+    - `docs/CHANGELOG.md`, `docs/API.md`, `docs/BUSINESS_LOGIC.md`
+  - Frontend (`implesia-mart`):
+    - Customer chat can use `/api/v1/customer/conversations` (list/create-or-reuse), `/messages` (cursor paginated), `/attachment`, `/read`, plus WS `subscribe_conversation` and `message.created` events.
+    - Admin inbox can use `/api/v1/admin/communication/summary`, `/conversations` (filter by `type`, `status`, `assigned`, `assigned_staff_id`, `q`), `/conversations/{id}` (context pane with customer profile & recent orders), `/messages`, `/attachment`, `PATCH /conversations/{id}`, and `/read`.
+
+- **Phase 18 Monolith Concurrency Hardening & Real-Time WebSocket + Redis Pub/Sub Foundation (2026-11-22). Done (not live).**
+  - **Database Pool Hardening (`app/core/config.py`, `app/db/session.py`, `.env.example`):**
+    - Replaced hardcoded production `pool_size=2` with configurable `DB_POOL_SIZE` (default `10`), `DB_MAX_OVERFLOW` (`10`), `DB_POOL_TIMEOUT` (`15`), and `DB_POOL_RECYCLE` (`1800`) alongside `pool_pre_ping=True` for PostgreSQL.
+  - **Resilient Async Redis Client & Pub/Sub Hub (`app/services/redis_client.py`, `app/services/realtime_hub.py`, `app/main.py`):**
+    - Added bounded `redis.asyncio` client (`max_connections=50`, socket timeouts) with transparent in-process fallback (logs one startup warning if Redis is unreachable or `memory://`).
+    - Added single worker background Pub/Sub subscriber loop in FastAPI `lifespan` subscribed to `rt:*` (`rt:user:{user_id}`, `rt:staff:orders`, `rt:staff:communication`, `rt:conv:{conversation_id}`).
+    - Added Redis-backed 30s single-use WS auth tickets (`ws:ticket:{token}` consumed via atomic `GETDEL`), 60s TTL presence keys (`presence:user:{user_id}`), and sliding-window WS event rate limiting (`rl:ws:{user_id}`, 20 events / 10s).
+  - **Hardened WebSocket Manager & Endpoints (`app/services/ws_manager.py`, `app/api/v1/endpoints/ws.py`, `app/api/v1/endpoints/auth.py`, `app/api/v1/endpoints/customer_auth.py`, `app/api/v1/router.py`, `app/schemas/auth.py`):**
+    - Added `POST /api/v1/auth/ws-ticket` (staff with `admin_access`, dynamic RBAC channel scoping) and `POST /api/v1/customer/ws-ticket` (customer personal channel).
+    - Added `WS /api/v1/ws?ticket=...` with ZERO PostgreSQL session held in the WS loop, max 5 concurrent sockets/user (close `4008`), 4 KB max frame (`1009`), 60s idle heartbeat timeout (`4000`), `ping`/`pong`, ephemeral `typing` relay, and `subscribe_conversation`.
+  - **Real-Time Notification & Order Push (`app/services/order_service.py`, `app/services/notification_service.py`):**
+    - New committed online orders publish `order.new` to `rt:staff:orders` (non-blocking, failure-safe).
+    - Customer notification creation, single read/unread toggle, and mark-all-read publish `notification.created` / `notification.unread` to `rt:user:{user_id}`.
+  - Files touched:
+    - `app/core/config.py`, `app/db/session.py`, `.env.example`, `app/main.py`
+    - `app/schemas/auth.py`
+    - `app/services/redis_client.py`, `app/services/realtime_hub.py`, `app/services/ws_manager.py`
+    - `app/api/v1/endpoints/ws.py`, `app/api/v1/endpoints/auth.py`, `app/api/v1/endpoints/customer_auth.py`, `app/api/v1/router.py`
+    - `app/services/order_service.py`, `app/services/notification_service.py`
+    - `tests/test_realtime_ws.py`, `docs/CHANGELOG.md`, `docs/API.md`
+  - Frontend (`implesia-mart`): can now request single-use tickets from `POST /api/v1/auth/ws-ticket` (admin) or `POST /api/v1/customer/ws-ticket` (customer) and open `WS /api/v1/ws?ticket=<token>` for instant order alerts and live customer notifications.
+
 - **Daily Handoff & Cross-Device Sync Doc (2026-11-21).**
   - Added `docs/HANDOFF.md` consolidating today's Planning decisions (Customer Platform Phases 6–10, SaaS Admin Phases A–G, Notification Architecture audit, Bengali communication preference), backend & frontend implementation summary, DevOps live audit & production deployment runbook, pending backlog, and Home Laptop resume steps.
   - Files touched: `docs/HANDOFF.md`, `docs/CHANGELOG.md`. Matching handoff added in `implesia-mart`.
