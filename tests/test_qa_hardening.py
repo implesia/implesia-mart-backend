@@ -120,8 +120,12 @@ async def _viewer_headers(client: AsyncClient, auth_headers: dict[str, str]) -> 
     return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
-# A file has to travel as POST. This route only previews; it does not save.
-_VIEWER_READS = {("POST", "/api/v1/admin/inventory/imports/preview")}
+# These POSTs are lookups. The import route only previews a file. The courier
+# check reads history for a phone the caller can already see on the order list.
+_VIEWER_READS = {
+    ("POST", "/api/v1/admin/inventory/imports/preview"),
+    ("POST", "/api/v1/admin/customers/report/courier-check"),
+}
 
 
 async def test_a_viewer_cannot_write_through_any_admin_route(

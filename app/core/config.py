@@ -136,6 +136,33 @@ class Settings(BaseSettings):
     delivery_days_inside_dhaka: int = Field(default=2, ge=0, le=60)
     delivery_days_outside_dhaka: int = Field(default=5, ge=0, le=60)
 
+    # Courier fraud check. Off until COURIER_CHECK_ENABLED is true. Each
+    # provider also stays quiet until its own keys are set. See .env.example.
+    courier_check_enabled: bool = False
+    courier_check_cache_hours: int = Field(default=24, ge=1, le=720)
+    courier_check_timeout_seconds: float = Field(default=8, ge=1, le=60)
+    # Success rate is a ratio from 0 to 1, not a percent. Below high → high,
+    # below medium → medium, otherwise low. A null rate stays unknown.
+    courier_check_risk_high_below: float = Field(default=0.5, ge=0, le=1)
+    courier_check_risk_medium_below: float = Field(default=0.8, ge=0, le=1)
+    rate_limit_courier_check: str = "10/hour"
+    steadfast_api_key: SecretStr = SecretStr("")
+    steadfast_secret_key: SecretStr = SecretStr("")
+    steadfast_base_url: str = "https://portal.packzy.com/api/v1"
+    pathao_username: str = ""
+    pathao_password: SecretStr = SecretStr("")
+    pathao_base_url: str = "https://merchant.pathao.com"
+    pathao_auth_header: str = "Authorization"
+    redx_api_token: SecretStr = SecretStr("")
+    redx_phone: str = ""
+    redx_password: SecretStr = SecretStr("")
+    redx_base_url: str = "https://redx.com.bd"
+    redx_auth_url: str = "https://api.redx.com.bd/v4/auth/login"
+    redx_auth_header: str = "Authorization"
+    courier_check_generic_url: str = ""
+    courier_check_generic_api_key: SecretStr = SecretStr("")
+    courier_check_generic_auth_header: str = "Authorization"
+
     @model_validator(mode="after")
     def _production_secret_key(self) -> Self:
         if self.environment != "production":

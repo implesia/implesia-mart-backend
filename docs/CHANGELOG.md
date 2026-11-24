@@ -2,6 +2,24 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Customer phone report and courier fraud check (2026-11-24). Done (not live).** Additive migration `0108` (`down_revision = "0107"`). No existing row is updated.
+  - **Report (`GET /api/v1/admin/customers/report?phone=`):** Orders-module read, the same permission as the order list. Normalizes the phone to `01XXXXXXXXX` (`+880` and `880` accepted; invalid is 422). Matches online and offline orders by that stored phone. Returns the linked account (`{id, name, email}` or null), a summary (status counts, delivered-only `total_spent`, success rate, first/last order, online/offline counts), the newest 50 orders, and `courier_check` from the cache only.
+  - **Courier check (`POST /api/v1/admin/customers/report/courier-check?phone=`):** Live call only when `COURIER_CHECK_ENABLED` is true. Steadfast, Pathao, RedX, and one generic HTTPS provider run in parallel, each with its own timeout. A missing key set leaves that provider `not_configured` and makes no network call. Results are upserted into `courier_check_results` (`phone`, `provider`, JSON payload, `checked_at`, unique on phone + provider). Rate limit `RATE_LIMIT_COURIER_CHECK` (default 10/hour) per staff account and per address.
+  - Steadfast's count endpoint is the verified adapter (`ok`). Pathao, RedX, and the generic provider are unverified (`unverified` on success). Pathao's published client-id API is not used because it has no fraud-check method.
+  - Files touched:
+    - `alembic/versions/0108_courier_check_results.py`
+    - `app/models/courier_check.py`, `app/models/__init__.py`
+    - `app/schemas/customer_report.py`
+    - `app/services/customer_report_service.py`, `app/services/courier/`
+    - `app/api/v1/endpoints/admin_customers.py`, `app/api/v1/router.py`
+    - `app/core/config.py`, `app/rate_limit.py`, `.env.example`, `tests/conftest.py`
+    - `tests/test_customer_courier_report.py`, `tests/test_qa_hardening.py`
+    - `docs/CHANGELOG.md`, `docs/API.md`, `docs/BUSINESS_LOGIC.md`, `docs/TODO.md`
+  - Frontend (`implesia-mart`):
+    - Admin customer lookup can call `GET /api/v1/admin/customers/report?phone=` and must keep the response shape: `phone`, `customer` (`id`, `name`, `email` or null), `summary` (including `by_status` with all seven statuses, `success_rate` as a 0–1 ratio or null, `total_spent` for delivered orders only), `orders` (max 50: `id`, `number`, `status`, `origin`, `total`, `created_at`, `tracking_number`), and `courier_check`.
+    - Refresh calls `POST /api/v1/admin/customers/report/courier-check?phone=` and reads `courier_check` only. `enabled: false` means the server will not call a courier. Provider `status` is `not_configured`, `ok`, `error`, or `unverified`. Null parcel counts mean that provider did not return counts (Pathao rating-only results do this). Do not treat `unverified` as a failure; it means the call returned counts from an unpublished API.
+    - `risk_level` is `unknown`, `low`, `medium`, or `high`. `success_rate` is not a percent.
+
 - **Daily Handoff & Cross-Device Sync Doc (2026-11-21).**
   - Added `docs/HANDOFF.md` consolidating today's Planning decisions (Customer Platform Phases 6–10, SaaS Admin Phases A–G, Notification Architecture audit, Bengali communication preference), backend & frontend implementation summary, DevOps live audit & production deployment runbook, pending backlog, and Home Laptop resume steps.
   - Files touched: `docs/HANDOFF.md`, `docs/CHANGELOG.md`. Matching handoff added in `implesia-mart`.

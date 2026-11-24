@@ -710,6 +710,84 @@ Each item: `title` is the product name, `variant_label` is the option labels joi
 
 Writes on this router use the product-write rate limit and return 429 `rate_limited` when it is exceeded. Errors use `{ "error": { "code", "message", "details" } }`.
 
+## `admin/customers`
+
+Own-site history for one phone, plus a cached courier fraud check. `Cache-Control: no-store`. Orders module **read**, the same permission as `GET /api/v1/admin/orders`. Anonymous is 401. A customer is 403. A viewer or editor passes while that role's orders access is read or higher, and is 403 when orders access is `none`. Superadmin always passes.
+
+| Method | Path | Access | Response |
+| --- | --- | --- | --- |
+| GET | `/api/v1/admin/customers/report?phone=` | orders read | `CustomerReport` |
+| POST | `/api/v1/admin/customers/report/courier-check?phone=` | orders read | `CourierCheck` |
+
+`phone` is required, 1–40 characters. It is normalized to `01XXXXXXXXX`. `+880` and `880` are accepted, as are spaces, dashes, dots, brackets, and Bengali digits. An invalid phone is 422 `validation_error`.
+
+`GET` never calls a courier. `courier_check` is built from `courier_check_results` only.
+
+```json
+{
+  "phone": "01755550101",
+  "customer": { "id": "…", "name": "Amina Khatun", "email": "amina@example.com" },
+  "summary": {
+    "total_orders": 8,
+    "by_status": {
+      "new": 1, "confirmed": 1, "packed": 1, "shipped": 1,
+      "delivered": 2, "cancelled": 1, "returned": 1
+    },
+    "delivered_count": 2,
+    "cancelled_count": 1,
+    "returned_count": 1,
+    "success_rate": 0.5,
+    "total_spent": 2000,
+    "first_order_at": "2026-01-01T00:00:00Z",
+    "last_order_at": "2026-01-08T00:00:00Z",
+    "online_count": 5,
+    "offline_count": 3
+  },
+  "orders": [
+    {
+      "id": "…",
+      "number": "IM-RPT-8",
+      "status": "shipped",
+      "origin": "online",
+      "total": 400,
+      "created_at": "2026-01-08T00:00:00Z",
+      "tracking_number": "TRK-NEW"
+    }
+  ],
+  "courier_check": {
+    "enabled": false,
+    "checked_at": null,
+    "stale": false,
+    "totals": {
+      "total_parcels": 0,
+      "delivered": 0,
+      "returned_or_cancelled": 0,
+      "success_rate": null
+    },
+    "risk_level": "unknown",
+    "providers": [
+      {
+        "provider": "steadfast",
+        "status": "not_configured",
+        "total_parcels": null,
+        "delivered": null,
+        "returned_or_cancelled": null,
+        "success_rate": null,
+        "error_message": null
+      }
+    ]
+  }
+}
+```
+
+`customer` is null when no account has that phone. `name` is the account's full name. `success_rate` is `delivered / (delivered + cancelled + returned)` rounded to 4 decimals, or null when the denominator is 0. `total_spent` is the sum of stored order totals for `delivered` only. `orders` is newest `created_at` first, at most 50. The summary still counts every matching order. A query parameter named `total` is ignored.
+
+`providers` is always `steadfast`, `pathao`, `redx`, `generic`, in that order. `status` is `not_configured`, `ok`, `error`, or `unverified`. Steadfast success is `ok`. Pathao, RedX, and the generic provider success is `unverified` because those fraud-check calls are not in a public API document. A configured provider with no cache row is `error` with `error_message` `No cached result`.
+
+`POST` runs every configured provider in parallel when `COURIER_CHECK_ENABLED` is true, saves each result, and returns `courier_check` only (not the whole report). When the flag is false it returns the cached view and does not call out. The route is rate limited per staff account and per address (`RATE_LIMIT_COURIER_CHECK`, default 10/hour) and returns 429 `rate_limited`.
+
+`risk_level` is `high` below 0.5, `medium` below 0.8, `low` at or above 0.8, and `unknown` when the combined rate is null. `COURIER_CHECK_RISK_HIGH_BELOW` and `COURIER_CHECK_RISK_MEDIUM_BELOW` override those ratios. `stale` is true when a configured provider has no row or the oldest cached row is older than `COURIER_CHECK_CACHE_HOURS` (default 24).
+
 ## `admin/pages/about`
 
 | Method | Path | Access | Request body | Response |
