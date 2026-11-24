@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -20,3 +22,10 @@ class TokenPair(BaseModel):
 class PasswordChangeRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=72)
     new_password: str = Field(min_length=12, max_length=72)
+
+
+class WSTicketResponse(BaseModel):
+    ticket: str
+    expires_in: int = 30
+    scope: Literal["admin", "customer"]
+    channels: list[str]

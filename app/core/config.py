@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     postgres_user: str = "implesia_mart"
     postgres_password: str = "implesia_mart"
     postgres_db: str = "implesia_mart"
+    db_pool_size: int = Field(default=10, ge=1, le=100)
+    db_max_overflow: int = Field(default=10, ge=0, le=100)
+    db_pool_timeout: int = Field(default=15, ge=1, le=120)
+    db_pool_recycle: int = Field(default=1800, ge=60, le=86400)
     database_url_override: str | None = Field(
         default=None,
         validation_alias=AliasChoices("DATABASE_URL_OVERRIDE", "DATABASE_URL"),
