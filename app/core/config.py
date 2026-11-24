@@ -103,7 +103,8 @@ class Settings(BaseSettings):
     email_from_name: str = "Implesia Mart"
     order_notification_recipients: CsvList = Field(default_factory=list)
 
-    # Cloudflare Turnstile
+    # Cloudflare Turnstile. Empty outside production skips checkout verification.
+    # Empty in production refuses public POST /orders. Never log the value.
     turnstile_secret_key: str = ""
 
     # Meta Conversions API. Both the pixel id and the token must be set or Purchase
@@ -233,7 +234,7 @@ class Settings(BaseSettings):
 
     @property
     def turnstile_enabled(self) -> bool:
-        return bool(self.turnstile_secret_key)
+        return bool(self.turnstile_secret_key.strip())
 
     @property
     def meta_capi_enabled(self) -> bool:

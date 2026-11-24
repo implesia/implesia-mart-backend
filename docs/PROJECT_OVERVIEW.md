@@ -70,7 +70,7 @@ Names only. Values live in `.env` (see `.env.example`) and must never be committ
 - Proxy and rate limits: `TRUSTED_PROXIES`, `RATE_LIMIT_DEFAULT`, `RATE_LIMIT_LOGIN_IP`, `RATE_LIMIT_LOGIN_ACCOUNT`, `RATE_LIMIT_REFRESH_IP`, `RATE_LIMIT_REFRESH_ACCOUNT`, `RATE_LIMIT_ORDERS`, `RATE_LIMIT_SEARCH`
 - First superuser: `FIRST_SUPERUSER_EMAIL`, `FIRST_SUPERUSER_PASSWORD`
 - Mail: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_TLS`, `EMAIL_FROM`, `EMAIL_FROM_NAME`, `ORDER_NOTIFICATION_RECIPIENTS`
-- `TURNSTILE_SECRET_KEY`
+- `TURNSTILE_SECRET_KEY` (empty skips checkout verification outside production; production with it empty refuses `POST /orders`)
 - Meta Conversions API, optional (empty pixel id or token disables it): `META_PIXEL_ID`, `META_CAPI_TOKEN`, `META_TEST_EVENT_CODE`
 - Telegram, optional (empty token or chat list disables it): `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_IDS`, `TELEGRAM_NOTIFY_ORDER_CANCELLED`, `TELEGRAM_NOTIFY_LOW_STOCK`, `ADMIN_BASE_URL`
 - Customer SMS, off until enabled. `log` and `noop` only; no handset send: `CUSTOMER_SMS_ENABLED`, `CUSTOMER_SMS_PROVIDER`, `CUSTOMER_SMS_ON_CONFIRMED`, `CUSTOMER_SMS_ON_SHIPPED`

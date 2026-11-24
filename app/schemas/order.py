@@ -124,6 +124,9 @@ class OrderCreate(OrderQuoteRequest):
     payment_reference: str = Field("", max_length=80)
     # Browser Pixel cookies and the page URL. Omitted by older clients.
     tracking: OrderTracking | None = None
+    # Widget token for public checkout only. Blank is treated as missing.
+    # Checked by siteverify when TURNSTILE_SECRET_KEY is set. Not stored.
+    turnstile_token: str | None = Field(default=None, max_length=2048)
 
     @field_validator("payment_reference")
     @classmethod
@@ -170,6 +173,14 @@ class OrderCreate(OrderQuoteRequest):
         if value is None or isinstance(value, dict | OrderTracking):
             return value
         return None
+
+    @field_validator("turnstile_token", mode="before")
+    @classmethod
+    def _turnstile_token(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        return text or None
 
 
 class QuoteLineRead(BaseModel):

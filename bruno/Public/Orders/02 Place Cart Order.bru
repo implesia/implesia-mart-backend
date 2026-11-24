@@ -40,4 +40,6 @@ docs {
   Phone is `01` plus 9 digits. Address is at least 8 characters.
 
   Optional `tracking`: `{ "fbp", "fbc", "event_source_url" }`. The response adds `order_number` and `analytics_event_id` (`purchase_<order_number>`).
+
+  Optional `turnstile_token` in this JSON body. When `TURNSTILE_SECRET_KEY` is set, a missing or rejected token is 400 `turnstile_failed`. Replaying the same `Idempotency-Key` after a 201 does not need a new token.
 }

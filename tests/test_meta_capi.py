@@ -9,6 +9,8 @@ import httpx
 import pytest
 from httpx import AsyncClient
 from pydantic import SecretStr, ValidationError
+from starlette.background import BackgroundTasks
+from starlette.requests import Request
 
 from app.core.config import settings
 from app.models.order import Order, OrderItem
@@ -189,12 +191,83 @@ def test_email_and_phone_hashes() -> None:
     assert meta_capi.hash_phone(_PHONE_INTL) != _sha("01712345678")
 
 
+def test_location_name_and_external_id_normalization() -> None:
+    assert meta_capi.normalize_location("  Dhaka. ") == "dhaka"
+    assert meta_capi.normalize_location("New York") == "newyork"
+    assert meta_capi.normalize_location("Cox's Bazar") == "coxsbazar"
+    assert meta_capi.normalize_location("  BD ") == "bd"
+    assert meta_capi.normalize_location("ঢাকা") == "ঢাকা"
+    assert meta_capi.normalize_location("   ") is None
+    assert meta_capi.normalize_location("...") is None
+    assert meta_capi.hash_location("Dhaka") == _sha("dhaka")
+    assert meta_capi.hash_location("...") is None
+
+    assert meta_capi.name_parts("  Rina   Akter ") == ("rina", "akter")
+    assert meta_capi.name_parts("Mary-Jane Watson") == ("maryjane", "watson")
+    assert meta_capi.name_parts("Md. Rina Akter") == ("md", "akter")
+    assert meta_capi.name_parts("Rina") == ("rina", None)
+    assert meta_capi.name_parts("O'Brien") == ("obrien", None)
+    assert meta_capi.name_parts("রিনা আক্তার") == ("রিনা", "আক্তার")
+    assert meta_capi.name_parts("...") == (None, None)
+    assert meta_capi.hash_external_id("  AbC-1 ") == _sha("abc-1")
+    assert meta_capi.hash_external_id("   ") is None
+
+
+def _request(peer: str | None, headers: dict[str, str]) -> Request:
+    raw = [(name.lower().encode(), value.encode()) for name, value in headers.items()]
+    client = None if peer is None else (peer, 50000)
+    return Request(
+        {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/",
+            "raw_path": b"/",
+            "query_string": b"",
+            "headers": raw,
+            "client": client,
+            "server": ("testserver", 80),
+        }
+    )
+
+
+def test_client_ip_header_priority() -> None:
+    cloudflare = _request(
+        "10.0.0.5",
+        {
+            "CF-Connecting-IP": " 203.0.113.10 ",
+            "X-Forwarded-For": "198.51.100.8, 10.0.0.5",
+        },
+    )
+    assert meta_capi.client_ip_address(cloudflare) == "203.0.113.10"
+
+    forwarded = _request("10.0.0.5", {"X-Forwarded-For": "  198.51.100.1 , 10.0.0.5"})
+    assert meta_capi.client_ip_address(forwarded) == "198.51.100.1"
+
+    blank = _request("203.0.113.8", {"CF-Connecting-IP": "   ", "X-Forwarded-For": " , "})
+    assert meta_capi.client_ip_address(blank) == "203.0.113.8"
+
+    direct = _request("203.0.113.8", {})
+    assert meta_capi.client_ip_address(direct) == "203.0.113.8"
+    assert meta_capi.client_ip_address(_request(None, {})) is None
+    assert meta_capi.client_user_agent(direct) is None
+    with_agent = _request("127.0.0.1", {"User-Agent": "  MartBrowser/1.0  "})
+    assert meta_capi.client_user_agent(with_agent) == "MartBrowser/1.0"
+
+
 def test_purchase_body_fields_and_no_extra_pii(monkeypatch: pytest.MonkeyPatch) -> None:
     _enable(monkeypatch, test_code=_TEST_CODE)
     order = _sample_order()
     kept = [item for item in order.items if item.product_id is not None]
     tracking = OrderTracking(fbp=_FBP, fbc=_FBC, event_source_url=_SOURCE_URL)
-    body = meta_capi.build_purchase_body(order, tracking)
+    body = meta_capi.build_purchase_body(
+        order,
+        tracking,
+        client_ip=" 203.0.113.10 ",
+        user_agent=" MartBrowser/1.0 ",
+    )
 
     assert set(body) == {"data", "test_event_code"}
     assert body["test_event_code"] == _TEST_CODE
@@ -230,9 +303,28 @@ def test_purchase_body_fields_and_no_extra_pii(monkeypatch: pytest.MonkeyPatch) 
         assert set(row) == {"id", "quantity", "item_price"}
 
     user_data = event["user_data"]
-    assert set(user_data) == {"ph", "em", "fbp", "fbc"}
+    assert set(user_data) == {
+        "ph",
+        "em",
+        "fn",
+        "ln",
+        "ct",
+        "country",
+        "external_id",
+        "client_ip_address",
+        "client_user_agent",
+        "fbp",
+        "fbc",
+    }
     assert user_data["ph"] == [_sha("8801712345678")]
     assert user_data["em"] == [_sha("owner@example.com")]
+    assert user_data["fn"] == [_sha("rina")]
+    assert user_data["ln"] == [_sha("akter")]
+    assert user_data["ct"] == [_sha("dhaka")]
+    assert user_data["country"] == [_sha("bd")]
+    assert user_data["external_id"] == [_sha("8801712345678")]
+    assert user_data["client_ip_address"] == "203.0.113.10"
+    assert user_data["client_user_agent"] == "MartBrowser/1.0"
     assert user_data["fbp"] == _FBP
     assert user_data["fbc"] == _FBC
 
@@ -247,24 +339,57 @@ def test_purchase_body_fields_and_no_extra_pii(monkeypatch: pytest.MonkeyPatch) 
         "Owner@Example.com",
         "owner@example.com",
         _TOKEN,
-        "client_ip_address",
-        "client_user_agent",
-        "external_id",
     ):
         assert secret not in dumped
 
     bare = meta_capi.build_purchase_body(order, None)
     assert "test_event_code" in bare
-    assert set(bare["data"][0]["user_data"]) == {"ph", "em"}
+    assert set(bare["data"][0]["user_data"]) == {
+        "ph",
+        "em",
+        "fn",
+        "ln",
+        "ct",
+        "country",
+        "external_id",
+    }
     assert "event_source_url" not in bare["data"][0]
+    assert "fbp" not in bare["data"][0]["user_data"]
+    assert "client_ip_address" not in bare["data"][0]["user_data"]
 
     monkeypatch.setattr(settings, "meta_test_event_code", "  ")
     quiet = meta_capi.build_purchase_body(order, OrderTracking())
     assert "test_event_code" not in quiet
     order.email = ""
     order.phone = "12345"
+    order.customer_name = "..."
+    order.district = "..."
     omitted = meta_capi.build_purchase_body(order, None)
-    assert omitted["data"][0]["user_data"] == {}
+    assert set(omitted["data"][0]["user_data"]) == {"country"}
+    assert omitted["data"][0]["user_data"]["country"] == [_sha("bd")]
+
+    customer_id = uuid.uuid4()
+    identified = _sample_order()
+    identified.user_id = customer_id
+    identified_body = meta_capi.build_purchase_body(identified, None)
+    identified_user = identified_body["data"][0]["user_data"]
+    assert identified_user["external_id"] == [_sha(str(customer_id))]
+    assert identified_user["external_id"] != identified_user["ph"]
+    assert str(customer_id) not in str(identified_body)
+
+
+def test_offline_origin_is_not_queued(monkeypatch: pytest.MonkeyPatch) -> None:
+    _enable(monkeypatch, test_code=_TEST_CODE)
+    order = _sample_order()
+    order.origin = "offline"
+    offline = BackgroundTasks()
+    meta_capi.schedule_purchase(offline, order, OrderTracking(fbp=_FBP, fbc=_FBC))
+    assert offline.tasks == []
+
+    order.origin = "online"
+    online = BackgroundTasks()
+    meta_capi.schedule_purchase(online, order, None, client_ip="203.0.113.10", user_agent="UA")
+    assert len(online.tasks) == 1
 
 
 def test_blank_settings_disable_capi(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -430,7 +555,12 @@ async def test_order_create_sends_one_purchase_matching_the_response(
 
     placed = await client.post(
         "/api/v1/orders",
-        headers={"Idempotency-Key": "order-key-1"},
+        headers={
+            "Idempotency-Key": "order-key-1",
+            "CF-Connecting-IP": "203.0.113.10",
+            "X-Forwarded-For": "198.51.100.8, 203.0.113.10",
+            "User-Agent": "MartBrowser/1.0",
+        },
         json={
             "source": "direct",
             "items": [{"product_id": product["id"], "quantity": 1}],
@@ -471,6 +601,13 @@ async def test_order_create_sends_one_purchase_matching_the_response(
     assert event["custom_data"]["num_items"] == 1
     assert event["user_data"]["ph"] == [_sha(_PHONE_INTL)]
     assert event["user_data"]["em"] == [_sha(_EMAIL.lower())]
+    assert event["user_data"]["fn"] == [_sha("rina")]
+    assert event["user_data"]["ln"] == [_sha("akter")]
+    assert event["user_data"]["ct"] == [_sha("ঢাকা")]
+    assert event["user_data"]["country"] == [_sha("bd")]
+    assert event["user_data"]["external_id"] == [_sha(_PHONE_INTL)]
+    assert event["user_data"]["client_ip_address"] == "203.0.113.10"
+    assert event["user_data"]["client_user_agent"] == "MartBrowser/1.0"
     assert event["user_data"]["fbp"] == _FBP
     assert event["user_data"]["fbc"] == _FBC
     assert event["event_source_url"] == _SOURCE_URL
@@ -481,12 +618,12 @@ async def test_order_create_sends_one_purchase_matching_the_response(
         "House 12",
         "ring the bell",
         "01700000000",
+        "ঢাকা",
         _PHONE_RAW,
+        _PHONE_INTL,
         _EMAIL,
         _EMAIL.lower(),
         _TOKEN,
-        "client_ip_address",
-        "client_user_agent",
     ):
         assert secret not in dumped
 
@@ -585,3 +722,41 @@ async def test_disabled_capi_still_returns_the_event_id(
         json={"source": "direct", "items": [], "tracking": {"fbp": _FBP}},
     )
     assert rejected.status_code == 422
+
+
+async def test_offline_order_does_not_send_capi(
+    client: AsyncClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _enable(monkeypatch, test_code=_TEST_CODE)
+    recorder = _Recorder()
+    recorder.install(monkeypatch)
+    product = await _create(client, auth_headers, price=900, quantity=5)
+    offline = await client.post(
+        "/api/v1/admin/orders/offline",
+        headers={**auth_headers, "Idempotency-Key": _key()},
+        json={
+            "customer_name": "Karim Uddin",
+            "phone": "01800000000",
+            "email": "",
+            "district": "Dhaka",
+            "area": "Gulshan",
+            "address": "House 4, Road 12, Gulshan",
+            "notes": "Counter sale",
+            "items": [{"product_id": product["id"], "quantity": 1, "unit_price": 500}],
+            "manual_discount": 0,
+            "delivery_charge": 80,
+            "payment_method": "cash",
+            "paid_amount": 200,
+        },
+    )
+    assert offline.status_code == 201, offline.text
+    assert offline.json()["origin"] == "offline"
+    assert recorder.posts == []
+
+    updated = await client.patch(
+        f"/api/v1/admin/orders/{offline.json()['id']}",
+        headers=auth_headers,
+        json={"status": "confirmed"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert recorder.posts == []
