@@ -13,7 +13,7 @@ from pywebpush import WebPushException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from app.core.config import settings
+from app.core.config import Settings, settings
 from app.core.security import hash_password
 from app.models.communication import Conversation, ConversationStatus, ConversationType, Message
 from app.models.push_subscription import PushSubscription
@@ -323,3 +323,163 @@ async def test_telegram_unanswered_chat_fallback_dedupes_and_skips_when_replied(
         )
         assert sent_replied is False
         assert mock_deliver.await_count == 1
+
+
+_ORDER_CHATS = ["111", "-100222"]
+_FALLBACK_CHATS = ["-100333"]
+_BOT = "test-bot-token"
+
+
+class _TelegramPosts:
+    def __init__(self) -> None:
+        self.posts: list[tuple[str, dict[str, object]]] = []
+
+    def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        recorded = self
+
+        class _Client:
+            def __init__(self, *_args: object, **_kwargs: object) -> None:
+                pass
+
+            async def __aenter__(self) -> _Client:
+                return self
+
+            async def __aexit__(self, *_args: object) -> None:
+                return None
+
+            async def post(
+                self, url: str, *, json: dict[str, object] | None = None
+            ) -> SimpleNamespace:
+                recorded.posts.append((url, json or {}))
+                return SimpleNamespace(status_code=200, headers={})
+
+        monkeypatch.setattr(telegram_notify.httpx, "AsyncClient", _Client)
+
+
+def _posted_chat_ids(posts: list[tuple[str, dict[str, object]]]) -> list[object]:
+    return [body.get("chat_id") for _url, body in posts]
+
+
+def test_telegram_chat_fallback_chat_ids_parse_like_order_chats(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw = " 111 , -100222 ,,"
+    orders = Settings(telegram_chat_ids=raw)
+    fallback = Settings(telegram_chat_fallback_chat_ids=raw)
+    assert fallback.telegram_chat_fallback_chat_ids == orders.telegram_chat_ids
+    assert orders.telegram_chat_ids == ["111", "-100222"]
+    assert Settings(telegram_chat_fallback_chat_ids="").telegram_chat_fallback_chat_ids == []
+    assert Settings(telegram_chat_fallback_chat_ids="   ").telegram_chat_fallback_chat_ids == []
+    monkeypatch.delenv("TELEGRAM_CHAT_FALLBACK_CHAT_IDS", raising=False)
+    omitted = Settings(_env_file=None)
+    assert omitted.telegram_chat_fallback_chat_ids == []
+
+
+async def _open_conversation(db_session: AsyncSession, *, email: str, phone: str) -> Conversation:
+    customer = User(
+        email=email,
+        phone=phone,
+        full_name="Fallback Chat Customer",
+        password_hash=hash_password("customer-passphrase-123"),
+        role=UserRole.CUSTOMER.value,
+        is_active=True,
+    )
+    db_session.add(customer)
+    await db_session.commit()
+    await db_session.refresh(customer)
+    conversation = Conversation(
+        type=ConversationType.CUSTOMER_SUPPORT.value,
+        status=ConversationStatus.OPEN.value,
+        subject="Unanswered chat",
+        customer_id=customer.id,
+    )
+    db_session.add(conversation)
+    await db_session.commit()
+    await db_session.refresh(conversation)
+    return conversation
+
+
+def _session_factory(db_session: AsyncSession) -> async_sessionmaker[AsyncSession]:
+    bind = AsyncEngine(db_session.get_bind())
+    return async_sessionmaker(bind=bind, class_=AsyncSession, expire_on_commit=False)
+
+
+def _arm_telegram(monkeypatch: pytest.MonkeyPatch, fallback_ids: list[str]) -> None:
+    monkeypatch.setattr(settings, "telegram_bot_token", SecretStr(_BOT))
+    monkeypatch.setattr(settings, "telegram_chat_ids", list(_ORDER_CHATS))
+    monkeypatch.setattr(settings, "telegram_chat_fallback_chat_ids", list(fallback_ids))
+    monkeypatch.setattr(settings, "telegram_chat_fallback_enabled", True)
+
+
+@pytest.mark.asyncio
+async def test_chat_fallback_uses_dedicated_chats_and_orders_stay_on_order_chats(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conversation = await _open_conversation(
+        db_session, email="tg-dedicated@implesia.com", phone="01755555501"
+    )
+    _arm_telegram(monkeypatch, _FALLBACK_CHATS)
+    recorded = _TelegramPosts()
+    recorded.install(monkeypatch)
+
+    sent = await telegram_notify.run_unanswered_chat_fallback(
+        conversation_id=conversation.id,
+        message_created_at=datetime.now(UTC),
+        customer_name="Fallback Chat Customer",
+        customer_phone="01755555501",
+        order_number=None,
+        excerpt="Need help",
+        delay_seconds=0,
+        session_factory=_session_factory(db_session),
+    )
+
+    assert sent is True
+    assert _posted_chat_ids(recorded.posts) == _FALLBACK_CHATS
+    fallback_urls = {url for url, _body in recorded.posts}
+    assert fallback_urls == {f"https://api.telegram.org/bot{_BOT}/sendMessage"}
+
+    recorded.posts.clear()
+    await telegram_notify.send_message("IM-1001", "<b>New order IM-1001</b>")
+    assert _posted_chat_ids(recorded.posts) == _ORDER_CHATS
+    assert {url for url, _body in recorded.posts} == fallback_urls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["empty", "unset"])
+async def test_chat_fallback_uses_order_chats_when_fallback_ids_missing(
+    mode: str,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if mode == "unset":
+        monkeypatch.delenv("TELEGRAM_CHAT_FALLBACK_CHAT_IDS", raising=False)
+        fallback_ids = list(Settings(_env_file=None).telegram_chat_fallback_chat_ids)
+    else:
+        blank = Settings(telegram_chat_fallback_chat_ids="")
+        fallback_ids = list(blank.telegram_chat_fallback_chat_ids)
+    assert fallback_ids == []
+
+    phone = "01755555502" if mode == "empty" else "01755555503"
+    conversation = await _open_conversation(
+        db_session,
+        email=f"tg-{mode}@implesia.com",
+        phone=phone,
+    )
+    _arm_telegram(monkeypatch, fallback_ids)
+    recorded = _TelegramPosts()
+    recorded.install(monkeypatch)
+
+    sent = await telegram_notify.run_unanswered_chat_fallback(
+        conversation_id=conversation.id,
+        message_created_at=datetime.now(UTC),
+        customer_name="Fallback Chat Customer",
+        customer_phone=phone,
+        order_number=None,
+        excerpt="Still waiting",
+        delay_seconds=0,
+        session_factory=_session_factory(db_session),
+    )
+
+    assert sent is True
+    assert _posted_chat_ids(recorded.posts) == _ORDER_CHATS

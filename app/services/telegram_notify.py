@@ -1,4 +1,4 @@
-"""Telegram alerts for new orders, cancellations, and low stock.
+"""Telegram alerts for new orders, cancellations, low stock, and unanswered chats.
 
 Sent in the background after the database commit. A network error, timeout,
 or exception is logged without the bot token and never changes the API
@@ -246,13 +246,33 @@ def schedule_cancelled(background: BackgroundTasks | None, order: Order) -> None
         logger.error("telegram_schedule_failed", order_number=number)
 
 
-async def send_message(order_number: str, text: str) -> None:
-    """POST the text to every chat. Retries network errors, 429, and 5xx. Never raises."""
+def chat_fallback_chat_ids() -> list[str]:
+    """Destinations for an unanswered-chat alert.
+
+    A non-empty ``TELEGRAM_CHAT_FALLBACK_CHAT_IDS`` is the only list used.
+    An empty or unset list uses ``TELEGRAM_CHAT_IDS``. Order alerts do not
+    call this.
+    """
+    dedicated = [chat for chat in settings.telegram_chat_fallback_chat_ids if chat.strip()]
+    if dedicated:
+        return dedicated
+    return [chat for chat in settings.telegram_chat_ids if chat.strip()]
+
+
+async def send_message(
+    order_number: str, text: str, *, chat_ids: list[str] | None = None
+) -> None:
+    """POST the text to every chat. Retries network errors, 429, and 5xx. Never raises.
+
+    Order, cancel, and low-stock alerts omit ``chat_ids`` and keep using
+    ``TELEGRAM_CHAT_IDS``. The unanswered-chat fallback passes its own list.
+    """
     try:
         if not enabled():
             return
         token = settings.telegram_bot_token.get_secret_value().strip()
-        chats = [chat for chat in settings.telegram_chat_ids if chat.strip()]
+        source = settings.telegram_chat_ids if chat_ids is None else chat_ids
+        chats = [chat for chat in source if chat.strip()]
         if not token or not chats:
             return
         url = f"{_API}/bot{token}/sendMessage"
@@ -429,7 +449,11 @@ async def run_unanswered_chat_fallback(
         order_number=order_number,
         excerpt=excerpt,
     )
-    await send_message(f"chat:{conversation_id}", text)
+    await send_message(
+        f"chat:{conversation_id}",
+        text,
+        chat_ids=chat_fallback_chat_ids(),
+    )
     return True
 
 
