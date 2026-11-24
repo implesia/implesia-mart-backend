@@ -2,6 +2,11 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Planning pointer (2026-11-24).**
+  - Added `docs/PLANNING_POINTER.md`. Mission, vision, business plan, roadmap, 30-day targets, working agreement, and the 24 Nov 2026 production release log live in the frontend repo (`implesia-mart`) under `docs/planning/` and `docs/ops/RELEASE_LOG.md`. Short current-state banners added on `docs/HANDOFF.md`, `docs/TODO.md`, and `docs/AI_INSTRUCTIONS.md`.
+  - Files touched: `docs/PLANNING_POINTER.md`, `docs/CHANGELOG.md`, `docs/AI_INSTRUCTIONS.md`, `docs/HANDOFF.md`, `docs/TODO.md`.
+  - Frontend (`implesia-mart`): planning docs and `docs/README.md`. No API or schema change.
+
 - **Communication migration renumbered to `0110` (2026-11-24).** Merged `origin/testing` (`01f03e9`) into `feat/phases-18-21-realtime-communication`. `testing` already owns `0108` (role seed) and `0109` (`courier_check_results`). The communication schema is now `0110_communication_system.py` (`revision = "0110"`, `down_revision = "0109"`), so `alembic heads` is the single head `0110`. The upgrade only creates `conversations`, `messages`, and `conversation_read_states` (including `ix_conversation_read_states_user_id`, because `user_id` is the second primary-key column), and inserts `communication` rows into `role_permissions` when those roles exist. Constraint, index, and foreign-key names that are already in convention form use `op.f()`, so the naming convention does not prefix them a second time. No existing table or column is dropped or renamed, and no existing row is updated.
   - Files: `alembic/versions/0110_communication_system.py` (renamed from `0108_communication_system.py`), `tests/test_0110_migration.py`, `docs/CHANGELOG.md`, `docs/TODO.md`, `docs/HANDOFF.md`, `docs/WORK_REPORT_2026-11-22.md`, `docs/BUSINESS_LOGIC.md`.
   - Frontend (`implesia-mart`): no endpoint or response change from this renumber.
