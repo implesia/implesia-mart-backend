@@ -36,7 +36,11 @@ from app.schemas.order import (
 )
 from app.services import order_admin_service, order_service
 
-_OrdersRead = Annotated[User, Depends(require_module_access("orders", "read"))]
+# The new-order feed stays open to a viewer with orders read_only.
+# The rest of this router treats that same grant as not enough (see deps).
+_OrdersFeed = Annotated[
+    User, Depends(require_module_access("orders", "read", viewer_read=True))
+]
 _OrdersWrite = Annotated[User, Depends(require_module_access("orders", "write"))]
 _AuditDeleteFull = Annotated[User, Depends(require_module_access("audit_deletes", "full"))]
 
@@ -48,7 +52,7 @@ feed_router = APIRouter(dependencies=[Depends(no_store)])
 @feed_router.get("/new", response_model=NewOrderFeed)
 async def list_new_orders(
     db: DbSession,
-    user: _OrdersRead,
+    user: _OrdersFeed,
     query: Annotated[NewOrderQuery, Depends()],
 ) -> NewOrderFeed:
     del user

@@ -125,6 +125,14 @@ SYSTEM_EDITABLE_ROLES: frozenset[str] = frozenset({UserRole.EDITOR.value, UserRo
 RESERVED_SLUGS: frozenset[str] = frozenset({"all", "staff", "admin", "system", "guest"})
 _SLUG_RE = re.compile(r"^[a-z][a-z0-9_]{1,49}$")
 
+# Older databases stored these spellings on users.role. They are not system
+# roles and do not grant admin access. The migration inserts the same slugs.
+LEGACY_ROLE_SLUGS: tuple[tuple[str, str], ...] = (
+    ("super_admin", "Super admin (legacy)"),
+    ("admin", "Admin (legacy)"),
+    ("staff", "Staff (legacy)"),
+)
+
 SYSTEM_ROLE_SEEDS: tuple[dict[str, object], ...] = (
     {
         "slug": UserRole.SUPERADMIN.value,
@@ -243,6 +251,28 @@ def has_module_access(
     return ACCESS_RANK.get(granted, 0) >= REQUIRED_RANK[level]
 
 
+def _add_role(
+    db: AsyncSession,
+    *,
+    slug: str,
+    label: str,
+    description: str,
+    category: str,
+    admin_access: bool,
+    is_system: bool,
+) -> None:
+    db.add(
+        Role(
+            slug=slug,
+            label=label,
+            description=description,
+            category=category,
+            admin_access=admin_access,
+            is_system=is_system,
+        )
+    )
+
+
 async def ensure_system_roles(db: AsyncSession) -> None:
     """Ensure the 4 system roles exist in the roles table (idempotent)."""
     existing = set((await db.scalars(select(Role.slug))).all())
@@ -250,15 +280,40 @@ async def ensure_system_roles(db: AsyncSession) -> None:
     for seed in SYSTEM_ROLE_SEEDS:
         slug = str(seed["slug"])
         if slug not in existing:
-            db.add(
-                Role(
-                    slug=slug,
-                    label=str(seed["label"]),
-                    description=str(seed["description"]),
-                    category=str(seed["category"]),
-                    admin_access=bool(seed["admin_access"]),
-                    is_system=bool(seed["is_system"]),
-                )
+            _add_role(
+                db,
+                slug=slug,
+                label=str(seed["label"]),
+                description=str(seed["description"]),
+                category=str(seed["category"]),
+                admin_access=bool(seed["admin_access"]),
+                is_system=bool(seed["is_system"]),
+            )
+            added = True
+    if added:
+        await db.commit()
+
+
+async def ensure_known_roles(db: AsyncSession) -> None:
+    """Insert system roles and legacy slugs. Existing rows are left unchanged.
+
+    Unit tests call ``ensure_system_roles`` only, so the roles matrix stays the
+    four system roles. Postgres fixtures call this so a legacy ``users.role``
+    value satisfies ``fk_users_role_roles``.
+    """
+    await ensure_system_roles(db)
+    existing = set((await db.scalars(select(Role.slug))).all())
+    added = False
+    for slug, label in LEGACY_ROLE_SLUGS:
+        if slug not in existing:
+            _add_role(
+                db,
+                slug=slug,
+                label=label,
+                description="Legacy users.role value. Does not grant admin access.",
+                category="staff",
+                admin_access=False,
+                is_system=False,
             )
             added = True
     if added:

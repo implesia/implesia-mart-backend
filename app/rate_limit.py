@@ -50,6 +50,29 @@ def refresh_account_key(request: Request) -> str:
     return f"refresh-account:{subject}"
 
 
+def courier_check_account_key(request: Request) -> str:
+    """One courier-check bucket per staff account, so a new address does not reset it."""
+    header = request.headers.get("authorization") or ""
+    token = header[7:].strip() if header.lower().startswith("bearer ") else ""
+    subject = _access_subject(token)
+    if subject is None:
+        return f"courier-check-account:{_rate_limit_key(request)}"
+    return f"courier-check-account:{subject}"
+
+
+def _access_subject(token: str) -> str | None:
+    if not token:
+        return None
+    try:
+        payload = decode_token(token, "access", verify_exp=False)
+    except InvalidTokenError:
+        return None
+    subject = payload.get("sub")
+    if not isinstance(subject, str) or not subject:
+        return None
+    return subject
+
+
 def _refresh_subject(token: str) -> str | None:
     if not token:
         return None
