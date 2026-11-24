@@ -1,5 +1,7 @@
 # TODO
 
+> **Status update (2026-11-24):** Some items below are still marked "not live" or "pending production deployment". Check the frontend repo `docs/ops/RELEASE_LOG.md` before treating them as undeployed. The 24 Nov 2026 release applied migrations `0108` and `0109` on production (`main` `87b65c2`).
+
 Open items found in the code and in recent work. Remove an item when it is done.
 
 ## Done (not live / pending production deployment)

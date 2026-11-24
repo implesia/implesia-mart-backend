@@ -1,5 +1,7 @@
 # Daily Handoff & Cross-Device Sync — 2026-11-22
 
+> **Status update (2026-11-24):** This handoff was written on 2026-11-22. Production is no longer waiting on migrations `0100`–`0107`. As of 24 Nov 2026 the production API is on `main` `87b65c2` at Alembic `0109`. For current planning and release facts, read the frontend repo: `docs/README.md`, `docs/planning/`, and `docs/ops/RELEASE_LOG.md`.
+
 > **Purpose:** Single source of truth for resuming work seamlessly between **Home Laptop** and **Office PC** via Git without copying local AI chat databases.
 > **Language Preference (Tushar):** Communicate with Tushar in **Bengali (বাংলা)** in chat sessions. Storefront & Customer Dashboard UI text is in **English**.
 > **Core Scale Mandate (ALWAYS KEEP IN MIND):**
