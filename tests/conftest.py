@@ -66,7 +66,7 @@ from sqlalchemy.ext.asyncio import (  # noqa: E402
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
-)  # noqa: E402
+)
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
 import app.models  # noqa: E402, F401  (registers users and products on Base.metadata)
