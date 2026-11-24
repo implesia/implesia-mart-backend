@@ -30,7 +30,15 @@ def test_alembic_has_single_head_0110() -> None:
     script = ScriptDirectory.from_config(cfg)
 
     heads = script.get_heads()
-    assert heads == ["0110"], f"Expected single Alembic head ['0110'], got {heads}"
+    assert len(heads) == 1, f"Expected a single Alembic head, got {heads}"
+    head = heads[0]
+    # 0110 must remain on the ancestry of the current head so later
+    # additive revisions (0111, 0112, ...) do not require rewriting this test.
+    ancestry = [rev.revision for rev in script.walk_revisions(base="base", head=head)]
+    assert "0110" in ancestry, (
+        f"Expected 0110 to be the current head or an ancestor of {head}, "
+        f"ancestry={ancestry}"
+    )
 
     rev = script.get_revision("0110")
     assert rev is not None
