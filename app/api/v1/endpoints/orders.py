@@ -16,7 +16,7 @@ from app.schemas.order import (
     PublicOrderRead,
     QuoteRead,
 )
-from app.services import order_service
+from app.services import meta_capi, order_service, turnstile
 
 router = APIRouter(dependencies=[Depends(no_store)])
 
@@ -80,10 +80,22 @@ async def place_order(
     replay = await order_service.replayed(db, actor, idempotency_key)
     if replay is not None:
         return replay
+    # A replay of an order that already exists returned above, so it does not
+    # need a fresh Turnstile token. Quote, lookup, and admin orders do not
+    # call this.
+    await turnstile.verify_checkout(request, payload.turnstile_token)
     bucket = ("orders-placed", _rate_limit_key(request))
     if limiter.enabled and not limiter.limiter.test(_ORDER_LIMIT, *bucket):
         raise TooManyRequestsError("Too many requests.")
-    order = await order_service.create_order(db, actor, payload, idempotency_key, background)
+    order = await order_service.create_order(
+        db,
+        actor,
+        payload,
+        idempotency_key,
+        background,
+        client_ip=meta_capi.client_ip_address(request),
+        user_agent=meta_capi.client_user_agent(request),
+    )
     if limiter.enabled:
         limiter.limiter.hit(_ORDER_LIMIT, *bucket)
     return order

@@ -1114,7 +1114,21 @@ Codes: `coupon_not_found`, `coupon_inactive`, `coupon_not_started`, `coupon_expi
 
 `OrderCreate.tracking` is optional: `{ "fbp": string|null, "fbc": string|null, "event_source_url": string|null }`. Each field is optional. A value that is not a string, is blank, or is longer than 500 characters is dropped. Unknown keys inside `tracking` are dropped. A missing `tracking`, or a `tracking` that is not an object, is ignored and the order is still placed. Other unknown fields on the order body are still `422`.
 
-`POST /orders` returns `order_number` (same string as `number`) and `analytics_event_id` (`purchase_<order_number>`). When `META_PIXEL_ID` and `META_CAPI_TOKEN` are both set, a successful create also sends one Meta Conversions API `Purchase` with that event id after the order is committed. `custom_data.value` is the post-coupon total. When `coupon_code` is set, `custom_data.coupon` is that code. The response does not wait on Meta and does not change if Meta fails. A replay of the same `Idempotency-Key` returns the same ids and does not send again. `POST /orders/quote` and `POST /orders/lookup` do not accept the Meta `tracking` object and do not return `analytics_event_id`. Lookup does return `coupon_code` and `coupon_discount`.
+`OrderCreate.turnstile_token` is optional (string, max 2048, blank becomes omitted). It is the only Turnstile input. `X-Turnstile-Token` is ignored. When `TURNSTILE_SECRET_KEY` is set, a new `POST /orders` calls Cloudflare siteverify before the order is saved. `remoteip` is `CF-Connecting-IP` when that header is an IP. Failure is 400:
+
+```json
+{
+  "error": {
+    "code": "turnstile_failed",
+    "message": "নিরাপত্তা যাচাই ব্যর্থ হয়েছে, আবার চেষ্টা করুন",
+    "details": null
+  }
+}
+```
+
+The same body is returned when `ENVIRONMENT` is `production` and `TURNSTILE_SECRET_KEY` is empty. Set that variable before a production deploy or public checkout stays refused. Outside production an empty secret skips the check. A replay of an `Idempotency-Key` that already created an order does not need a token. `POST /orders/quote`, `POST /orders/lookup`, and admin order routes, including `POST /admin/orders/offline`, do not accept or require the token.
+
+`POST /orders` returns `order_number` (same string as `number`) and `analytics_event_id` (`purchase_<order_number>`). When `META_PIXEL_ID` and `META_CAPI_TOKEN` are both set, a successful create also sends one Meta Conversions API `Purchase` with that event id after the order is committed. `custom_data.value` is the post-coupon total. When `coupon_code` is set, `custom_data.coupon` is that code. `user_data` includes hashed phone, email, name, district, country `bd`, and `external_id`, plus the client IP, user agent, and `fbp` / `fbc` when they were sent. `META_TEST_EVENT_CODE`, when set, is sent as `test_event_code`. The response does not wait on Meta and does not change if Meta fails. A replay of the same `Idempotency-Key` returns the same ids and does not send again. Offline and other admin-created orders do not send the Purchase. `POST /orders/quote` and `POST /orders/lookup` do not accept the Meta `tracking` object and do not return `analytics_event_id`. Lookup does return `coupon_code` and `coupon_discount`.
 
 ### Public order lookup
 
