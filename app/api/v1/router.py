@@ -27,6 +27,7 @@ from app.api.v1.endpoints import (
     inquiries,
     orders,
     products,
+    push,
     reviews,
     search,
     site_contact,
@@ -102,6 +103,9 @@ api_router = APIRouter()
 _AUDITED = [Depends(audit_admin_write)]
 
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(push.public_router, prefix="/push", tags=["push"])
+api_router.include_router(push.admin_router, prefix="/auth", tags=["push:admin"])
+api_router.include_router(push.customer_router, prefix="/customer", tags=["push:customer"])
 api_router.include_router(ws.router, tags=["realtime"])
 api_router.include_router(customer_auth.router, prefix="/customer", tags=["customer:auth"])
 api_router.include_router(customer_orders.router, prefix="/customer", tags=["customer:orders"])

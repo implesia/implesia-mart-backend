@@ -168,6 +168,22 @@ async def create_order_status_notification(
         "notification.unread",
         {"unread_count": unread_count},
     )
+    from app.services import push_service
+
+    if push_service.is_configured():
+        push_service.schedule_push_to_users(
+            None,
+            [user_id],
+            "customer",
+            push_service.build_push_payload(
+                title=notification.title,
+                body=notification.message,
+                url=f"/dashboard/orders?order={order.number}",
+                tag=f"implesia-order-{order.id}",
+                scope="customer",
+                can_quick_reply=False,
+            ),
+        )
     return notification
 
 

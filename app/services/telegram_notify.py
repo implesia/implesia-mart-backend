@@ -63,6 +63,37 @@ def admin_order_url(order_id: uuid.UUID) -> str | None:
     return f"{base}/admin/orders/{order_id}"
 
 
+def admin_conversation_url(conversation_id: uuid.UUID) -> str | None:
+    """``{ADMIN_BASE_URL}/admin/communication?id={conversation_id}``."""
+    base = settings.admin_base_url.strip().rstrip("/")
+    if not base:
+        return None
+    return f"{base}/admin/communication?id={conversation_id}"
+
+
+def build_unanswered_chat_message(
+    *,
+    conversation_id: uuid.UUID,
+    customer_name: str,
+    customer_phone: str | None,
+    order_number: str | None,
+    excerpt: str,
+) -> str:
+    lines = [
+        "<b>Unanswered customer chat</b>",
+        f"Customer: {escape_html(customer_name)}",
+    ]
+    if customer_phone:
+        lines.append(f"Phone: {escape_html(customer_phone)}")
+    if order_number:
+        lines.append(f"Order: #{escape_html(order_number)}")
+    lines.append(f"Message: {escape_html(excerpt[:300])}")
+    url = admin_conversation_url(conversation_id)
+    if url is not None:
+        lines.append(f'<a href="{_escape_attr(url)}">Open Admin Inbox</a>')
+    return "\n".join(lines)
+
+
 def _due(order: Order) -> int:
     if order.due_amount is None:
         return int(order.total)
@@ -332,3 +363,112 @@ def _seconds(value: object) -> float | None:
         except ValueError:
             return None
     return None
+
+
+_CHAT_FALLBACK_TTL_SECONDS = 600
+_fallback_tasks: set[asyncio.Task[object]] = set()
+
+
+async def run_unanswered_chat_fallback(
+    *,
+    conversation_id: uuid.UUID,
+    message_created_at: datetime,
+    customer_name: str,
+    customer_phone: str | None,
+    order_number: str | None,
+    excerpt: str,
+    delay_seconds: int | None = None,
+    session_factory: object | None = None,
+) -> bool:
+    """Wait ``delay_seconds`` then send ONE 1-way Telegram alert if no staff replied."""
+    if not settings.telegram_chat_fallback_enabled or not enabled():
+        return False
+
+    from sqlalchemy import select as sa_select
+
+    from app.db.session import SessionLocal
+    from app.models.communication import Message
+    from app.services.redis_client import redis_client
+
+    wait_for = (
+        settings.telegram_chat_fallback_delay_seconds
+        if delay_seconds is None
+        else max(0, delay_seconds)
+    )
+
+    claimed = await redis_client.acquire_chat_notify_throttle(
+        f"tg:chat_fallback:{conversation_id}",
+        "telegram",
+        ttl_seconds=_CHAT_FALLBACK_TTL_SECONDS,
+    )
+    if not claimed:
+        return False
+
+    if wait_for > 0:
+        await asyncio.sleep(wait_for)
+
+    factory = session_factory or SessionLocal
+    async with factory() as db:  # type: ignore[operator]
+        staff_reply = await db.scalar(
+            sa_select(Message.id)
+            .where(
+                Message.conversation_id == conversation_id,
+                Message.is_internal_note.is_(False),
+                Message.sender_role.notin_(("customer", "seller")),
+                Message.created_at >= message_created_at,
+            )
+            .limit(1)
+        )
+        if staff_reply is not None:
+            return False
+
+    text = build_unanswered_chat_message(
+        conversation_id=conversation_id,
+        customer_name=customer_name,
+        customer_phone=customer_phone,
+        order_number=order_number,
+        excerpt=excerpt,
+    )
+    await send_message(f"chat:{conversation_id}", text)
+    return True
+
+
+def schedule_unanswered_chat_fallback(
+    background: BackgroundTasks | None,
+    *,
+    conversation_id: uuid.UUID,
+    message_created_at: datetime,
+    customer_name: str,
+    customer_phone: str | None,
+    order_number: str | None,
+    excerpt: str,
+) -> None:
+    if not settings.telegram_chat_fallback_enabled or not enabled():
+        return
+    if background is not None:
+        background.add_task(
+            run_unanswered_chat_fallback,
+            conversation_id=conversation_id,
+            message_created_at=message_created_at,
+            customer_name=customer_name,
+            customer_phone=customer_phone,
+            order_number=order_number,
+            excerpt=excerpt,
+        )
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    task = loop.create_task(
+        run_unanswered_chat_fallback(
+            conversation_id=conversation_id,
+            message_created_at=message_created_at,
+            customer_name=customer_name,
+            customer_phone=customer_phone,
+            order_number=order_number,
+            excerpt=excerpt,
+        )
+    )
+    _fallback_tasks.add(task)
+    task.add_done_callback(_fallback_tasks.discard)

@@ -753,6 +753,24 @@ async def create_order(
             user_agent=user_agent,
         )
         await telegram_notify.notify_new_order(db, background, loaded)
+        from app.services import push_service
+
+        if push_service.is_configured():
+            staff_ids = await push_service.staff_ids_with_module_read(db, "orders")
+            if staff_ids:
+                push_service.schedule_push_to_users(
+                    background,
+                    staff_ids,
+                    "admin",
+                    push_service.build_push_payload(
+                        title=f"New Order #{loaded.number}",
+                        body=f"{loaded.customer_name} · ৳{int(loaded.total)}",
+                        url=f"/admin/orders/{loaded.id}",
+                        tag=f"implesia-order-{loaded.id}",
+                        scope="admin",
+                        can_quick_reply=False,
+                    ),
+                )
     telegram_notify.flush_low_stock(db, background)
     await notification_service.create_order_status_notification(db, loaded, OrderStatus.NEW.value)
     await realtime_hub.publish(
