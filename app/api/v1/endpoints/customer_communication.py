@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, UploadFile, status
 
 from app.api.deps import CurrentUser, DbSession, no_store
 from app.schemas.communication import (
@@ -83,12 +83,14 @@ async def post_customer_message(
     user: CurrentUser,
     conversation_id: uuid.UUID,
     payload: CustomerMessageCreateRequest,
+    background: BackgroundTasks,
 ) -> MessageRead:
     return await communication_service.send_customer_message(
         db,
         user,
         conversation_id,
         payload,
+        background=background,
     )
 
 

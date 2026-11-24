@@ -26,6 +26,7 @@ dependencies = [
     "prometheus-client>=0.21",
     "boto3>=1.43.123",
     "openpyxl>=3.1.5",
+    "pywebpush>=2.5.0",
 ]
 
 [project.optional-dependencies]

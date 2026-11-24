@@ -27,6 +27,10 @@ os.environ.update(
         "TELEGRAM_CHAT_IDS": "",
         "TELEGRAM_NOTIFY_ORDER_CANCELLED": "false",
         "TELEGRAM_NOTIFY_LOW_STOCK": "false",
+        "TELEGRAM_CHAT_FALLBACK_ENABLED": "false",
+        "TELEGRAM_CHAT_FALLBACK_CHAT_IDS": "",
+        "VAPID_PUBLIC_KEY": "",
+        "VAPID_PRIVATE_KEY": "",
         "ADMIN_BASE_URL": "",
         # Customer SMS stays off even when a local .env turns it on.
         "CUSTOMER_SMS_ENABLED": "false",

@@ -123,9 +123,19 @@ class Settings(BaseSettings):
     telegram_chat_ids: CsvList = Field(default_factory=list)
     telegram_notify_order_cancelled: bool = False
     telegram_notify_low_stock: bool = False
+    telegram_chat_fallback_enabled: bool = False
+    telegram_chat_fallback_delay_seconds: int = Field(default=120, ge=1, le=3600)
+    # Unanswered-chat alerts only. Empty uses telegram_chat_ids. Same bot token.
+    telegram_chat_fallback_chat_ids: CsvList = Field(default_factory=list)
     # Storefront origin, no path. The order link is {ADMIN_BASE_URL}/admin/orders/{id}.
     # The customer status link is {ADMIN_BASE_URL}/order-status?number={order number}.
     admin_base_url: str = ""
+
+    # 100% Free W3C Web Push (VAPID). When public/private keys are unset, push
+    # dispatch is a clean no-op so local dev and tests never require keys.
+    vapid_public_key: str = ""
+    vapid_private_key: SecretStr = SecretStr("")
+    vapid_subject: str = "mailto:support@implesia.com"
 
     # Customer SMS when an order is confirmed or shipped. Off until the master
     # flag is true. provider is only "log" (write the text to the log) or
@@ -230,6 +240,7 @@ class Settings(BaseSettings):
         "order_notification_recipients",
         "trusted_proxies",
         "telegram_chat_ids",
+        "telegram_chat_fallback_chat_ids",
         mode="before",
     )
     @classmethod

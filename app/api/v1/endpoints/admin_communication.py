@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, UploadFile, status
 
 from app.api.deps import DbSession, no_store, require_module_access
 from app.models.user import User
@@ -108,8 +108,11 @@ async def post_admin_message(
     staff: RequireCommWrite,
     conversation_id: uuid.UUID,
     payload: AdminMessageCreateRequest,
+    background: BackgroundTasks,
 ) -> MessageRead:
-    return await communication_service.send_admin_message(db, staff, conversation_id, payload)
+    return await communication_service.send_admin_message(
+        db, staff, conversation_id, payload, background=background
+    )
 
 
 @router.post(
