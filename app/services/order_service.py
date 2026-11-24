@@ -576,6 +576,9 @@ async def create_order(
     payload: OrderCreate,
     idempotency_key: str,
     background: BackgroundTasks | None = None,
+    *,
+    client_ip: str | None = None,
+    user_agent: str | None = None,
 ) -> OrderRead:
     key = require_idempotency_key(idempotency_key)
     actor = shopper_actor(shopper)
@@ -742,7 +745,13 @@ async def create_order(
     read = _read(loaded)
     # Only a newly committed order. Replays and status updates do not reach here.
     if background is not None:
-        meta_capi.schedule_purchase(background, loaded, payload.tracking)
+        meta_capi.schedule_purchase(
+            background,
+            loaded,
+            payload.tracking,
+            client_ip=client_ip,
+            user_agent=user_agent,
+        )
         await telegram_notify.notify_new_order(db, background, loaded)
     telegram_notify.flush_low_stock(db, background)
     await notification_service.create_order_status_notification(db, loaded, OrderStatus.NEW.value)

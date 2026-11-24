@@ -1,24 +1,43 @@
 """Meta Conversions API Purchase events.
 
-Sent once, after a new order is committed. A failure here must not change the
-order response. The access token and the raw phone or email are never logged:
-httpx error text can include the request URL, so failures log the order number
-and a status or error kind only.
+Sent once, after a new online order is committed. Offline and admin-created
+orders never send. A failure here must not change the order response. The
+access token and raw phone, email, name, address, IP, and user agent are never
+logged: httpx error text can include the request URL, so failures log the
+order number and a status or error kind only.
+
+``user_data`` match fields:
+
+- ``ph``, ``em``, ``fn``, ``ln``, ``ct``, ``country``, ``external_id`` are
+  SHA-256 hex after Meta's normalization. ``ct`` and ``country`` are
+  lowercased and trimmed, then punctuation and spaces are removed. ``country``
+  is always ``bd``. Phone is ``8801XXXXXXXXX``.
+- ``client_ip_address`` and ``client_user_agent`` are sent as-is, not hashed.
+  The IP is ``CF-Connecting-IP``, else the first ``X-Forwarded-For`` entry,
+  else the request client host.
+- ``fbp`` and ``fbc`` are the browser cookie values, not hashed.
+- ``external_id`` is the customer id when the order has one, otherwise the
+  normalized phone for a guest.
+
+The Purchase ``event_id`` is ``purchase_<order_number>``. When
+``META_TEST_EVENT_CODE`` is set, the body includes ``test_event_code``.
 """
 
 import asyncio
 import hashlib
 import re
+import unicodedata
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote
 
 import httpx
 from starlette.background import BackgroundTasks
+from starlette.requests import Request
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.models.order import Order, OrderItem
+from app.models.order import Order, OrderItem, OrderOrigin
 from app.schemas.order import OrderTracking, purchase_event_id
 
 logger = get_logger("meta_capi")
@@ -28,6 +47,7 @@ GRAPH_API_VERSION = "v21.0"
 HTTP_TIMEOUT = httpx.Timeout(5.0)
 MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.5, 1.0)
+_COUNTRY = "bd"
 
 _PHONE_SEPARATORS = re.compile(r"[\s+\-]")
 _LOCAL_MOBILE = re.compile(r"01\d{9}")
@@ -70,6 +90,82 @@ def hash_phone(phone: str) -> str | None:
     return _sha256(normalized)
 
 
+def _without_punctuation(value: str) -> str:
+    """Drop punctuation and spaces. Letters, including Bengali vowel signs, stay."""
+    return "".join(
+        char for char in value if unicodedata.category(char)[0] not in {"P", "Z"}
+    )
+
+
+def normalize_location(value: str) -> str | None:
+    """Meta ``ct`` / ``country``: trim, lowercase, drop punctuation and spaces."""
+    cleaned = _without_punctuation(value.strip().lower())
+    return cleaned or None
+
+
+def hash_location(value: str) -> str | None:
+    normalized = normalize_location(value)
+    if normalized is None:
+        return None
+    return _sha256(normalized)
+
+
+def name_parts(name: str) -> tuple[str | None, str | None]:
+    """First and last name for ``fn`` / ``ln``.
+
+    Lowercased, punctuation removed. The first word is ``fn``. When there is
+    more than one word, the last word is ``ln``.
+    """
+    parts: list[str] = []
+    for raw in name.strip().lower().split():
+        cleaned = _without_punctuation(raw)
+        if cleaned:
+            parts.append(cleaned)
+    if not parts:
+        return None, None
+    if len(parts) == 1:
+        return parts[0], None
+    return parts[0], parts[-1]
+
+
+def hash_external_id(value: str) -> str | None:
+    """SHA-256 of a trimmed, lowercased id. Hyphens in a UUID are kept."""
+    cleaned = value.strip().lower()
+    if not cleaned:
+        return None
+    return _sha256(cleaned)
+
+
+def client_ip_address(request: Request) -> str | None:
+    """Visitor IP for Meta. Not the rate-limit address.
+
+    ``CF-Connecting-IP`` wins. Otherwise the first ``X-Forwarded-For`` entry.
+    Otherwise the socket client host. Empty values are skipped.
+    """
+    cloudflare = _header_token(request.headers.get("cf-connecting-ip"))
+    if cloudflare:
+        return cloudflare
+    forwarded = request.headers.get("x-forwarded-for") or ""
+    first = _header_token(forwarded.split(",", 1)[0] if forwarded else "")
+    if first:
+        return first
+    if request.client is None:
+        return None
+    return _header_token(request.client.host)
+
+
+def client_user_agent(request: Request) -> str | None:
+    """``User-Agent`` as sent, trimmed. Not hashed. Omitted when blank."""
+    return _header_token(request.headers.get("user-agent"))
+
+
+def _header_token(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = value.strip()
+    return text or None
+
+
 def _event_time(created: datetime | None) -> int:
     if not isinstance(created, datetime):
         return int(datetime.now(UTC).timestamp())
@@ -82,16 +178,51 @@ def _lines(items: list[OrderItem]) -> list[OrderItem]:
     return [item for item in items if item.product_id is not None]
 
 
-def build_purchase_body(order: Order, tracking: OrderTracking | None) -> dict[str, Any]:
-    """Graph API body for one Purchase. Hashes only; no name, address, IP or user agent."""
+def _external_id(order: Order) -> str | None:
+    # Column values already on the instance. Do not lazy-load in this sync helper.
+    user_id = order.__dict__.get("user_id")
+    if user_id is not None:
+        return hash_external_id(str(user_id))
+    normalized = normalize_phone(order.phone or "")
+    if normalized is None:
+        return None
+    return _sha256(normalized)
+
+
+def _put_hash(user_data: dict[str, Any], key: str, hashed: str | None) -> None:
+    if hashed is not None:
+        user_data[key] = [hashed]
+
+
+def build_purchase_body(
+    order: Order,
+    tracking: OrderTracking | None,
+    *,
+    client_ip: str | None = None,
+    user_agent: str | None = None,
+) -> dict[str, Any]:
+    """Graph API body for one Purchase.
+
+    Hashed: phone, email, first and last name, district (``ct``), country
+    ``bd``, and ``external_id``. Not hashed: ``fbp``, ``fbc``, client IP, and
+    user agent. Street address, area, and notes are not sent.
+    """
     lines = _lines(list(order.items))
     user_data: dict[str, Any] = {}
-    phone_hash = hash_phone(order.phone)
-    if phone_hash is not None:
-        user_data["ph"] = [phone_hash]
-    email_hash = hash_email(order.email or "")
-    if email_hash is not None:
-        user_data["em"] = [email_hash]
+    _put_hash(user_data, "ph", hash_phone(order.phone))
+    _put_hash(user_data, "em", hash_email(order.email or ""))
+    first, last = name_parts(order.customer_name or "")
+    _put_hash(user_data, "fn", _sha256(first) if first else None)
+    _put_hash(user_data, "ln", _sha256(last) if last else None)
+    _put_hash(user_data, "ct", hash_location(order.district or ""))
+    _put_hash(user_data, "country", hash_location(_COUNTRY))
+    _put_hash(user_data, "external_id", _external_id(order))
+    ip_address = _header_token(client_ip)
+    if ip_address:
+        user_data["client_ip_address"] = ip_address
+    agent = _header_token(user_agent)
+    if agent:
+        user_data["client_user_agent"] = agent
     if tracking is not None and tracking.fbp:
         user_data["fbp"] = tracking.fbp
     if tracking is not None and tracking.fbc:
@@ -133,15 +264,28 @@ def build_purchase_body(order: Order, tracking: OrderTracking | None) -> dict[st
 
 
 def schedule_purchase(
-    background: BackgroundTasks, order: Order, tracking: OrderTracking | None
+    background: BackgroundTasks,
+    order: Order,
+    tracking: OrderTracking | None,
+    *,
+    client_ip: str | None = None,
+    user_agent: str | None = None,
 ) -> None:
-    """Queue the Purchase. Does nothing when CAPI is off, and never raises."""
+    """Queue the Purchase. Offline orders and a disabled CAPI send nothing.
+
+    Never raises. A replay or a status change does not call this.
+    """
     number = ""
     try:
         number = order.number
-        if not enabled():
+        if not enabled() or order.__dict__.get("origin") == OrderOrigin.OFFLINE.value:
             return
-        body = build_purchase_body(order, tracking)
+        body = build_purchase_body(
+            order,
+            tracking,
+            client_ip=client_ip,
+            user_agent=user_agent,
+        )
         background.add_task(send_purchase, number, body)
     except Exception:
         logger.error("meta_capi_schedule_failed", order_number=number)

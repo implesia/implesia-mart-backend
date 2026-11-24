@@ -9,6 +9,7 @@ Generated from the FastAPI routers (`app/api/v1/router.py` and `app/api/v1/endpo
 - **any signed-in staff**: a valid staff access token (`Authorization: Bearer …`), any role (`viewer`, `editor`, `superadmin`).
 - **admin (editor, superadmin)**: `require_editor`. A `viewer` or `customer` gets 403.
 - **admin (superadmin only)**: `require_superadmin`.
+- **built-in viewer**: `read_only` allows reports, inventory, coupons, delivery rates, pricing settings, reviews, `GET /admin/orders/new`, `GET /admin/customers/report`, and `POST /admin/customers/report/courier-check`. Other writes stay 403. It also does not allow GET on the dashboard, admin products (including cost price), inquiries, CMS, carts, or the order list. Those stay 403 until that viewer is granted `read_write` or `full` on the module. `editor` and above still read them with `read_only`.
 - A protected route without a token answers 401. A role that is too low answers 403.
 
 ## Errors
@@ -724,6 +725,84 @@ Each item: `title` is the product name, `variant_label` is the option labels joi
 
 Writes on this router use the product-write rate limit and return 429 `rate_limited` when it is exceeded. Errors use `{ "error": { "code", "message", "details" } }`.
 
+## `admin/customers`
+
+Own-site history for one phone, plus a cached courier fraud check. `Cache-Control: no-store`. Orders module **read**, with `viewer_read` so a built-in viewer at `read_only` can open both routes. That is not the order-list check: `GET /api/v1/admin/orders` stays 403 for that viewer. Anonymous is 401. A customer is 403. A viewer or editor passes while that role's orders access is read or higher, and is 403 when orders access is `none`. Superadmin always passes. Other admin writes stay 403 for a `read_only` viewer.
+
+| Method | Path | Access | Response |
+| --- | --- | --- | --- |
+| GET | `/api/v1/admin/customers/report?phone=` | orders read | `CustomerReport` |
+| POST | `/api/v1/admin/customers/report/courier-check?phone=` | orders read | `CourierCheck` |
+
+`phone` is required, 1–40 characters. It is normalized to `01XXXXXXXXX`. `+880` and `880` are accepted, as are spaces, dashes, dots, brackets, and Bengali digits. An invalid phone is 422 `validation_error`.
+
+`GET` never calls a courier. `courier_check` is built from `courier_check_results` only.
+
+```json
+{
+  "phone": "01755550101",
+  "customer": { "id": "…", "name": "Amina Khatun", "email": "amina@example.com" },
+  "summary": {
+    "total_orders": 8,
+    "by_status": {
+      "new": 1, "confirmed": 1, "packed": 1, "shipped": 1,
+      "delivered": 2, "cancelled": 1, "returned": 1
+    },
+    "delivered_count": 2,
+    "cancelled_count": 1,
+    "returned_count": 1,
+    "success_rate": 0.5,
+    "total_spent": 2000,
+    "first_order_at": "2026-01-01T00:00:00Z",
+    "last_order_at": "2026-01-08T00:00:00Z",
+    "online_count": 5,
+    "offline_count": 3
+  },
+  "orders": [
+    {
+      "id": "…",
+      "number": "IM-RPT-8",
+      "status": "shipped",
+      "origin": "online",
+      "total": 400,
+      "created_at": "2026-01-08T00:00:00Z",
+      "tracking_number": "TRK-NEW"
+    }
+  ],
+  "courier_check": {
+    "enabled": false,
+    "checked_at": null,
+    "stale": false,
+    "totals": {
+      "total_parcels": 0,
+      "delivered": 0,
+      "returned_or_cancelled": 0,
+      "success_rate": null
+    },
+    "risk_level": "unknown",
+    "providers": [
+      {
+        "provider": "steadfast",
+        "status": "not_configured",
+        "total_parcels": null,
+        "delivered": null,
+        "returned_or_cancelled": null,
+        "success_rate": null,
+        "error_message": null
+      }
+    ]
+  }
+}
+```
+
+`customer` is null when no account has that phone. `name` is the account's full name. `success_rate` is `delivered / (delivered + cancelled + returned)` rounded to 4 decimals, or null when the denominator is 0. `total_spent` is the sum of stored order totals for `delivered` only. `orders` is newest `created_at` first, at most 50. The summary still counts every matching order. A query parameter named `total` is ignored.
+
+`providers` is always `steadfast`, `pathao`, `redx`, `generic`, in that order. `status` is `not_configured`, `ok`, `error`, or `unverified`. Steadfast success is `ok`. Pathao, RedX, and the generic provider success is `unverified` because those fraud-check calls are not in a public API document. A configured provider with no cache row is `error` with `error_message` `No cached result`.
+
+`POST` runs every configured provider in parallel when `COURIER_CHECK_ENABLED` is true, saves each result, and returns `courier_check` only (not the whole report). When the flag is false it returns the cached view and does not call out. The route is rate limited per staff account and per address (`RATE_LIMIT_COURIER_CHECK`, default 10/hour) and returns 429 `rate_limited`.
+
+`risk_level` is `high` below 0.5, `medium` below 0.8, `low` at or above 0.8, and `unknown` when the combined rate is null. `COURIER_CHECK_RISK_HIGH_BELOW` and `COURIER_CHECK_RISK_MEDIUM_BELOW` override those ratios. `stale` is true when a configured provider has no row or the oldest cached row is older than `COURIER_CHECK_CACHE_HOURS` (default 24).
+
 ## `admin/pages/about`
 
 | Method | Path | Access | Request body | Response |
@@ -1128,7 +1207,21 @@ Codes: `coupon_not_found`, `coupon_inactive`, `coupon_not_started`, `coupon_expi
 
 `OrderCreate.tracking` is optional: `{ "fbp": string|null, "fbc": string|null, "event_source_url": string|null }`. Each field is optional. A value that is not a string, is blank, or is longer than 500 characters is dropped. Unknown keys inside `tracking` are dropped. A missing `tracking`, or a `tracking` that is not an object, is ignored and the order is still placed. Other unknown fields on the order body are still `422`.
 
-`POST /orders` returns `order_number` (same string as `number`) and `analytics_event_id` (`purchase_<order_number>`). When `META_PIXEL_ID` and `META_CAPI_TOKEN` are both set, a successful create also sends one Meta Conversions API `Purchase` with that event id after the order is committed. `custom_data.value` is the post-coupon total. When `coupon_code` is set, `custom_data.coupon` is that code. The response does not wait on Meta and does not change if Meta fails. A replay of the same `Idempotency-Key` returns the same ids and does not send again. `POST /orders/quote` and `POST /orders/lookup` do not accept the Meta `tracking` object and do not return `analytics_event_id`. Lookup does return `coupon_code` and `coupon_discount`.
+`OrderCreate.turnstile_token` is optional (string, max 2048, blank becomes omitted). It is the only Turnstile input. `X-Turnstile-Token` is ignored. When `TURNSTILE_SECRET_KEY` is set, a new `POST /orders` calls Cloudflare siteverify before the order is saved. `remoteip` is `CF-Connecting-IP` when that header is an IP. Failure is 400:
+
+```json
+{
+  "error": {
+    "code": "turnstile_failed",
+    "message": "নিরাপত্তা যাচাই ব্যর্থ হয়েছে, আবার চেষ্টা করুন",
+    "details": null
+  }
+}
+```
+
+The same body is returned when `ENVIRONMENT` is `production` and `TURNSTILE_SECRET_KEY` is empty. Set that variable before a production deploy or public checkout stays refused. Outside production an empty secret skips the check. A replay of an `Idempotency-Key` that already created an order does not need a token. `POST /orders/quote`, `POST /orders/lookup`, and admin order routes, including `POST /admin/orders/offline`, do not accept or require the token.
+
+`POST /orders` returns `order_number` (same string as `number`) and `analytics_event_id` (`purchase_<order_number>`). When `META_PIXEL_ID` and `META_CAPI_TOKEN` are both set, a successful create also sends one Meta Conversions API `Purchase` with that event id after the order is committed. `custom_data.value` is the post-coupon total. When `coupon_code` is set, `custom_data.coupon` is that code. `user_data` includes hashed phone, email, name, district, country `bd`, and `external_id`, plus the client IP, user agent, and `fbp` / `fbc` when they were sent. `META_TEST_EVENT_CODE`, when set, is sent as `test_event_code`. The response does not wait on Meta and does not change if Meta fails. A replay of the same `Idempotency-Key` returns the same ids and does not send again. Offline and other admin-created orders do not send the Purchase. `POST /orders/quote` and `POST /orders/lookup` do not accept the Meta `tracking` object and do not return `analytics_event_id`. Lookup does return `coupon_code` and `coupon_discount`.
 
 ### Public order lookup
 

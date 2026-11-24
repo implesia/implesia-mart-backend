@@ -72,6 +72,50 @@ async def _snapshot(db: AsyncSession, product_id: uuid.UUID, order_id: uuid.UUID
     return tuple(product), tuple(order)
 
 
+async def _drop_later_supplier_fk(db: AsyncSession) -> None:
+    """Release the products.supplier_id foreign key from migration 0105.
+
+    This test runs 0093's downgrade on the current schema from ``create_all``.
+    That schema still has the later foreign key, so ``DROP TABLE suppliers``
+    fails. A real ``alembic downgrade`` runs 0105 first and drops the key
+    itself. The product and order rows this test checks are not changed.
+    """
+    await db.execute(
+        text("ALTER TABLE products DROP CONSTRAINT IF EXISTS fk_products_supplier_id_suppliers")
+    )
+    await db.commit()
+
+
+async def _restore_later_supplier_fk(db: AsyncSession) -> None:
+    await db.execute(
+        text(
+            """
+            DO $$
+            BEGIN
+              IF to_regclass('public.suppliers') IS NOT NULL
+                 AND EXISTS (
+                   SELECT 1 FROM information_schema.columns
+                   WHERE table_schema = 'public'
+                     AND table_name = 'products'
+                     AND column_name = 'supplier_id'
+                 )
+                 AND NOT EXISTS (
+                   SELECT 1 FROM pg_constraint
+                   WHERE conname = 'fk_products_supplier_id_suppliers'
+                 )
+              THEN
+                ALTER TABLE products
+                  ADD CONSTRAINT fk_products_supplier_id_suppliers
+                  FOREIGN KEY (supplier_id) REFERENCES suppliers (id)
+                  ON DELETE SET NULL;
+              END IF;
+            END $$;
+            """
+        )
+    )
+    await db.commit()
+
+
 async def test_0093_adds_tables_and_leaves_existing_rows(
     pg: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -80,6 +124,7 @@ async def test_0093_adds_tables_and_leaves_existing_rows(
     movement_id = uuid.uuid4()
 
     async with pg() as db:
+        await _drop_later_supplier_fk(db)
         await _run(db, "downgrade")
         assert await _tables(db) == set()
         await db.execute(
@@ -211,3 +256,4 @@ async def test_0093_adds_tables_and_leaves_existing_rows(
         async with pg() as db:
             if "stock_movements" not in await _tables(db):
                 await _run(db, "upgrade")
+            await _restore_later_supplier_fk(db)

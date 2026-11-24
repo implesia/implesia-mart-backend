@@ -1,8 +1,9 @@
-"""Tests for Alembic migration 0108_communication_system (Phase 19)."""
+"""Tests for Alembic migration 0110_communication_system (Phase 19)."""
 
 from __future__ import annotations
 
 import importlib.util
+import inspect
 from pathlib import Path
 
 import sqlalchemy as sa
@@ -12,38 +13,51 @@ from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-MIGRATION_PATH = BACKEND_ROOT / "alembic" / "versions" / "0108_communication_system.py"
+MIGRATION_PATH = BACKEND_ROOT / "alembic" / "versions" / "0110_communication_system.py"
 
 
-def _load_0108_module():
-    spec = importlib.util.spec_from_file_location("mig_0108", MIGRATION_PATH)
+def _load_0110_module():
+    spec = importlib.util.spec_from_file_location("mig_0110", MIGRATION_PATH)
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
 
 
-def test_alembic_has_single_head_0108() -> None:
+def test_alembic_has_single_head_0110() -> None:
     cfg = Config(str(BACKEND_ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))
     script = ScriptDirectory.from_config(cfg)
 
     heads = script.get_heads()
-    assert heads == ["0108"], f"Expected single Alembic head ['0108'], got {heads}"
+    assert heads == ["0110"], f"Expected single Alembic head ['0110'], got {heads}"
 
-    rev = script.get_revision("0108")
+    rev = script.get_revision("0110")
     assert rev is not None
-    assert rev.down_revision == "0107"
+    assert rev.down_revision == "0109"
+    # 0108 is the role seed. 0109 is the courier cache. Communication follows both.
+    role_seed = script.get_revision("0108")
+    courier = script.get_revision("0109")
+    assert role_seed is not None and role_seed.down_revision == "0107"
+    assert courier is not None and courier.down_revision == "0108"
+
+    mod = _load_0110_module()
+    assert mod.revision == "0110"
+    assert mod.down_revision == "0109"
+    source = inspect.getsource(mod.upgrade)
+    assert "op.f(" in source
+    assert "drop_" not in source
+    assert "rename_" not in source
 
 
-def test_0108_upgrade_and_downgrade_schema_and_rbac_seed(tmp_path: Path) -> None:
-    mod = _load_0108_module()
-    db_file = tmp_path / "mig0108.sqlite3"
+def test_0110_upgrade_and_downgrade_schema_and_rbac_seed(tmp_path: Path) -> None:
+    mod = _load_0110_module()
+    db_file = tmp_path / "mig0110.sqlite3"
     engine = sa.create_engine(f"sqlite:///{db_file}")
 
     try:
         with engine.begin() as conn:
-            # Create minimal referenced parent tables expected before 0108
+            # Create minimal referenced parent tables expected before 0110
             conn.execute(sa.text("CREATE TABLE users (id CHAR(36) PRIMARY KEY)"))
             conn.execute(sa.text("CREATE TABLE orders (id CHAR(36) PRIMARY KEY)"))
             conn.execute(sa.text("CREATE TABLE products (id CHAR(36) PRIMARY KEY)"))
@@ -109,6 +123,11 @@ def test_0108_upgrade_and_downgrade_schema_and_rbac_seed(tmp_path: Path) -> None
             msg_indexes = {idx["name"] for idx in inspector.get_indexes("messages")}
             assert "ix_messages_conv_created_id" in msg_indexes
 
+            read_indexes = {
+                idx["name"] for idx in inspector.get_indexes("conversation_read_states")
+            }
+            assert "ix_conversation_read_states_user_id" in read_indexes
+
             seeded = dict(
                 conn.execute(
                     sa.text(
@@ -119,7 +138,7 @@ def test_0108_upgrade_and_downgrade_schema_and_rbac_seed(tmp_path: Path) -> None
             )
             assert seeded == {"editor": "read_write", "viewer": "read_only"}
 
-            # Downgrade cleanly removes tables and seeded communication rows
+            # Downgrade removes only the tables and rows this revision added.
             ctx_down = MigrationContext.configure(conn)
             with Operations.context(ctx_down):
                 mod.downgrade()

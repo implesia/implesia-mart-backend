@@ -120,8 +120,20 @@ async def _viewer_headers(client: AsyncClient, auth_headers: dict[str, str]) -> 
     return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
-# A file has to travel as POST. This route only previews; it does not save.
-_VIEWER_READS = {("POST", "/api/v1/admin/inventory/imports/preview")}
+# These POSTs are part of a read the viewer is already allowed to open.
+# The import route only previews a file. The courier check refreshes a phone
+# report a viewer with orders read may already open. Marking a conversation
+# read stores that viewer's own cursor and does not post, assign, or change
+# status; those communication writes stay 403. The order list itself stays
+# 403 for that viewer.
+_VIEWER_READS = {
+    ("POST", "/api/v1/admin/inventory/imports/preview"),
+    ("POST", "/api/v1/admin/customers/report/courier-check"),
+    (
+        "POST",
+        f"/api/v1/admin/communication/conversations/{_PARAM}/read",
+    ),
+}
 
 
 async def test_a_viewer_cannot_write_through_any_admin_route(

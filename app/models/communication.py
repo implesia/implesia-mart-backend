@@ -158,6 +158,7 @@ class ConversationReadState(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         primary_key=True,
         nullable=False,
+        index=True,
     )
     last_read_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

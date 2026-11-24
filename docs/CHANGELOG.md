@@ -2,8 +2,47 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Communication migration renumbered to `0110` (2026-11-24).** Merged `origin/testing` (`01f03e9`) into `feat/phases-18-21-realtime-communication`. `testing` already owns `0108` (role seed) and `0109` (`courier_check_results`). The communication schema is now `0110_communication_system.py` (`revision = "0110"`, `down_revision = "0109"`), so `alembic heads` is the single head `0110`. The upgrade only creates `conversations`, `messages`, and `conversation_read_states` (including `ix_conversation_read_states_user_id`, because `user_id` is the second primary-key column), and inserts `communication` rows into `role_permissions` when those roles exist. Constraint, index, and foreign-key names that are already in convention form use `op.f()`, so the naming convention does not prefix them a second time. No existing table or column is dropped or renamed, and no existing row is updated.
+  - Files: `alembic/versions/0110_communication_system.py` (renamed from `0108_communication_system.py`), `tests/test_0110_migration.py`, `docs/CHANGELOG.md`, `docs/TODO.md`, `docs/HANDOFF.md`, `docs/WORK_REPORT_2026-11-22.md`, `docs/BUSINESS_LOGIC.md`.
+  - Frontend (`implesia-mart`): no endpoint or response change from this renumber.
+
+- **Testing integration (2026-11-24).** Merged the role seed, Meta CAPI/Turnstile, and the customer phone report into `testing`. The courier cache migration is `0109` (`down_revision` `0108`, the role seed) because both branches had used `0108`. `GET /admin/customers/report` and `POST /admin/customers/report/courier-check` stay open to a built-in viewer with orders `read_only` (`viewer_read`). The order list and other protected writes stay 403.
+- **Meta CAPI match quality and Turnstile on public checkout (2026-11-24).** No migration.
+  - Purchase `user_data` now includes hashed `fn`, `ln`, `ct`, `country` (`bd`), and `external_id` (customer id, or the normalized phone for a guest), plus unhashed `client_ip_address` (`CF-Connecting-IP`, then the first `X-Forwarded-For` entry, then the socket host) and `client_user_agent`. `fbp` and `fbc` were already passed through unhashed. `event_id` stays `purchase_<order_number>`. `META_TEST_EVENT_CODE` was already sent as `test_event_code` when set. Offline and admin-created orders still do not send CAPI.
+  - `POST /api/v1/orders` accepts optional `turnstile_token` in the JSON body. When `TURNSTILE_SECRET_KEY` is set, siteverify must succeed. Missing or invalid is 400 `turnstile_failed` with message `নিরাপত্তা যাচাই ব্যর্থ হয়েছে, আবার চেষ্টা করুন`. An idempotency replay of an existing order does not need a new token. Admin and offline orders do not check it. An empty secret skips the check outside production and refuses public checkout in production.
+  - Files: `app/services/meta_capi.py`, `app/services/turnstile.py`, `app/services/order_service.py`, `app/api/v1/endpoints/orders.py`, `app/schemas/order.py`, `app/core/config.py`, `.env.example`, `tests/test_meta_capi.py`, `tests/test_turnstile.py`, `bruno/Public/Orders/02 Place Cart Order.bru`, `bruno/Public/Orders/04 Place Direct Order.bru`, docs.
+  - Frontend (`implesia-mart`): on `POST /api/v1/orders`, send `turnstile_token` in the JSON body (not `X-Turnstile-Token`). On 400 `{"error": {"code": "turnstile_failed", "message": "নিরাপত্তা যাচাই ব্যর্থ হয়েছে, আবার চেষ্টা করুন", "details": null}}`, show `message` and ask for a new widget token. Retrying an `Idempotency-Key` that already created the order does not need a token. Do not send the token on quote, lookup, or admin/offline orders. The Pixel `eventID` is still `analytics_event_id` (`purchase_<order_number>`). No new response fields.
+- **Dynamic RBAC role seed and viewer read lock (2026-11-24).**
+  - Postgres tests failed because `create_all` adds `fk_users_role_roles` and never inserts `viewer`. Both copies of a concurrent user insert then hit the foreign key, so the unique-email race looked like two conflicts. Migration `0108` (`down_revision` `0107`) inserts the system roles (`superadmin`, `editor`, `viewer`, `customer`), the legacy slugs (`super_admin`, `admin`, `staff`), and any other distinct `users.role`, with `INSERT ... ON CONFLICT (slug) DO NOTHING`. No row is updated, dropped, or renamed. Downgrade leaves the rows in place. The Postgres fixture seeds the same set after truncate.
+  - Replacing `require_editor` with module `read` let a `read_only` viewer GET the dashboard, admin products, inquiries, CMS, carts, and the order list (200). Those reads are protected again: the built-in viewer needs `write`. `GET /admin/orders/new` stays allowed at `read`. Reports, inventory, coupons, delivery, pricing, and reviews stay readable. Writes stay 403 at `read_only`. Granting the viewer `read_write` or `full` still opens the module.
+  - `tests/integration/test_0093_migration.py` drops and restores `fk_products_supplier_id_suppliers` around the isolated 0093 downgrade. The test was wrong on the current schema: `create_all` includes the migration 0105 product→supplier foreign key, and 0093 drops `suppliers`. A full Alembic downgrade still runs 0105 first. Product and order rows in that test are not rewritten.
+  - Files touched:
+    - `alembic/versions/0108_seed_missing_roles.py`
+    - `app/api/deps.py`, `app/api/v1/endpoints/admin_orders.py`, `app/services/permission_service.py`
+    - `tests/conftest.py`, `tests/integration/conftest.py`, `tests/integration/postgres.py`
+    - `tests/integration/test_0093_migration.py`, `tests/integration/test_0108_migration.py`
+    - `docs/CHANGELOG.md`, `docs/BUSINESS_LOGIC.md`, `docs/API.md`, `docs/TODO.md`
+  - Frontend (`implesia-mart`): no new fields. A viewer token is 403 again on GET `/api/v1/admin/dashboard`, `/api/v1/admin/products`, `/api/v1/admin/inquiries`, `/api/v1/admin/site/*` CMS routes, `/api/v1/admin/carts`, and `/api/v1/admin/orders`. `GET /api/v1/admin/orders/new`, reports, inventory, coupons, delivery, pricing, and reviews are unchanged. The roles matrix can still show `read_only` for the viewer; that grant does not open the protected reads until it is `read_write` or `full`.
+- **Customer phone report and courier fraud check (2026-11-24). Done (not live).** Additive migration `0109` (`down_revision = "0108"`, the role-seed revision). No existing row is updated.
+  - **Report (`GET /api/v1/admin/customers/report?phone=`):** Orders-module read, including a built-in viewer with `read_only`. The order list stays closed to that viewer. Normalizes the phone to `01XXXXXXXXX` (`+880` and `880` accepted; invalid is 422). Matches online and offline orders by that stored phone. Returns the linked account (`{id, name, email}` or null), a summary (status counts, delivered-only `total_spent`, success rate, first/last order, online/offline counts), the newest 50 orders, and `courier_check` from the cache only.
+  - **Courier check (`POST /api/v1/admin/customers/report/courier-check?phone=`):** Live call only when `COURIER_CHECK_ENABLED` is true. Steadfast, Pathao, RedX, and one generic HTTPS provider run in parallel, each with its own timeout. A missing key set leaves that provider `not_configured` and makes no network call. Results are upserted into `courier_check_results` (`phone`, `provider`, JSON payload, `checked_at`, unique on phone + provider). Rate limit `RATE_LIMIT_COURIER_CHECK` (default 10/hour) per staff account and per address.
+  - Steadfast's count endpoint is the verified adapter (`ok`). Pathao, RedX, and the generic provider are unverified (`unverified` on success). Pathao's published client-id API is not used because it has no fraud-check method.
+  - Files touched:
+    - `alembic/versions/0109_courier_check_results.py`
+    - `app/models/courier_check.py`, `app/models/__init__.py`
+    - `app/schemas/customer_report.py`
+    - `app/services/customer_report_service.py`, `app/services/courier/`
+    - `app/api/v1/endpoints/admin_customers.py`, `app/api/v1/router.py`
+    - `app/core/config.py`, `app/rate_limit.py`, `.env.example`, `tests/conftest.py`
+    - `tests/test_customer_courier_report.py`, `tests/test_qa_hardening.py`
+    - `docs/CHANGELOG.md`, `docs/API.md`, `docs/BUSINESS_LOGIC.md`, `docs/TODO.md`
+  - Frontend (`implesia-mart`):
+    - Admin customer lookup can call `GET /api/v1/admin/customers/report?phone=` and must keep the response shape: `phone`, `customer` (`id`, `name`, `email` or null), `summary` (including `by_status` with all seven statuses, `success_rate` as a 0–1 ratio or null, `total_spent` for delivered orders only), `orders` (max 50: `id`, `number`, `status`, `origin`, `total`, `created_at`, `tracking_number`), and `courier_check`.
+    - Refresh calls `POST /api/v1/admin/customers/report/courier-check?phone=` and reads `courier_check` only. `enabled: false` means the server will not call a courier. Provider `status` is `not_configured`, `ok`, `error`, or `unverified`. Null parcel counts mean that provider did not return counts (Pathao rating-only results do this). Do not treat `unverified` as a failure; it means the call returned counts from an unpublished API.
+    - `risk_level` is `unknown`, `low`, `medium`, or `high`. `success_rate` is not a percent.
+
 - **Phase 19 High-Scale, Seller-Ready Direct Communication Engine (2026-11-22). Done (not live).**
-  - **Additive Migration `0108_communication_system.py` (`down_revision = "0107"`) & Models (`app/models/communication.py`, `app/models/__init__.py`):**
+  - **Additive Migration `0110_communication_system.py` (`down_revision = "0109"`; originally drafted as `0108` / `0107`) & Models (`app/models/communication.py`, `app/models/__init__.py`):**
     - Created `conversations` (`customer_support`, `seller_support`, `customer_seller`; status `open`/`pending`/`resolved`/`closed`; `customer_id`, `seller_id`, `order_id`, `product_id`, `assigned_staff_id`; high-scale composite DESC indexes), `messages` (composite keyset index `(conversation_id, created_at DESC, id DESC)`, `is_internal_note`), and `conversation_read_states` (composite PK `(conversation_id, user_id)`).
     - Idempotently seeded `role_permissions` for module `communication` (`editor=read_write`, `viewer=read_only`).
   - **Dynamic RBAC (`app/services/permission_service.py`):**
@@ -14,12 +53,12 @@ Newest first. Every task adds an entry: date, what changed, files touched, and a
     - Per-user send rate limit (`20 msgs / 10s` via Redis `rl:chat:{user_id}`), text validation (`1–2000` chars), image attachments under `/media/chat/`, real-time `message.created` & `conversation.updated` fan-out via `realtime_hub`, and throttled (`1 per 5 min`) offline `CustomerNotification` (`type="support_message"`).
     - Wired `communication_service.can_access_conversation` into `ws_manager` for WS `subscribe_conversation` authorization.
   - Files touched:
-    - `alembic/versions/0108_communication_system.py`
+    - `alembic/versions/0110_communication_system.py`
     - `app/models/communication.py`, `app/models/__init__.py`
     - `app/schemas/communication.py`
     - `app/services/communication_service.py`, `app/services/permission_service.py`, `app/services/image_storage.py`, `app/services/redis_client.py`, `app/services/ws_manager.py`
     - `app/api/v1/endpoints/customer_communication.py`, `app/api/v1/endpoints/admin_communication.py`, `app/api/v1/router.py`, `app/main.py`
-    - `tests/test_communication.py`, `tests/test_0108_migration.py`
+    - `tests/test_communication.py`, `tests/test_0110_migration.py`
     - `docs/CHANGELOG.md`, `docs/API.md`, `docs/BUSINESS_LOGIC.md`
   - Frontend (`implesia-mart`):
     - Customer chat can use `/api/v1/customer/conversations` (list/create-or-reuse), `/messages` (cursor paginated), `/attachment`, `/read`, plus WS `subscribe_conversation` and `message.created` events.

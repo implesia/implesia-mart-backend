@@ -56,7 +56,9 @@ async def test_superadmin_can_update_and_reset_roles_matrix_and_locked_roles_pro
     res = await client.get("/api/v1/users/roles-matrix", headers=auth_headers)
     assert res.status_code == 200, res.text
     matrix = res.json()
-    assert len(matrix["module_definitions"]) == 12
+    module_keys = {item["key"] for item in matrix["module_definitions"]}
+    assert "communication" in module_keys
+    assert len(matrix["module_definitions"]) == 13
     by_role = {r["role"]: r for r in matrix["roles"]}
     assert by_role["superadmin"]["editable"] is False
     assert by_role["customer"]["editable"] is False

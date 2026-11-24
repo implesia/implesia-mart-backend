@@ -1,7 +1,7 @@
 # Work Report — 2026-11-22 (Phases 18–21: Real-Time WebSocket, Redis Pub/Sub & Direct Communication Engine)
 
 **Git Branch (Both Repos):** `feat/phases-18-21-realtime-communication`
-**Alembic Single Head:** `0108` (`alembic/versions/0108_communication_system.py`)
+**Alembic Single Head (updated 2026-11-24):** `0110` (`alembic/versions/0110_communication_system.py`, `down_revision = "0109"`). The 2026-11-22 draft used `0108`. That number is the role seed; `0109` is the courier cache. The planned "Next Migration `0108`" communication tables are `0110`.
 
 ---
 
@@ -9,7 +9,7 @@
 
 ### Pre-flight Local Office PC Sync
 - Repaired stale `.venv/bin/*` shebangs after workspace folder move and verified Python 3.12, `alembic`, `pytest`, `ruff`, and `mypy`.
-- Started local Docker PostgreSQL (`localhost:5434`) & Redis 7 (`localhost:6381`) and upgraded local DB through `0107` and then `0108 (head)`.
+- Started local Docker PostgreSQL (`localhost:5434`) & Redis 7 (`localhost:6381`) and upgraded local DB through `0107`. The communication revision was later renumbered to `0110` (head).
 
 ### Backend (`implesia-mart-backend`) — Phases 18 & 19 + DevOps Hardening
 1. **Phase 18 — Monolith Concurrency Hardening & Real-Time WebSocket + Redis Pub/Sub Foundation:**
@@ -20,7 +20,7 @@
      - `WS /api/v1/ws?ticket=...` with **ZERO PostgreSQL session held inside the WS loop**, max 5 concurrent sockets/user (`4008`), 4 KB max frame (`1009`), 60s idle timeout (`4000`), `ping`/`pong`, ephemeral `typing` relay, and `subscribe_conversation`.
    - **Real-Time Event Push** (`order_service.py`, `notification_service.py`): Publishes `order.new` on committed online orders and `notification.created` / `notification.unread` on customer notification updates.
 2. **Phase 19 — High-Scale, Seller-Ready Direct Communication Engine:**
-   - **Additive Migration `0108_communication_system.py`** (`revision="0108"`, `down_revision="0107"`) & Models (`app/models/communication.py`, `app/models/__init__.py`):
+   - **Additive Migration `0110_communication_system.py`** (`revision="0110"`, `down_revision="0109"`; drafted as `0108` / `0107`) & Models (`app/models/communication.py`, `app/models/__init__.py`):
      - `conversations` (`customer_support`, `seller_support`, `customer_seller`; status `open`/`pending`/`resolved`/`closed`; `customer_id`, `seller_id`, `order_id`, `product_id`, `assigned_staff_id`; high-scale composite DESC indexes).
      - `messages` (composite keyset index `(conversation_id, created_at DESC, id DESC)`, `is_internal_note`).
      - `conversation_read_states` (composite PK `(conversation_id, user_id)`).
@@ -36,8 +36,8 @@
 4. **Backend Verification:**
    - `ruff check .`: All checks passed.
    - `mypy app`: 0 issues in 414 source files.
-   - `alembic heads` & `alembic current`: `0108 (head)`.
-   - `pytest tests/test_0108_migration.py tests/test_communication.py tests/test_realtime_ws.py -v`: **17 passed**.
+   - `alembic heads` on 2026-11-22 was recorded as `0108`. After the 2026-11-24 renumber the single head is `0110`.
+   - `pytest tests/test_0110_migration.py tests/test_communication.py tests/test_realtime_ws.py` covers the communication schema (the 2026-11-22 run of the old `test_0108_migration.py` file was 17 passed).
 
 ### Frontend (`implesia-mart`) — Phases 20 & 21
 1. **Phase 20 — Monolith-Friendly Shared WebSocket Client & Instant Notification Upgrade:**
@@ -65,9 +65,9 @@ Run these commands on your Home Laptop to get all of today's changes in both rep
 cd /path/to/implesia-mart-backend
 git fetch origin
 git checkout -B feat/phases-18-21-realtime-communication origin/feat/phases-18-21-realtime-communication
-# Make sure local Postgres & Redis are running, then apply migration 0108:
+# Make sure local Postgres & Redis are running, then apply migration 0110:
 alembic upgrade head
-alembic current   # should print: 0108 (head)
+alembic current   # should print: 0110 (head)
 
 # 2. Frontend
 cd /path/to/implesia-mart
@@ -81,5 +81,5 @@ npm test
 
 ## 3. Remaining / Next Steps
 - [ ] Review & merge `feat/phases-18-21-realtime-communication` into `main` in both repos when ready.
-- [ ] Run production rollout on VPS `72.60.199.155` (`pg_dump` → `alembic upgrade head` through `0108` → rebuild API + Redis 7 → deploy Cloudflare Workers frontend → live smoke test).
+- [ ] Run production rollout on VPS `72.60.199.155` only after this branch is merged and a backup is taken (`pg_dump` → `alembic upgrade head` through `0110` → rebuild API + Redis 7 → deploy Cloudflare Workers frontend → live smoke test). Do not run it from a laptop.
 - [ ] Start **Milestone 2/3: SaaS Dropshipping / Seller Portal** (seller application/approval, seller catalog & fulfillment, activating `seller_support` and `customer_seller` channels).
