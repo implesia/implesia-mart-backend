@@ -42,6 +42,7 @@ Open items found in the code and in recent work. Remove an item when it is done.
 
 ## Open / Pending Next Steps
 
+- **Customer phone report and courier check (2026-11-24). Done, not live.** Migration `0109` (`down_revision` `0108`) adds `courier_check_results` only. Do not run it against production from a laptop. Leave `COURIER_CHECK_ENABLED` false until the courier keys are set on the host. Steadfast is the verified adapter. Pathao, RedX, and the generic URL are unverified and stay quiet until their own keys are set. The report `GET` never calls a courier. A viewer with orders read can open the report and the refresh. Protected writes stay 403.
 - **Deploy to Production (VPS 72.60.199.155):**
   - Run `alembic upgrade head` to apply migrations through `0105` (including `0102`–`0105`) on the production database.
   - Rebuild API container: `docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build`.

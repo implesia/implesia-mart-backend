@@ -35,6 +35,22 @@ os.environ.update(
         "CUSTOMER_SMS_ON_SHIPPED": "true",
         "DELIVERY_DAYS_INSIDE_DHAKA": "2",
         "DELIVERY_DAYS_OUTSIDE_DHAKA": "5",
+        # Courier checks stay off and unauthenticated even when a local .env has keys.
+        "COURIER_CHECK_ENABLED": "false",
+        "COURIER_CHECK_CACHE_HOURS": "24",
+        "COURIER_CHECK_TIMEOUT_SECONDS": "8",
+        "COURIER_CHECK_RISK_HIGH_BELOW": "0.5",
+        "COURIER_CHECK_RISK_MEDIUM_BELOW": "0.8",
+        "RATE_LIMIT_COURIER_CHECK": "10/hour",
+        "STEADFAST_API_KEY": "",
+        "STEADFAST_SECRET_KEY": "",
+        "PATHAO_USERNAME": "",
+        "PATHAO_PASSWORD": "",
+        "REDX_API_TOKEN": "",
+        "REDX_PHONE": "",
+        "REDX_PASSWORD": "",
+        "COURIER_CHECK_GENERIC_URL": "",
+        "COURIER_CHECK_GENERIC_API_KEY": "",
     }
 )
 

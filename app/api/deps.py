@@ -98,7 +98,8 @@ RequireSuperadmin = Annotated[User, Depends(require_superadmin)]
 # These modules were ``require_editor`` on every method, including GET.
 # A built-in viewer with only ``read_only`` still gets 403. ``editor`` and
 # above keep read access. Granting the viewer ``read_write`` or ``full`` opens
-# the module. ``GET /admin/orders/new`` opts out via ``viewer_read=True``.
+# the module. ``GET /admin/orders/new`` and the customer phone report
+# (including the courier refresh) opt out via ``viewer_read=True``.
 _VIEWER_PROTECTED_MODULES = frozenset(
     {"dashboard", "products", "inquiries", "cms", "cart", "orders"}
 )

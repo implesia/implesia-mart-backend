@@ -34,6 +34,7 @@ from app.models.contact.form import ContactForm
 from app.models.contact.hero import ContactHero
 from app.models.contact.support import ContactSupport, ContactSupportHour, ContactSupportLink
 from app.models.coupon import Coupon, CouponCategory, CouponProduct, CouponRedemption
+from app.models.courier_check import CourierCheckResult
 from app.models.delivery import DeliverySettings
 from app.models.faqs.callout import FaqCallout
 from app.models.faqs.categories import FaqCategories, FaqCategoryItem
@@ -153,6 +154,7 @@ __all__ = [
     "CartItem",
     "ContactDetailChannel",
     "ContactDetails",
+    "CourierCheckResult",
     "Coupon",
     "CouponCategory",
     "CouponProduct",
