@@ -28,6 +28,7 @@ os.environ.update(
         "TELEGRAM_NOTIFY_ORDER_CANCELLED": "false",
         "TELEGRAM_NOTIFY_LOW_STOCK": "false",
         "TELEGRAM_CHAT_FALLBACK_ENABLED": "false",
+        "TELEGRAM_CHAT_FALLBACK_CHAT_IDS": "",
         "VAPID_PUBLIC_KEY": "",
         "VAPID_PRIVATE_KEY": "",
         "ADMIN_BASE_URL": "",
@@ -65,7 +66,7 @@ from sqlalchemy.ext.asyncio import (  # noqa: E402
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
-)
+)  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
 import app.models  # noqa: E402, F401  (registers users and products on Base.metadata)

@@ -125,6 +125,8 @@ class Settings(BaseSettings):
     telegram_notify_low_stock: bool = False
     telegram_chat_fallback_enabled: bool = False
     telegram_chat_fallback_delay_seconds: int = Field(default=120, ge=1, le=3600)
+    # Unanswered-chat alerts only. Empty uses telegram_chat_ids. Same bot token.
+    telegram_chat_fallback_chat_ids: CsvList = Field(default_factory=list)
     # Storefront origin, no path. The order link is {ADMIN_BASE_URL}/admin/orders/{id}.
     # The customer status link is {ADMIN_BASE_URL}/order-status?number={order number}.
     admin_base_url: str = ""
@@ -238,6 +240,7 @@ class Settings(BaseSettings):
         "order_notification_recipients",
         "trusted_proxies",
         "telegram_chat_ids",
+        "telegram_chat_fallback_chat_ids",
         mode="before",
     )
     @classmethod
