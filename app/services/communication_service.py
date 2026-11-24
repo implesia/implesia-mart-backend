@@ -23,6 +23,7 @@ from fastapi import UploadFile
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
+from starlette.background import BackgroundTasks
 
 from app.core.exceptions import (
     NotFoundError,
@@ -459,6 +460,68 @@ async def _maybe_notify_offline_customer(
         )
 
 
+async def _dispatch_chat_push_and_fallback(
+    db: AsyncSession,
+    conv: Conversation,
+    msg: Message,
+    sender: User,
+    background: BackgroundTasks | None,
+) -> None:
+    from app.services import push_service, telegram_notify
+
+    excerpt = _preview_for(msg.body, msg.attachment_url) or "New message"
+    sender_role = str(sender.role)
+
+    if sender_role in ("customer", "seller"):
+        if push_service.is_configured():
+            staff_ids = await push_service.staff_ids_with_module_read(
+                db,
+                "communication",
+                exclude_user_id=sender.id,
+            )
+            if staff_ids:
+                payload = push_service.build_push_payload(
+                    title=f"New message from {sender.full_name}",
+                    body=excerpt,
+                    url=f"/admin/communication?id={conv.id}",
+                    tag=f"implesia-chat-{conv.id}",
+                    scope="admin",
+                    conversation_id=str(conv.id),
+                    can_quick_reply=True,
+                )
+                push_service.schedule_push_to_users(background, staff_ids, "admin", payload)
+
+        if sender_role == "customer":
+            order_number: str | None = None
+            if conv.order_id is not None:
+                order_number = await db.scalar(
+                    select(Order.number).where(Order.id == conv.order_id)
+                )
+            telegram_notify.schedule_unanswered_chat_fallback(
+                background,
+                conversation_id=conv.id,
+                message_created_at=msg.created_at,
+                customer_name=sender.full_name,
+                customer_phone=sender.phone,
+                order_number=order_number,
+                excerpt=excerpt,
+            )
+    elif (
+        not msg.is_internal_note and conv.customer_id is not None and sender.id != conv.customer_id
+    ):
+        if push_service.is_configured():
+            payload = push_service.build_push_payload(
+                title=f"Reply from {sender.full_name or 'Implesia Support'}",
+                body=excerpt,
+                url=f"/dashboard/messages?id={conv.id}",
+                tag=f"implesia-chat-{conv.id}",
+                scope="customer",
+                conversation_id=str(conv.id),
+                can_quick_reply=True,
+            )
+            push_service.schedule_push_to_users(background, [conv.customer_id], "customer", payload)
+
+
 async def _create_message_and_commit(
     db: AsyncSession,
     conv: Conversation,
@@ -468,6 +531,7 @@ async def _create_message_and_commit(
     raw_attachment_url: str | None,
     is_internal_note: bool,
     reopen_if_customer: bool,
+    background: BackgroundTasks | None = None,
 ) -> MessageRead:
     await _enforce_send_rate_limit(sender.id)
 
@@ -507,6 +571,7 @@ async def _create_message_and_commit(
 
     await _publish_message_events(conv, msg, sender)
     await _maybe_notify_offline_customer(db, conv, msg, sender)
+    await _dispatch_chat_push_and_fallback(db, conv, msg, sender, background)
 
     return MessageRead(
         id=msg.id,
@@ -752,6 +817,8 @@ async def send_customer_message(
     customer: User,
     conversation_id: uuid.UUID,
     payload: CustomerMessageCreateRequest,
+    *,
+    background: BackgroundTasks | None = None,
 ) -> MessageRead:
     conv = await _get_customer_conversation_or_404(db, conversation_id, customer)
     return await _create_message_and_commit(
@@ -762,6 +829,7 @@ async def send_customer_message(
         raw_attachment_url=payload.attachment_url,
         is_internal_note=False,
         reopen_if_customer=True,
+        background=background,
     )
 
 
@@ -1041,6 +1109,8 @@ async def send_admin_message(
     staff: User,
     conversation_id: uuid.UUID,
     payload: AdminMessageCreateRequest,
+    *,
+    background: BackgroundTasks | None = None,
 ) -> MessageRead:
     conv = await _get_conversation_or_404(db, conversation_id)
     return await _create_message_and_commit(
@@ -1051,6 +1121,7 @@ async def send_admin_message(
         raw_attachment_url=payload.attachment_url,
         is_internal_note=payload.is_internal_note,
         reopen_if_customer=False,
+        background=background,
     )
 
 

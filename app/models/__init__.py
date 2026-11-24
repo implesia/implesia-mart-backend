@@ -74,6 +74,7 @@ from app.models.privacy.sharing import PrivacySharing, PrivacySharingChip
 from app.models.privacy.support import PrivacySupport
 from app.models.privacy.usage import PrivacyUsage, PrivacyUsageBadge, PrivacyUsageItem
 from app.models.product import Product, ProductSlugRedirect, ProductVariant
+from app.models.push_subscription import PushSubscription
 from app.models.refresh_token import RefreshToken
 from app.models.review import ProductReview
 from app.models.role import Role
@@ -223,6 +224,7 @@ __all__ = [
     "ProductBadgeLink",
     "ProductSlugRedirect",
     "ProductVariant",
+    "PushSubscription",
     "RefreshToken",
     "ShippingBlock",
     "ShippingBlockCard",
