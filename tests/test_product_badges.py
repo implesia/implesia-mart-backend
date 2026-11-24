@@ -230,22 +230,18 @@ async def test_delete_rules(
 
     builtin = await client.delete(f"{ADMIN}/{system['new']}", headers=auth_headers)
     assert builtin.status_code == 409
+
+    # Deleting an in-use custom badge defaults to unlink mode and removes links cleanly.
     in_use = await client.delete(f"{ADMIN}/{used['id']}", headers=auth_headers)
-    assert in_use.status_code == 409
-    assert "1 product" in in_use.text
+    assert in_use.status_code == 200
+    assert in_use.json()["mode"] == "unlink"
+    assert in_use.json()["affected_products_count"] == 1
+    refreshed = (await client.get(f"{PRODUCTS}/{product['id']}", headers=auth_headers)).json()
+    assert refreshed["badges"] == []
 
     gone = await client.delete(f"{ADMIN}/{unused['id']}", headers=auth_headers)
     assert gone.status_code == 200
     assert (await client.get(f"{ADMIN}/{unused['id']}", headers=auth_headers)).status_code == 404
-
-    # Once the product is gone, its links go too and the badge can be deleted.
-    assert (
-        await client.delete(f"{PRODUCTS}/{product['id']}", headers=auth_headers)
-    ).status_code in (
-        200,
-        204,
-    )
-    assert (await client.delete(f"{ADMIN}/{used['id']}", headers=auth_headers)).status_code == 200
 
 
 async def test_lists_load_badges_in_one_query(

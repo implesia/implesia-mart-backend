@@ -18,6 +18,7 @@ from app.core.logging import get_logger
 from app.models.audit_event import AuditAction
 from app.models.badge import Badge
 from app.models.category import Category
+from app.models.inventory import Supplier
 from app.models.product import (
     Product,
     ProductBadge,
@@ -52,6 +53,7 @@ from app.schemas.product import (
     PublicProductDetail,
     PublicProductList,
     PublicSpec,
+    SupplierRef,
 )
 from app.services import (
     audit_service,
@@ -353,6 +355,25 @@ async def create_product(
         raise
 
 
+async def _resolve_supplier(db: AsyncSession, supplier_id: uuid.UUID | None) -> Supplier | None:
+    if supplier_id is None:
+        return None
+    supplier = await db.get(Supplier, supplier_id)
+    if supplier is None or supplier.is_deleted:
+        raise UnprocessableError("Supplier not found")
+    return supplier
+
+
+async def _suppliers_by_id(
+    db: AsyncSession, ids: Sequence[uuid.UUID | None]
+) -> dict[uuid.UUID, Supplier]:
+    unique = list({sid for sid in ids if sid is not None})
+    if not unique:
+        return {}
+    rows = (await db.scalars(select(Supplier).where(Supplier.id.in_(unique)))).all()
+    return {row.id: row for row in rows}
+
+
 async def _insert_product(db: AsyncSession, payload: ProductCreate) -> Product:
     if payload.slug:
         taken = await db.scalar(select(Product.id).where(Product.slug == payload.slug).limit(1))
@@ -371,6 +392,7 @@ async def _insert_product(db: AsyncSession, payload: ProductCreate) -> Product:
         if payload.category_id is not None or payload.category is not None
         else None  # A draft saved before a category was chosen.
     )
+    supplier = await _resolve_supplier(db, payload.supplier_id)
     unit_label, image_alt, stored = _split_content(payload.content, title=payload.title)
     badges = await badge_service.resolve(db, payload.badge_ids or [])
     legacy = payload.badge.value if payload.badge else None
@@ -392,6 +414,7 @@ async def _insert_product(db: AsyncSession, payload: ProductCreate) -> Product:
         title=payload.title,
         subtitle=payload.subtitle,
         category_id=category.id if category is not None else None,
+        supplier_id=supplier.id if supplier is not None else None,
         price=priced.get("price", 0),
         compare_at_price=priced.get("compare_at_price"),
         cost_price=payload.cost_price,
@@ -500,8 +523,11 @@ async def _apply_update(
     }
     fields = payload.model_dump(
         exclude_unset=True,
-        exclude={"content", "category", "category_id", "variants", "badge_ids"},
+        exclude={"content", "category", "category_id", "supplier_id", "variants", "badge_ids"},
     )
+    if "supplier_id" in payload.model_fields_set:
+        supplier = await _resolve_supplier(db, payload.supplier_id)
+        product.supplier_id = supplier.id if supplier is not None else None
     new_badges: list[Badge] | None = None
     if payload.badge_ids is not None:
         new_badges = await badge_service.resolve(db, payload.badge_ids)
@@ -775,6 +801,8 @@ def _admin_filters(
     conditions: list[_Expr] = []
     if scope is not None:
         conditions.append(Product.category_id.in_(scope))
+    if query.supplier_id is not None:
+        conditions.append(Product.supplier_id == query.supplier_id)
     if query.status is not None:
         conditions.append(Product.status == query.status.value)
     if query.visibility == "live":
@@ -892,8 +920,12 @@ def _category_fields(index: CategoryIndex, product: Product) -> dict[str, Any]:
 
 
 def admin_card(
-    product: Product, index: CategoryIndex, badges: Sequence[Badge] = ()
+    product: Product,
+    index: CategoryIndex,
+    badges: Sequence[Badge] = (),
+    supplier: Supplier | None = None,
 ) -> AdminProductCard:
+    supplier_ref = SupplierRef(id=supplier.id, name=supplier.name) if supplier is not None else None
     return AdminProductCard(
         id=product.id,
         slug=product.slug,
@@ -901,6 +933,9 @@ def admin_card(
         subtitle=product.subtitle,
         **_category_fields(index, product),
         category_path=category_service.refs(index, product.category_id),
+        supplier_id=product.supplier_id,
+        supplier_name=supplier.name if supplier is not None else None,
+        supplier=supplier_ref,
         price=product.price,
         compare_at_price=product.compare_at_price,
         cost_price=product.cost_price,
@@ -929,11 +964,12 @@ def admin_read(
     variants: list[ProductVariant] | None = None,
     badges: Sequence[Badge] = (),
     rules: pricing_service.Rules | None = None,
+    supplier: Supplier | None = None,
 ) -> AdminProductRead:
     content = content_of(product)
     line = pricing_service.price_product(product, None, 1, rules or _NO_RULES)
     return AdminProductRead(
-        **admin_card(product, index, badges).model_dump(),
+        **admin_card(product, index, badges, supplier).model_dump(),
         content=content,
         regular_price=line.regular_price,
         base_discount_percent=line.base_percent,
@@ -953,12 +989,16 @@ async def admin_read_full(
     db: AsyncSession, product: Product, index: CategoryIndex
 ) -> AdminProductRead:
     badges = (await badge_service.for_products(db, [product.id])).get(product.id, [])
+    supplier = (
+        await db.get(Supplier, product.supplier_id) if product.supplier_id is not None else None
+    )
     return admin_read(
         product,
         index,
         await variant_service.list_variants(db, product.id),
         badges,
         await pricing_service.store_rules(db),
+        supplier,
     )
 
 
@@ -1077,9 +1117,18 @@ async def list_admin(db: AsyncSession, query: AdminProductQuery) -> AdminProduct
     )
     rows: list[Product] = list((await db.execute(stmt)).scalars().all())
     badges = await badge_service.for_products(db, [row.id for row in rows])
+    suppliers = await _suppliers_by_id(db, [row.supplier_id for row in rows])
     counts = await _category_counts(db, _admin_filters(query, scope=None, search=False), index)
     return AdminProductList(
-        items=[admin_card(product, index, badges.get(product.id, ())) for product in rows],
+        items=[
+            admin_card(
+                product,
+                index,
+                badges.get(product.id, ()),
+                suppliers.get(product.supplier_id) if product.supplier_id is not None else None,
+            )
+            for product in rows
+        ],
         total=total,
         page=query.page,
         page_size=query.page_size,

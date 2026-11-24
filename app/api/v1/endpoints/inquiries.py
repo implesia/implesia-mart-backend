@@ -6,9 +6,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 from limits import parse
 
-from app.api.deps import DbSession, RequireEditor, no_store, require_editor
+from app.api.deps import DbSession, no_store, require_module_access, require_module_for_method
 from app.core.config import settings
 from app.core.exceptions import TooManyRequestsError
+from app.models.user import User
 from app.rate_limit import _rate_limit_key, limiter
 from app.schemas.inquiry import (
     InquiryAdmin,
@@ -22,7 +23,11 @@ from app.schemas.inquiry import (
 from app.services import inquiry_service
 
 public_router = APIRouter(dependencies=[Depends(no_store)])
-admin_router = APIRouter(dependencies=[Depends(no_store), Depends(require_editor)])
+_InquiriesWrite = Annotated[User, Depends(require_module_access("inquiries", "write"))]
+
+admin_router = APIRouter(
+    dependencies=[Depends(no_store), Depends(require_module_for_method("inquiries"))]
+)
 
 _INQUIRY_LIMIT = parse(settings.rate_limit_inquiries)
 
@@ -71,7 +76,7 @@ async def read_inquiry(db: DbSession, inquiry_id: uuid.UUID) -> InquiryAdmin:
 
 @admin_router.patch("/{inquiry_id}", response_model=InquiryAdmin)
 async def update_inquiry(
-    db: DbSession, actor: RequireEditor, inquiry_id: uuid.UUID, payload: InquiryUpdate
+    db: DbSession, actor: _InquiriesWrite, inquiry_id: uuid.UUID, payload: InquiryUpdate
 ) -> InquiryAdmin:
     return await inquiry_service.update_inquiry(db, inquiry_id, payload, actor)
 

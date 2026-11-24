@@ -8,10 +8,11 @@ from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from app.api.deps import DbSession, RequireEditor, no_store, require_editor
+from app.api.deps import DbSession, no_store, require_module_access, require_module_for_method
 from app.core.config import settings
 from app.core.exceptions import ConflictError, UnprocessableError, payload_errors
 from app.core.logging import get_logger
+from app.models.user import User
 from app.rate_limit import limiter
 from app.schemas.badge import MAX_PER_PRODUCT
 from app.schemas.product import (
@@ -25,9 +26,12 @@ from app.schemas.product import (
     ProductCreate,
     ProductUpdate,
 )
-from app.services import category_service, product_service
+from app.schemas.report import ProductAnalyticsReport
+from app.services import category_service, product_service, report_service
 
-router = APIRouter(dependencies=[Depends(require_editor), Depends(no_store)])
+_ProductsWrite = Annotated[User, Depends(require_module_access("products", "write"))]
+
+router = APIRouter(dependencies=[Depends(require_module_for_method("products")), Depends(no_store)])
 
 _PAYLOAD_LIMIT = 200_000
 
@@ -121,6 +125,7 @@ _FIELD_KEYS: Mapping[str, str] = {
     "subtitle": "subtitle",
     "category": "category",
     "category_id": "category",
+    "supplier_id": "supplier",
     "price": "price",
     "compare_at_price": "compareAtPrice",
     "cost_price": "costPrice",
@@ -159,6 +164,7 @@ _LABELS = {
     "title": "প্রোডাক্টের নাম",
     "subtitle": "সাবটাইটেল",
     "category": "ক্যাটাগরি",
+    "supplier": "সাপ্লায়ার",
     "price": "দাম",
     "compareAtPrice": "আগের দাম (compare-at)",
     "costPrice": "ক্রয়মূল্য",
@@ -205,6 +211,11 @@ _KNOWN: Mapping[str, FieldError] = {
         "category",
         "বাছাই করা ক্যাটাগরিটা আর নেই",
         "পেজটা রিফ্রেশ করে আবার একটা ক্যাটাগরি বাছাই করুন",
+    ),
+    "Supplier not found": _err(
+        "supplier",
+        "বাছাই করা সাপ্লায়ারটা আর নেই",
+        "পেজটা রিফ্রেশ করে সক্রিয় একটি সাপ্লায়ার বাছাই করুন অথবা খালি রাখুন",
     ),
     "Category must be a slug such as gadgets": _err(
         "category", "ক্যাটাগরি সঠিক নয়", "তালিকা থেকে একটা ক্যাটাগরি বাছাই করুন"
@@ -519,6 +530,11 @@ async def create_product(
         return _errors_response(500, [_SERVER_ERROR])
 
 
+@router.get("/{product_id}/analytics", response_model=ProductAnalyticsReport)
+async def read_product_analytics(db: DbSession, product_id: uuid.UUID) -> ProductAnalyticsReport:
+    return await report_service.product_analytics(db, product_id)
+
+
 @router.get("/{product_id}", response_model=AdminProductRead)
 async def read_product(db: DbSession, product_id: uuid.UUID) -> AdminProductRead:
     product = await product_service.get_by_id(db, product_id)
@@ -534,7 +550,7 @@ async def read_product(db: DbSession, product_id: uuid.UUID) -> AdminProductRead
 async def update_product(
     request: Request,
     db: DbSession,
-    actor: RequireEditor,
+    actor: _ProductsWrite,
     product_id: uuid.UUID,
     payload: Annotated[str, Form()] = "{}",
     images: Annotated[list[UploadFile] | None, File()] = None,

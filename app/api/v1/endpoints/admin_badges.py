@@ -1,15 +1,26 @@
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Body, Depends, Request, status
 
-from app.api.deps import DbSession, no_store, require_editor
+from app.api.deps import DbSession, no_store, require_module_access, require_module_for_method
 from app.core.config import settings
+from app.models.user import User
 from app.rate_limit import limiter
-from app.schemas.badge import BadgeAdminList, BadgeAdminRead, BadgeUpdate, BadgeWrite
-from app.schemas.common import Message
+from app.schemas.badge import (
+    BadgeAdminList,
+    BadgeAdminRead,
+    BadgeDeleteImpact,
+    BadgeDeleteRequest,
+    BadgeDeleteResult,
+    BadgeUpdate,
+    BadgeWrite,
+)
 from app.services import badge_service
 
-router = APIRouter(dependencies=[Depends(require_editor), Depends(no_store)])
+_AuditDeleteFull = Annotated[User, Depends(require_module_access("audit_deletes", "full"))]
+
+router = APIRouter(dependencies=[Depends(require_module_for_method("products")), Depends(no_store)])
 
 
 @router.get("", response_model=BadgeAdminList)
@@ -23,6 +34,16 @@ async def create_badge(request: Request, db: DbSession, payload: BadgeWrite) -> 
     del request
     badge = await badge_service.create(db, payload)
     return await badge_service.admin_read(db, badge)
+
+
+@router.get("/{badge_id}/delete-impact", response_model=BadgeDeleteImpact)
+async def badge_delete_impact(
+    db: DbSession,
+    actor: _AuditDeleteFull,
+    badge_id: uuid.UUID,
+) -> BadgeDeleteImpact:
+    del actor
+    return await badge_service.delete_impact(db, badge_id)
 
 
 @router.get("/{badge_id}", response_model=BadgeAdminRead)
@@ -41,10 +62,15 @@ async def update_badge(
     return await badge_service.admin_read(db, badge)
 
 
-@router.delete("/{badge_id}", response_model=Message)
+@router.delete("/{badge_id}", response_model=BadgeDeleteResult)
 @limiter.limit(settings.rate_limit_product_writes)
-async def delete_badge(request: Request, db: DbSession, badge_id: uuid.UUID) -> Message:
+async def delete_badge(
+    request: Request,
+    db: DbSession,
+    actor: _AuditDeleteFull,
+    badge_id: uuid.UUID,
+    payload: BadgeDeleteRequest | None = Body(default=None),
+) -> BadgeDeleteResult:
     del request
     badge = await badge_service.get(db, badge_id)
-    await badge_service.delete_badge(db, badge)
-    return Message(message="Badge deleted")
+    return await badge_service.delete_badge(db, badge, payload=payload, actor=actor)

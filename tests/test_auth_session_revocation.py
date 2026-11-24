@@ -6,9 +6,13 @@ from datetime import UTC, datetime, timedelta
 import jwt
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import JWT_ALGORITHM, decode_token
+from app.models.refresh_token import RefreshToken
+from app.services.refresh_token_service import hash_jti
 from tests.conftest import TEST_PASSWORD
 
 pytestmark = pytest.mark.usefixtures("superadmin_token")
@@ -73,11 +77,22 @@ async def test_access_token_survives_rotation_within_the_same_session(
     ).status_code == 200
 
 
-async def test_refresh_reuse_revokes_the_family_and_its_access_tokens(client: AsyncClient) -> None:
+async def test_refresh_reuse_revokes_the_family_and_its_access_tokens(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
     body = await _login(client)
     rotated = (
         await client.post("/api/v1/auth/refresh", json={"refresh_token": body["refresh_token"]})
     ).json()
+
+    # Backdate revoked_at beyond the 30s concurrent-rotation grace window.
+    old_jti = decode_token(body["refresh_token"], "refresh")["jti"]
+    row = await db_session.scalar(
+        select(RefreshToken).where(RefreshToken.jti_hash == hash_jti(old_jti))
+    )
+    assert row is not None
+    row.revoked_at = datetime.now(UTC) - timedelta(seconds=60)
+    await db_session.commit()
 
     reused = await client.post(
         "/api/v1/auth/refresh", json={"refresh_token": body["refresh_token"]}

@@ -62,6 +62,7 @@ from app.services import (
     delivery_service,
     inventory_service,
     meta_capi,
+    notification_service,
     payment_service,
     pricing_service,
     telegram_notify,
@@ -527,7 +528,7 @@ async def _claim_variant(
             product_id=product.id,
             variant_id=variant.id,
             quantity=-quantity,
-            unit_cost=product.cost_price,
+            unit_cost=variant_service.effective_unit_cost(product, variant),
         )
     price, sku, compare_at = row
     line = pricing_service.price_line(
@@ -604,9 +605,18 @@ async def create_order(
         product = await _product(db, row.product_id)
         variant = await variant_service.resolve_for_purchase(db, product, row.variant_id)
         line, title, slug, image_src, sku = await _claim(db, product, variant, row.quantity, rules)
-        # Snapshot the cost now. A later purchase must not rewrite this order.
+        # Snapshot cost now (variant cost if set, else product cost); later buys never rewrite it.
         priced.append(
-            (row, line, title, slug, image_src, sku, product.cost_price, product.category_id)
+            (
+                row,
+                line,
+                title,
+                slug,
+                image_src,
+                sku,
+                variant_service.effective_unit_cost(product, variant),
+                product.category_id,
+            )
         )
 
     subtotal = sum(line.line_total for _row, line, *_rest in priced)
@@ -639,9 +649,20 @@ async def create_order(
         advance_percent = payload.advance_percent
         advance, due = payment_service.advance_split(total, advance_percent or 0)
         reference = payload.payment_reference
+
+    user_id = shopper.user.id if shopper.user is not None else None
+    if user_id is None and payload.phone:
+        from app.services.customer_auth_service import normalize_bd_phone
+
+        norm_phone = normalize_bd_phone(payload.phone)
+        if norm_phone:
+            matched_user = await db.scalar(select(User).where(User.phone == norm_phone))
+            if matched_user:
+                user_id = matched_user.id
+
     order = Order(
         number=await _number(db),
-        user_id=shopper.user.id if shopper.user is not None else None,
+        user_id=user_id,
         source=payload.source,
         channel=WEBSITE_CHANNEL,
         status=OrderStatus.NEW.value,
@@ -723,6 +744,7 @@ async def create_order(
         meta_capi.schedule_purchase(background, loaded, payload.tracking)
         await telegram_notify.notify_new_order(db, background, loaded)
     telegram_notify.flush_low_stock(db, background)
+    await notification_service.create_order_status_notification(db, loaded, OrderStatus.NEW.value)
     return read
 
 
@@ -1222,7 +1244,11 @@ async def release_units(
                 variant_id=variant_id,
                 quantity=quantity,
                 movement_type=movement_type,
-                unit_cost=product.cost_price if product is not None else None,
+                unit_cost=(
+                    variant_service.effective_unit_cost(product, variant_row)
+                    if product is not None
+                    else (variant_row.cost_price if variant_row is not None else None)
+                ),
                 order_id=order_id,
                 actor_id=actor_id,
                 note=note,
@@ -1258,16 +1284,24 @@ async def release_units(
         )
 
 
-def _status_assignments(target: str) -> dict[str, Any]:
+def _status_assignments(target: str, order: Order | None = None) -> dict[str, Any]:
     """New status, plus the first delivery or return time.
 
     `coalesce` keeps a time that is already stored. A later transition into the same
-    status does not replace it. The clock is timezone-aware UTC.
+    status does not replace it. For offline orders with a business date (`ordered_at`),
+    delivering preserves `ordered_at` so backdated counter sales stay aligned in reports.
     """
     values: dict[str, Any] = {"status": target}
     now = datetime.now(UTC)
     if target == OrderStatus.DELIVERED.value:
-        values["delivered_at"] = func.coalesce(Order.delivered_at, now)
+        default_delivered_at = (
+            order.ordered_at
+            if order is not None
+            and order.origin == OrderOrigin.OFFLINE.value
+            and order.ordered_at is not None
+            else now
+        )
+        values["delivered_at"] = func.coalesce(Order.delivered_at, default_delivered_at)
     elif target == OrderStatus.RETURNED.value:
         values["returned_at"] = func.coalesce(Order.returned_at, now)
     return values
@@ -1297,7 +1331,7 @@ async def change_status(
         await db.execute(
             update(Order)
             .where(Order.id == order.id, Order.status == current)
-            .values(**_status_assignments(target))
+            .values(**_status_assignments(target, order))
             .returning(Order.id)
         )
     ).one_or_none()
@@ -1341,6 +1375,7 @@ async def update_order(
     order = await _load(db, order_id)
     became_cancelled = False
     sms_status: str | None = None
+    status_changed_to: str | None = None
     if payload.status is not None and payload.status.value != order.status:
         target = payload.status.value
         try:
@@ -1348,6 +1383,7 @@ async def update_order(
         except ConflictError:
             await db.rollback()
             raise
+        status_changed_to = target
         if target in customer_notify.SEND_ON:
             sms_status = target
     before_courier = (order.courier_name, order.tracking_number)
@@ -1390,6 +1426,42 @@ async def update_order(
             "Note updated",
             {},
         )
+    before_paid = effective_paid(order)
+    before_ref = order.payment_reference or ""
+    payment_changed = False
+    if payload.paid_amount is not None:
+        if payload.paid_amount > order.total:
+            await db.rollback()
+            raise UnprocessableError("Paid amount cannot be larger than the order total")
+        expected_due = order.total - payload.paid_amount
+        if payload.paid_amount != before_paid or order.due_amount != expected_due:
+            order.paid_amount = payload.paid_amount
+            order.due_amount = expected_due
+            if payload.paid_amount == 0 and order.payment_method == "bangla_qr":
+                order.advance_amount = 0
+            payment_changed = True
+    if payload.payment_reference is not None and payload.payment_reference != before_ref:
+        order.payment_reference = payload.payment_reference
+        payment_changed = True
+    if payment_changed:
+        new_paid = effective_paid(order)
+        due_now = (
+            order.due_amount if order.due_amount is not None else max(order.total - new_paid, 0)
+        )
+        log_activity(
+            db,
+            order.id,
+            actor_id,
+            ActivityAction.PAYMENT_UPDATED,
+            f"Payment updated ({new_paid}/{order.total} BDT)",
+            {
+                "from_paid": before_paid,
+                "to_paid": new_paid,
+                "due_amount": due_now,
+                "payment_method": order.payment_method,
+                "payment_reference": order.payment_reference or "",
+            },
+        )
     order_id = order.id
     await db.commit()
     db.expire_all()
@@ -1400,4 +1472,8 @@ async def update_order(
     if sms_status is not None:
         await customer_notify.schedule(db, background, loaded, sms_status)
     telegram_notify.flush_low_stock(db, background)
+    if status_changed_to is not None and payload.notify_customer:
+        await notification_service.create_order_status_notification(
+            db, loaded, status_changed_to, language=payload.notification_language
+        )
     return await present(db, loaded, with_activity=True)

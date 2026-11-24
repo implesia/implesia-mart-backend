@@ -2,6 +2,148 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Daily Handoff & Cross-Device Sync Doc (2026-11-21).**
+  - Added `docs/HANDOFF.md` consolidating today's Planning decisions (Customer Platform Phases 6–10, SaaS Admin Phases A–G, Notification Architecture audit, Bengali communication preference), backend & frontend implementation summary, DevOps live audit & production deployment runbook, pending backlog, and Home Laptop resume steps.
+  - Files touched: `docs/HANDOFF.md`, `docs/CHANGELOG.md`. Matching handoff added in `implesia-mart`.
+
+- **Phase C Admin-Only Safe Deletion, Impact Analysis & Reconciliation (2026-11-21). Done (not live).** Strict `RequireSuperadmin` RBAC, atomic transactions, no new migrations.
+  - **Orders (`app/api/v1/endpoints/admin_orders.py`, `app/services/order_admin_service.py`, `app/schemas/order.py`):**
+    - Added `GET /api/v1/admin/orders/{order_id}/delete-impact` (`RequireSuperadmin`) returning order summary, held stock restore items, movement count, coupon redemption code, review/notification counts, and report impact warning.
+    - Added `DELETE /api/v1/admin/orders/{order_id}` (`RequireSuperadmin`, body `{confirm: true, reconcile_stock: bool = true, reason: str}`): atomically locks products/variants, restores held stock AND inserts offsetting positive `adjustment` rows into `stock_movements` (keeping `sum(movements) == on_hand`), writes a full `ORDER_DELETED` audit snapshot in `audit_events`, cleans up cascading order children while nulling `order_id` on historical movements/reviews/notifications, and returns `{deleted_order_number, stock_restored_units, coupon_released, reports_synced}`.
+  - **Badges (`app/api/v1/endpoints/admin_badges.py`, `app/services/badge_service.py`, `app/schemas/badge.py`):**
+    - Restricted `DELETE /api/v1/admin/badges/{badge_id}` to `RequireSuperadmin` and added `GET /api/v1/admin/badges/{badge_id}/delete-impact` (`RequireSuperadmin`).
+    - Upgraded `DELETE /api/v1/admin/badges/{badge_id}` with optional body `{mode: "unlink" | "merge" = "unlink", target_badge_id}`: protects `is_system=True` badges (409), merges or unlinks `ProductBadgeLink` rows (deduplicating products that already carry the target badge), recomputes `products.badge`, logs `BADGE_DELETED` in `audit_events`, and deletes atomically.
+  - **Suppliers (`app/api/v1/endpoints/admin_inventory.py`, `app/services/inventory_service.py`, `app/schemas/inventory.py`):**
+    - Restricted `DELETE /api/v1/admin/inventory/suppliers/{supplier_id}` to `RequireSuperadmin` and added `GET /api/v1/admin/inventory/suppliers/{supplier_id}/delete-impact` (`RequireSuperadmin`).
+    - Upgraded `DELETE /api/v1/admin/inventory/suppliers/{supplier_id}` with optional body `{mode: "merge" | "archive" | "hard_delete" = "archive", target_supplier_id, reason, unlink_products}`: `merge` moves all purchases & products atomically to `target_supplier_id`, logs `SUPPLIER_MERGED`, and hard-deletes the old supplier; `archive` soft-deletes while preserving purchases and unlinking products; `hard_delete` is allowed only when `purchases_count == 0` (409 otherwise).
+  - Files touched:
+    - `app/models/audit_event.py`
+    - `app/schemas/order.py`, `app/schemas/badge.py`, `app/schemas/inventory.py`
+    - `app/services/order_admin_service.py`, `app/services/badge_service.py`, `app/services/inventory_service.py`
+    - `app/api/v1/endpoints/admin_orders.py`, `app/api/v1/endpoints/admin_badges.py`, `app/api/v1/endpoints/admin_inventory.py`
+    - `tests/test_phase_c_safe_delete.py`, `tests/test_product_badges.py`, `tests/test_inventory.py`, `tests/test_phase_a_accounting.py`
+    - `docs/CHANGELOG.md`, `docs/API.md`, `docs/BUSINESS_LOGIC.md`, `docs/TODO.md`
+  - Frontend (`implesia-mart`):
+    - Only `superadmin` users should see Delete controls for Orders, Badges, and Suppliers; call the `/delete-impact` preview endpoint before confirming deletion/merge/archive.
+    - `DELETE /api/v1/admin/inventory/suppliers/{id}` now returns `200 OK` with `SupplierDeleteResult` instead of `204`.
+
+- **Phase B SaaS Reporting APIs & Product Analytics (2026-11-21). Done (not live).** SQL aggregates only, no new migrations.
+  - **Expanded Report Presets & Filters (`app/schemas/report.py`, `app/services/report_service.py`, `app/api/v1/endpoints/admin_reports.py`):**
+    - Expanded `preset` across all report endpoints to `today`, `7d`, `this_week`, `this_month`, `last_month`, `this_year`.
+    - Added optional `supplier_id`, `origin` (`online` / `offline`), and `profit_filter` (`all` / `profit` / `loss` / `unknown_cost`) across report endpoints, plus `sort` (`revenue`, `profit`, `margin`, `units_sold`, `cost`, `stock_value`) on `/products` and `/products/export`.
+  - **Profit & Loss Summary (`GET /api/v1/admin/reports/profit-loss` + `/export`) & Upgraded `ProfitReport`:**
+    - Returns full P&L waterfall: `gross_sales`, `product_discount`, `coupon_discount`, `manual_discount`, `delivery_charge`, `returned_order_value`, `net_realized_sales`, `total_cost` (COGS), `gross_profit`, `loss_amount` (negative-margin line losses), `net_profit`, `margin_percent`, `collected_amount` (paid_amount / settled COD / Bangla QR advance), `due_amount`, `unknown_cost_lines`, `unknown_cost_units`, `unknown_cost_revenue`.
+    - Upgraded `ProfitReport` with additive `loss_amount` and `net_profit`.
+  - **Upgraded Product Performance (`GET /api/v1/admin/reports/products` + `/export`):**
+    - Added per-product `slug`, `sku`, `category_name`, `supplier_id`, `supplier_name`, `avg_selling_price`, `unit_cost_avg`, `current_cost_price`, `current_stock`, `stock_value`, `is_loss`, and `returned_units`, with SQL-level `profit_filter` and `sort`.
+  - **Channel & Payment Method Breakdown (`GET /api/v1/admin/reports/channels` + `/export`):**
+    - Splits realized orders/units/net_sales/COGS/profit/margin/collected/due by `origin` (`online`/`offline`) AND by `payment_method` (`cod`, `bangla_qr`, `cash`, `bkash`, `nagad`, `card`, `due`).
+  - **Supplier Performance Report (`GET /api/v1/admin/reports/suppliers` + `/export`):**
+    - Aggregates per supplier: `linked_products_count`, `purchase_count`, `total_purchased_units`, `total_purchase_spend`, `units_sold`, `sales_revenue`, `cogs`, `net_profit`, `margin_percent`, `current_stock_units`, `current_stock_value`, plus report-wide totals.
+  - **Upgraded Stock Valuation (`GET /api/v1/admin/reports/stock` + `/export`):**
+    - Added `selling_price`, `potential_retail_value`, `expected_profit_on_hand`, `supplier_name` on `StockRow` and `potential_retail_value`, `expected_profit_on_hand`, `missing_cost_count` on `StockSummary`.
+  - **Single Product Performance Analytics (`GET /api/v1/admin/products/{product_id}/analytics`):**
+    - Added editor+ endpoint returning current stock/retail value, lifetime and last-30-day sales/COGS/profit/loss/margin/returns, and the 20 most recent stock movements.
+  - Files touched:
+    - `app/schemas/report.py`
+    - `app/services/report_service.py`
+    - `app/api/v1/endpoints/admin_reports.py`, `app/api/v1/endpoints/admin_products.py`
+    - `tests/test_reports_saas.py`
+    - `docs/CHANGELOG.md`, `docs/API.md`, `docs/BUSINESS_LOGIC.md`, `docs/TODO.md`
+  - Frontend (`implesia-mart`):
+    - Admin Reports Hub can call `/profit-loss`, `/channels`, `/suppliers`, enriched `/products` (with `sort` & `profit_filter`), upgraded `/stock`, and new presets (`today`, `7d`, `this_year`) plus `supplier_id` / `origin` filters and `.xlsx` exports.
+    - Admin Product View page can call `GET /api/v1/admin/products/{product_id}/analytics` for lifetime/30d P&L, stock valuation, and recent stock movements.
+
+- **Phase A Backend Schema & Accounting Fixes (2026-11-21). Done (not live).** Additive-only migration `0105` (`down_revision = "0104"`).
+  - **Optional Supplier on Products + Per-Variant Cost Price (`alembic/versions/0105_product_supplier_and_variant_cost.py`, `app/models/product.py`, `app/schemas/product.py`, `app/services/product_service.py`, `app/services/variant_service.py`, `app/services/inventory_service.py`):**
+    - Added nullable `products.supplier_id` (`UUID`, FK `suppliers.id ON DELETE SET NULL`, indexed `ix_products_supplier_id`) and nullable `product_variants.cost_price` (`Numeric(12, 2)`, check `>= 0`).
+    - Admin product create/update accept optional `supplier_id` (validated active/non-deleted; `null` clears), admin reads return `supplier_id`, `supplier_name`, and `supplier` (`{id, name}`), and `GET /api/v1/admin/products` supports optional `supplier_id` filtering. Public storefront product endpoints never expose supplier or `cost_price`.
+    - Admin variant create/update/read support optional `cost_price` per variant (preserving existing variant cost when omitted on edit). Online checkout, offline order creation/item edits, stock movements, and inventory exports use `variant.cost_price` when set, falling back to `product.cost_price`. `inventory_service.create_purchase` updates per-variant weighted-average `cost_price` when `variant_id` is set.
+  - **Offline Order Complete Sync Fixes (`app/schemas/order.py`, `app/services/order_admin_service.py`, `app/services/order_service.py`, `app/api/v1/endpoints/admin_orders.py`):**
+    - Added `initial_status: Literal["new", "confirmed", "delivered"] = "new"` and `mark_delivered: bool = False` on `OfflineOrderCreate`. Creating an offline order as `delivered` immediately sets `delivered_at = order.ordered_at or now`; delivering an offline order with `ordered_at` later preserves `delivered_at = order.ordered_at` so backdated offline sales align cleanly on their business date across all reports.
+    - Automatically links `Order.user_id` on offline order creation when a registered customer matches `payload.phone`.
+    - Added `POST /api/v1/admin/orders/{order_id}/payments` (`OrderPaymentCreate`) and `paid_amount` / `payment_reference` support on `PATCH /api/v1/admin/orders/{order_id}` (`OrderUpdate`), validating `0 <= paid_amount <= total`, recomputing `due_amount = total - paid_amount`, and logging `payment_updated` activity (migration `0105` widens `order_activities.action`).
+  - **Returned-Order Accounting Bugfix (`app/services/report_service.py`, `app/schemas/report.py`):**
+    - Excluded returned orders (`Order.status != 'returned'`) from realized sales revenue, order count, units sold, shipping, COGS, profit, trend, and no-sale-30d queries while keeping `delivery_report` (`delivered`, `returned`, new `returned_value`, `return_rate_percent`) and `product_report` (`return_count`, new `return_value`) reporting returns separately.
+    - Exposed `manual_discount` separately alongside `coupon_discount` in `SalesSummary` and the sales Excel export.
+  - Files touched:
+    - `alembic/versions/0105_product_supplier_and_variant_cost.py`
+    - `app/models/product.py`, `app/models/order.py`
+    - `app/schemas/product.py`, `app/schemas/order.py`, `app/schemas/report.py`
+    - `app/services/product_service.py`, `app/services/variant_service.py`, `app/services/inventory_service.py`, `app/services/order_service.py`, `app/services/order_admin_service.py`, `app/services/report_service.py`
+    - `app/api/v1/endpoints/admin_products.py`, `app/api/v1/endpoints/admin_orders.py`
+    - `tests/test_phase_a_accounting.py`, `tests/integration/test_0105_migration.py`, `tests/test_reports.py`
+    - `docs/CHANGELOG.md`, `docs/API.md`, `docs/BUSINESS_LOGIC.md`, `docs/TODO.md`
+  - Frontend (`implesia-mart`):
+    - Admin product form & list can send/filter optional `supplier_id`, read `supplier_id`/`supplier_name`/`supplier` on admin product responses, and edit optional per-variant `cost_price`.
+    - Admin offline order form can pass `initial_status: "delivered"` (or `mark_delivered: true`) for walk-in counter sales.
+    - Admin order detail can collect due/partial payments via `POST /api/v1/admin/orders/{order_id}/payments` or update `paid_amount` via `PATCH /api/v1/admin/orders/{order_id}`.
+    - Admin sales/delivery/product report screens can read `SalesSummary.manual_discount`, `DeliveryReport.returned_value`, and `ProductReportRow.return_value`.
+
+- **QA & Migration Polish (2026-11-21). Done (not live).**
+  - **Migration 0104 (`alembic/versions/0104_index_customer_order_fks.py`):** Additive-only indexes `ix_customer_notifications_order_id` and `ix_product_reviews_order_id` (and matching SQLAlchemy model indexes on `CustomerNotification` and `ProductReview`) so every foreign key column leads an index.
+  - Updated `tests/integration/test_site_header_migration.py` to apply migration `0100` before calling `site_header_service.public_view` so the integration suite leaves the schema at HEAD.
+  - Files touched: `alembic/versions/0104_index_customer_order_fks.py`, `app/models/notification.py`, `app/models/review.py`, `tests/integration/test_site_header_migration.py`, `docs/TODO.md`, `docs/CHANGELOG.md`, `docs/BUSINESS_LOGIC.md`.
+
+- **Phase 6 Customer Dashboard Backend Upgrades (2026-11-21). Done (not live).** Additive-only, no new migrations.
+  - **Dashboard Summary (`GET /api/v1/customer/dashboard-summary`):** Added `delivered_orders`, `cancelled_orders`, `total_products_purchased` (sum of `OrderItem.quantity` across non-cancelled/non-returned orders), and `unread_notifications` (count within the last 30 days) alongside existing `total_orders`, `active_orders`, `total_spent`, `customer_name`, `phone`, and `email`. Moved query logic into `customer_purchased_service.get_dashboard_summary`.
+  - **Profile & Avatar:**
+    - Added `DELETE /api/v1/customer/profile/avatar` to clear `avatar_url`, delete the owned file from `avatars/` storage, and return `CustomerProfileRead`. Replacing an avatar via `POST /api/v1/customer/profile/avatar` now also deletes the previous owned avatar file.
+    - Updated `CustomerProfileUpdate` and `customer_auth_service.update_profile` so explicitly sending `null` or `""` (or whitespace) for `email`, `district`, `area`, or `address` cleanly clears the column to `NULL` while omitting a field preserves it.
+  - **Notification 30-Day Auto-Deletion & Complete Triggers:**
+    - Added throttled opportunistic execution of `purge_expired_notifications(db)` on notification list and creation (plus per-user expired cleanup on list and standalone `purge_expired_notifications` helper) so notifications older than 30 days are physically deleted from `customer_notifications`.
+    - Triggered `create_order_status_notification` on new online order placement (`order_service.create_order`, for logged-in or phone-matched customers; skipped on idempotency replays), after commit on admin single-order status updates (`order_service.update_order`, now defaulting `notify_customer=True` and seeing updated courier/tracking fields), and on admin bulk status updates (`order_admin_service.bulk_status`, with optional `notify_customer` / `notification_language` on `BulkStatusRequest`).
+    - Added `DELETE /api/v1/customer/notifications/{notification_id}` for customers to delete their own individual notification (404 if missing or owned by another user).
+  - **Order Tracking Upgrade (`GET /api/v1/customer/orders/{order_number}/tracking`):**
+    - Pulls real step timestamps from `order_activities` (`status_changed` rows) plus `order.created_at`, `order.delivered_at`, and `order.returned_at` instead of reusing `order.updated_at` for every completed step.
+    - Cleanly handles `cancelled` and `returned` terminal statuses (lists reached forward steps followed by the terminal `cancelled` or `returned` step instead of falling back to step 0).
+    - Added future-ready fields `tracking_url: str | None = None` and `live_events: list[dict] = []` on `OrderTrackingDetail` for Steadfast/Pathao live tracking integration.
+  - **Purchased Products History Upgrade (`GET /api/v1/customer/purchased-products`):**
+    - Returns full purchase line history across eligible orders without dropping repeat purchases of the same product across different orders.
+    - Added `quantity`, `line_total`, `order_status`, `paid_amount`, `due_amount`, and `payment_status` (`paid` / `partial` / `cod_due` / `unpaid`) while keeping `can_review` accurate per product.
+  - Files touched:
+    - `app/schemas/customer.py`, `app/schemas/order.py`
+    - `app/services/customer_auth_service.py`, `app/services/customer_purchased_service.py`, `app/services/notification_service.py`, `app/services/order_service.py`, `app/services/order_admin_service.py`
+    - `app/api/v1/endpoints/customer_auth.py`, `app/api/v1/endpoints/customer_orders.py`
+    - `tests/test_customer_phase6.py`
+    - `docs/CHANGELOG.md`, `docs/API.md`, `docs/BUSINESS_LOGIC.md`, `docs/TODO.md`
+  - Frontend (`implesia-mart`):
+    - Dashboard overview can read `delivered_orders`, `cancelled_orders`, `total_products_purchased`, and `unread_notifications` from `GET /api/v1/customer/dashboard-summary`.
+    - Profile page can call `DELETE /api/v1/customer/profile/avatar` to remove an avatar, and send `null` or `""` in `PATCH /api/v1/customer/profile` to clear optional fields (`email`, `district`, `area`, `address`).
+    - Notifications drawer/page can call `DELETE /api/v1/customer/notifications/{notification_id}` to remove individual notifications.
+    - Order tracking view should render `timeline` dynamically (including `cancelled`/`returned` terminal steps and nullable `timestamp`) and may read optional `tracking_url` and `live_events`.
+    - Purchased products list receives full line history (repeat purchases of the same `product_id` across orders; key list items by `order_number + product_id` or index rather than `product_id` alone) and can display `quantity`, `line_total`, `order_status`, `paid_amount`, `due_amount`, and `payment_status`.
+
+- **Customer Authentication, Customer Notifications & Verified Product Reviews (2026-11-21). Done (not live).**
+  - **Migration 0101:** Added `customer` role to `UserRole` enum. Added nullable columns `phone` (varchar 20), `district` (varchar 80), `area` (varchar 120), and `address` (varchar 500) to `users` model. Added partial unique index on `phone` (where phone is not null).
+  - **Migration 0103:** Added nullable `avatar_url` (varchar 500) to `users`. Created `customer_notifications` table (UUID pk, user_id FK cascade, order_id FK set null, type, title, message, is_read, language, timestamps, composite indexes on user_id + created_at and user_id + is_read). Created `product_reviews` table (UUID pk, product_id FK cascade, user_id FK cascade, order_id FK set null, rating 1-5, headline, comment, is_verified_purchase, is_published, timestamps, indexes on product_id + is_published + created_at and user_id + product_id).
+  - **Customer Authentication & Profile Service:**
+    - Standardized 11-digit Bangladesh phone validation and normalization (`013-019`).
+    - Password hashing and verification with secure JWT session issuance (`access_token` and `refresh_token`).
+    - Customer login accepts either phone or email.
+    - Endpoints: `POST /api/v1/customer/auth/register`, `login`, `refresh`, `logout`, `GET`/`PATCH /api/v1/customer/profile`, `POST /api/v1/customer/change-password`, `POST /api/v1/customer/avatar`, `POST /api/v1/customer/cart/merge`.
+  - **Orders, Tracking & Purchased Products:**
+    - Customer orders list and detail endpoints with authorization check (only owner can view).
+    - Courier tracking endpoint (`/api/v1/customer/orders/{number}/tracking`) returning carrier, tracking code, and timeline.
+    - Purchased products endpoint (`/api/v1/customer/purchased-products`) returning past ordered items and review eligibility (`can_review`).
+    - Customer dashboard statistics endpoint (`/api/v1/customer/dashboard-summary`).
+  - **Verified Product Reviews:**
+    - Customers can only review products from eligible orders (`confirmed`, `packed`, `shipped`, `delivered`).
+    - Duplicate reviews per user/product are blocked with ConflictError (409).
+    - Public reviews list with summary metrics (average rating, review count, 1-5 star histogram).
+  - **Automated Customer In-App Notifications:**
+    - Status updates on orders automatically trigger notification creation for registered customers with localized messages.
+    - Notification feed and mark-as-read endpoints.
+  - Files touched:
+    - `alembic/versions/0101_customer_role_and_fields.py`
+    - `alembic/versions/0103_customer_notifications_and_reviews.py`
+    - `app/models/user.py`, `app/models/notification.py`, `app/models/review.py`
+    - `app/schemas/customer.py`, `app/schemas/review.py`, `app/schemas/order.py`
+    - `app/services/customer_auth_service.py`, `app/services/customer_purchased_service.py`, `app/services/notification_service.py`, `app/services/review_service.py`, `app/services/order_service.py`
+    - `app/api/v1/endpoints/customer_auth.py`, `app/api/v1/endpoints/customer_orders.py`, `app/api/v1/endpoints/reviews.py`
+    - `tests/test_customer_auth.py`, `tests/test_customer_phase6.py`
+    - `docs/TODO.md`, `docs/CHANGELOG.md`
+
 - **Storefront SEO settings (2026-11-16). Done (not live).** Branched from `cursor/admin-orders-management-aaf2` (PR #18) so the migration chain stays one head. Do not merge this ahead of that branch. Do not run the migration against production from a laptop. No new environment variable.
   - There was no site/store settings model. Header, footer, contact, payment, and pricing stay their own resources. This adds one `site_settings` row (slug `main`) for the home/default title, meta description, and optional title template.
   - Migration **0099** (`down_revision` **0098**), additive only. New table `site_settings`. `seo_title` (varchar 70, nullable), `seo_description` (varchar 170, nullable), `seo_title_template` (varchar 80, nullable). No row is seeded. No existing row is updated. Downgrade drops only that table.

@@ -98,7 +98,7 @@ async def _handlers(db: AsyncSession, rows: list[Inquiry]) -> dict[uuid.UUID, st
     users = (
         await db.execute(select(User.id, User.full_name, User.email).where(User.id.in_(ids)))
     ).all()
-    return {uid: (name or email) for uid, name, email in users}
+    return {uid: (name or email or "") for uid, name, email in users}
 
 
 async def list_inquiries(db: AsyncSession, query: InquiryQuery) -> InquiryList:

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Form, Request, UploadFile, status
 from pydantic import ValidationError
 from starlette.datastructures import UploadFile as StarletteUpload
 
-from app.api.deps import DbSession, no_store, require_editor
+from app.api.deps import DbSession, no_store, require_module_for_method
 from app.core.config import settings
 from app.core.exceptions import UnprocessableError, payload_errors
 from app.rate_limit import limiter
@@ -14,7 +14,9 @@ from app.schemas.common import Message
 from app.services.about import dress_service
 
 public_router = APIRouter()
-admin_router = APIRouter(dependencies=[Depends(require_editor), Depends(no_store)])
+admin_router = APIRouter(
+    dependencies=[Depends(require_module_for_method("cms")), Depends(no_store)]
+)
 
 _PAYLOAD_LIMIT = 40_000
 

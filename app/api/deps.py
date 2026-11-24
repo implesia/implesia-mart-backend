@@ -1,7 +1,7 @@
 import ipaddress
 import uuid
 from collections.abc import AsyncIterator, Callable, Coroutine
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import Depends, Request, Response
 from fastapi.security import OAuth2PasswordBearer
@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.core.exceptions import AuthenticationError, PermissionDeniedError
 from app.core.security import InvalidTokenError, decode_token
 from app.db.session import get_db
-from app.models.user import User, UserRole
+from app.models.user import STAFF_ROLES, User, UserRole
 from app.services import refresh_token_service
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.api_v1_prefix}/auth/login")
@@ -60,25 +60,97 @@ async def get_optional_user(
 OptionalUser = Annotated[User | None, Depends(get_optional_user)]
 
 # Higher roles inherit everything the roles below them can do.
-ROLE_RANK = {UserRole.VIEWER: 0, UserRole.EDITOR: 1, UserRole.SUPERADMIN: 2}
+ROLE_RANK: dict[str, int] = {
+    UserRole.CUSTOMER.value: -1,
+    UserRole.VIEWER.value: 0,
+    UserRole.EDITOR.value: 1,
+    UserRole.SUPERADMIN.value: 2,
+}
 
 
 def require_role(
     minimum: UserRole,
-) -> Callable[[User], Coroutine[Any, Any, User]]:
-    async def dependency(user: CurrentUser) -> User:
-        if ROLE_RANK[user.role] < ROLE_RANK[minimum]:
+) -> Callable[[DbSession, User], Coroutine[Any, Any, User]]:
+    async def dependency(db: DbSession, user: CurrentUser) -> User:
+        from app.services import permission_service
+
+        if minimum in STAFF_ROLES:
+            if not await permission_service.role_has_admin_access(db, user.role):
+                raise PermissionDeniedError("Admin access is restricted to staff accounts")
+            if minimum == UserRole.VIEWER:
+                # Any staff role (system or custom with admin_access=True) satisfies viewer floor.
+                return user
+        if ROLE_RANK.get(str(user.role), -99) < ROLE_RANK[minimum.value]:
             raise PermissionDeniedError(f"This action requires the {minimum.value} role")
         return user
 
     return dependency
 
 
+require_viewer = require_role(UserRole.VIEWER)
 require_editor = require_role(UserRole.EDITOR)
 require_superadmin = require_role(UserRole.SUPERADMIN)
 
+RequireViewer = Annotated[User, Depends(require_viewer)]
 RequireEditor = Annotated[User, Depends(require_editor)]
 RequireSuperadmin = Annotated[User, Depends(require_superadmin)]
+
+
+def require_module_access(
+    module_key: str,
+    level: Literal["read", "write", "full"],
+) -> Callable[[DbSession, User], Coroutine[Any, Any, User]]:
+    """Enforce dynamic DB-backed module access for staff accounts.
+
+    - ``superadmin`` always passes.
+    - Non-staff accounts (``admin_access=False``, e.g. ``customer``) are always denied (403).
+    - Editable system & custom staff roles are checked against their live ``role_permissions``.
+    """
+
+    async def dependency(db: DbSession, user: CurrentUser) -> User:
+        if user.role == UserRole.SUPERADMIN:
+            return user
+
+        from app.services import permission_service
+
+        if not await permission_service.role_has_admin_access(db, user.role):
+            raise PermissionDeniedError("Admin access is restricted to staff accounts")
+
+        perms = await permission_service.get_role_permissions_map(db, user.role)
+        if not permission_service.has_module_access(perms, module_key, level):
+            raise PermissionDeniedError(
+                f"Insufficient permissions for module '{module_key}' (requires {level} access)"
+            )
+        return user
+
+    return dependency
+
+
+def require_module_for_method(
+    module_key: str,
+) -> Callable[[Request, DbSession, User], Coroutine[Any, Any, User]]:
+    """Router-level dynamic permission guard: GET/HEAD require 'read', writes require 'write'."""
+
+    async def dependency(request: Request, db: DbSession, user: CurrentUser) -> User:
+        if user.role == UserRole.SUPERADMIN:
+            return user
+
+        from app.services import permission_service
+
+        if not await permission_service.role_has_admin_access(db, user.role):
+            raise PermissionDeniedError("Admin access is restricted to staff accounts")
+
+        level: Literal["read", "write"] = (
+            "read" if request.method.upper() in {"GET", "HEAD", "OPTIONS"} else "write"
+        )
+        perms = await permission_service.get_role_permissions_map(db, user.role)
+        if not permission_service.has_module_access(perms, module_key, level):
+            raise PermissionDeniedError(
+                f"Insufficient permissions for module '{module_key}' (requires {level} access)"
+            )
+        return user
+
+    return dependency
 
 
 def no_store(response: Response) -> None:

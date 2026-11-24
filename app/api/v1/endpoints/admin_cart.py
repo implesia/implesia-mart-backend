@@ -3,11 +3,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.api.deps import DbSession, no_store, require_editor
+from app.api.deps import DbSession, no_store, require_module_access
 from app.schemas.cart import AdminCartList, AdminCartQuery, AdminCartRead
 from app.services import cart_service
 
-router = APIRouter(dependencies=[Depends(no_store), Depends(require_editor)])
+router = APIRouter(dependencies=[Depends(no_store), Depends(require_module_access("cart", "read"))])
 
 
 @router.get("", response_model=AdminCartList)

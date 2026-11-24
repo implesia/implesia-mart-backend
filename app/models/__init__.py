@@ -53,6 +53,7 @@ from app.models.home.showcase import HomeShowcase, HomeShowcaseItem, HomeShowcas
 from app.models.home.trust import HomeTrust, HomeTrustItem
 from app.models.inquiry import Inquiry, InquiryStatus, InquiryType
 from app.models.inventory import ImportBatch, Purchase, PurchaseItem, StockMovement, Supplier
+from app.models.notification import CustomerNotification
 from app.models.order import Order, OrderActivity, OrderIdempotency, OrderItem
 from app.models.payment_settings import PaymentSettings
 from app.models.pricing import PricingSettings
@@ -66,6 +67,9 @@ from app.models.privacy.support import PrivacySupport
 from app.models.privacy.usage import PrivacyUsage, PrivacyUsageBadge, PrivacyUsageItem
 from app.models.product import Product, ProductSlugRedirect, ProductVariant
 from app.models.refresh_token import RefreshToken
+from app.models.review import ProductReview
+from app.models.role import Role
+from app.models.role_permission import RolePermission
 from app.models.shipping.block import (
     ShippingBlock,
     ShippingBlockCard,
@@ -248,6 +252,10 @@ __all__ = [
     "SiteHeader",
     "SiteSettings",
     "SustainabilityQualityStep",
+    "CustomerNotification",
+    "ProductReview",
+    "Role",
+    "RolePermission",
     "User",
     "UserRole",
 ]

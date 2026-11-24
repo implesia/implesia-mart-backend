@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Request, UploadFile, status
 
-from app.api.deps import DbSession, no_store, require_editor
+from app.api.deps import DbSession, no_store, require_module_for_method
 from app.core.config import settings
 from app.rate_limit import limiter
 from app.schemas.blogs.posts import (
@@ -19,7 +19,9 @@ from app.schemas.common import Message
 from app.services.blogs import posts_service
 
 public_router = APIRouter()
-admin_router = APIRouter(dependencies=[Depends(require_editor), Depends(no_store)])
+admin_router = APIRouter(
+    dependencies=[Depends(require_module_for_method("cms")), Depends(no_store)]
+)
 
 
 @public_router.get("", response_model=PostsPublic)

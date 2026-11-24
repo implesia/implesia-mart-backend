@@ -5,10 +5,10 @@ Generated from the FastAPI routers (`app/api/v1/router.py` and `app/api/v1/endpo
 ## Access levels
 
 - **public**: no token. Storefront and shopper calls. Carts identify a guest by the `X-Cart-Token` header.
+- **signed-in customer**: a valid customer access token (`Authorization: Bearer …`, role `customer`) for `/api/v1/customer/...` and review write/check routes.
 - **any signed-in staff**: a valid staff access token (`Authorization: Bearer …`), any role (`viewer`, `editor`, `superadmin`).
-- **admin (editor, superadmin)**: `require_editor`. A `viewer` gets 403.
+- **admin (editor, superadmin)**: `require_editor`. A `viewer` or `customer` gets 403.
 - **admin (superadmin only)**: `require_superadmin`.
-- There are no customer accounts. Staff are the only signed-in users.
 - A protected route without a token answers 401. A role that is too low answers 403.
 
 ## Errors
@@ -22,7 +22,8 @@ Generated from the FastAPI routers (`app/api/v1/router.py` and `app/api/v1/endpo
 - `POST /admin/products` (multipart): `payload` = JSON product (`ProductCreate`), `images` files with `image_alts` JSON list, optional `quality_image` + `quality_image_alt`, `videos` files with `video_alts` JSON list, `thumbnails` files with `thumbnail_targets` JSON list (gallery item id or `video:<n>`). New files are appended after the `content.gallery` items in the payload. Returns `AdminProductRead` (201).
 - `PATCH /admin/products/{id}` (multipart): same parts, `payload` = partial `ProductUpdate`. Errors use the default envelope (422, English); a taken `slug` returns 409 `{"errors": [{"field": "slug", "message", "fix"}]}`.
 - SEO: create/update take `seo_title` (≤120), `seo_description` (≤320), `seo_keywords` (≤500); update also takes `slug`. `AdminProductRead` and `PublicProductDetail` return the three SEO fields (`""` when unset).
-- `cost_price` (number, two decimal places, `>= 0`, or `null`) is accepted on `POST` and `PATCH /admin/products` and returned on admin product list, get, create, and update (`AdminProductCard` / `AdminProductRead`). Omitted on PATCH keeps the stored value; `null` clears it. A negative value is 400 on create (`errors[].field` = `costPrice`) and 422 on update. Editor or above only; a viewer gets 403. Public product responses never include `cost_price`.
+- `cost_price` (number, two decimal places, `>= 0`, or `null`) is accepted on `POST` and `PATCH /admin/products` (both product-level and per-variant inside `variants[]`) and returned on admin product list, get, create, and update (`AdminProductCard` / `AdminProductRead` / `VariantRead`). Omitted on PATCH keeps the stored value; `null` clears it. A negative value is 400 on create (`errors[].field` = `costPrice`) and 422 on update. Editor or above only; a viewer gets 403. Public product responses never include `cost_price`.
+- `supplier_id` (optional UUID of an active, non-deleted supplier, or `null` to clear) is accepted on `POST` and `PATCH /admin/products`. Admin product list & detail return `supplier_id`, `supplier_name`, and `supplier` (`{id, name}` or `null`). `GET /api/v1/admin/products` also accepts optional `supplier_id` filter. Public product responses never include supplier fields.
 - `DELETE /admin/products/{id}`: 204.
 - `DELETE /admin/products/bulk`: body `{"ids": ["<uuid>", ...]}` (1–100 after de-duplication). Returns `{"requested", "deleted", "deleted_ids", "skipped": [{"id", "reason": "not_found", "message"}], "failed": [{"id", "reason": "error", "message"}]}`.
 - `GET /products/by-slug/{slug}` and `GET /products/{id}`: `PublicProductDetail`, published products only. `by-slug` also resolves a product's old slugs (`product_slug_redirects`). `gallery` items carry `kind` (`image`/`video`/`youtube`), `src`, `youtube_id`, `alt`, `thumbnail` (custom thumbnail or empty).
@@ -50,7 +51,8 @@ Generated from the FastAPI routers (`app/api/v1/router.py` and `app/api/v1/endpo
 | --- | --- | --- | --- | --- |
 | GET | `/api/v1/admin/badges` | admin (editor, superadmin) | — | `BadgeAdminList` |
 | POST | `/api/v1/admin/badges` | admin (editor, superadmin) | `BadgeWrite` | `BadgeAdminRead` |
-| DELETE | `/api/v1/admin/badges/{badge_id}` | admin (editor, superadmin) | — | `Message` |
+| GET | `/api/v1/admin/badges/{badge_id}/delete-impact` | superadmin | — | `BadgeDeleteImpact` |
+| DELETE | `/api/v1/admin/badges/{badge_id}` | superadmin | optional `BadgeDeleteRequest` | `BadgeDeleteResult` |
 | GET | `/api/v1/admin/badges/{badge_id}` | admin (editor, superadmin) | — | `BadgeAdminRead` |
 | PATCH | `/api/v1/admin/badges/{badge_id}` | admin (editor, superadmin) | `BadgeUpdate` | `BadgeAdminRead` |
 
@@ -84,9 +86,9 @@ Query: `range` is `today`, `yesterday`, `7d` (default), `30d`, `this-month`, `la
 
 Read-only sales and stock reports. Any signed-in staff, including `viewer`. There is no write route. Anonymous is 401. Every route is `Cache-Control: no-store`. Dates are inclusive Asia/Dhaka days. How each number is defined is in BUSINESS_LOGIC.md (Sales reports).
 
-Shared query: `preset` (`this_week`, `this_month`, `last_month`) or both `from` and `to` (`YYYY-MM-DD`). Sending both a preset and dates, sending neither, sending `from` after `to`, or a range longer than 366 days is 422. Optional `product_id`, `category_id` (that category and its descendants), and `channel` (at most 32 characters). An unknown product or category is 422. A channel does not match orders whose `channel` is NULL. `grain` (`day`, `week`, `month`) applies to the trend only.
+Shared query: `preset` (`today`, `7d`, `this_week`, `this_month`, `last_month`, `this_year`) or both `from` and `to` (`YYYY-MM-DD`). Sending both a preset and dates, sending neither, sending `from` after `to`, or a range longer than 366 days is 422. Optional `product_id`, `category_id` (that category and its descendants), `supplier_id`, `channel` (at most 32 characters), `origin` (`online`, `offline`), and `profit_filter` (`all`, `profit`, `loss`, `unknown_cost`). An unknown product, category, or supplier is 422. A channel does not match orders whose `channel` is NULL. `grain` (`day`, `week`, `month`) applies to the trend only. `sort` (`revenue`, `profit`, `margin`, `units_sold`, `cost`, `stock_value`) applies to `/products` and `/products/export`.
 
-`cost_price` and `unit_cost` appear on the profit, product, and stock reports. They are not added to public product or order responses.
+`cost_price` and `unit_cost` appear on the profit, profit-loss, product, channel, supplier, and stock reports (plus `GET /api/v1/admin/products/{product_id}/analytics`). They are not added to public product or order responses.
 
 | Method | Path | Access | Request body | Response |
 | --- | --- | --- | --- | --- |
@@ -94,8 +96,14 @@ Shared query: `preset` (`this_week`, `this_month`, `last_month`) or both `from` 
 | GET | `/api/v1/admin/reports/sales/export` | any signed-in staff | — | `.xlsx` |
 | GET | `/api/v1/admin/reports/profit` | any signed-in staff | — | `ProfitReport` |
 | GET | `/api/v1/admin/reports/profit/export` | any signed-in staff | — | `.xlsx` |
+| GET | `/api/v1/admin/reports/profit-loss` | any signed-in staff | — | `ProfitLossReport` |
+| GET | `/api/v1/admin/reports/profit-loss/export` | any signed-in staff | — | `.xlsx` |
 | GET | `/api/v1/admin/reports/products` | any signed-in staff | — | `ProductReport` |
 | GET | `/api/v1/admin/reports/products/export` | any signed-in staff | — | `.xlsx` |
+| GET | `/api/v1/admin/reports/channels` | any signed-in staff | — | `ChannelBreakdownReport` |
+| GET | `/api/v1/admin/reports/channels/export` | any signed-in staff | — | `.xlsx` |
+| GET | `/api/v1/admin/reports/suppliers` | any signed-in staff | — | `SupplierPerformanceReport` |
+| GET | `/api/v1/admin/reports/suppliers/export` | any signed-in staff | — | `.xlsx` |
 | GET | `/api/v1/admin/reports/stock` | any signed-in staff | — | `StockReport` |
 | GET | `/api/v1/admin/reports/stock/export` | any signed-in staff | — | `.xlsx` |
 | GET | `/api/v1/admin/reports/movements` | any signed-in staff | — | `MovementReport` |
@@ -108,10 +116,15 @@ Shared query: `preset` (`this_week`, `this_month`, `last_month`) or both `from` 
 | GET | `/api/v1/admin/reports/coupons/export` | any signed-in staff | — | `.xlsx` |
 
 - Products and stock also take `page` (1–10000, default 1) and `page_size` (1–100, default 20). Export ignores the page and stops at 20,000 rows.
+- `ProfitLossReport` returns the full P&L waterfall (`gross_sales`, `product_discount`, `coupon_discount`, `manual_discount`, `delivery_charge`, `returned_order_value`, `net_realized_sales`, `total_cost`, `gross_profit`, `loss_amount`, `net_profit`, `margin_percent`, `collected_amount`, `due_amount`, `unknown_cost_lines`, `unknown_cost_units`, `unknown_cost_revenue`). `ProfitReport` also exposes `loss_amount` and `net_profit`.
+- `ProductReportRow` includes `slug`, `sku`, `category_name`, `supplier_id`, `supplier_name`, `avg_selling_price`, `unit_cost_avg`, `current_cost_price`, `current_stock`, `stock_value`, `is_loss`, `returned_units`, and `return_value`; `/products` supports SQL `sort` and `profit_filter`.
+- `ChannelBreakdownReport` splits realized metrics by `origin` (`online` / `offline`) and by `payment_method` (`cod`, `bangla_qr`, `cash`, `bkash`, `nagad`, `card`, `due`).
+- `SupplierPerformanceReport` returns per-supplier linked product counts, purchase counts/units/spend (in window by `purchased_on`), realized sales/COGS/net_profit/margin, and current stock units/value.
+- `StockReport` includes `selling_price`, `potential_retail_value`, `expected_profit_on_hand`, and `supplier_name` per row, plus `potential_retail_value`, `expected_profit_on_hand`, and `missing_cost_count` on `summary`.
 - Stock on hand ignores the date window (`period_applies: false`) and the channel (`channel_applies: false`). Movements ignore the channel the same way.
-- The workbook states the report name, timezone, from, to, preset, product, category, and whether the channel filter applied. Money columns are numeric cells.
+- The workbook states the report name, timezone, from, to, preset, product, category, supplier, channel, origin, profit filter, and whether the channel filter applied. Money columns are numeric cells.
 - `MovementReport` uses the JSON key `return` for the return total. A sale quantity is negative.
-- `SalesSummary` adds `coupon_discount` (whole taka). It is already included in `discount`. Net sales are after that coupon. The sales workbook has a "Coupon discount" column.
+- `SalesSummary` exposes `coupon_discount` and `manual_discount` separately (whole taka; both are included inside `discount`). Returned orders (`status = 'returned'`) are excluded from realized sales, profit, product sales, and trend aggregates; `DeliveryReport` includes `returned_value` and `ProductReportRow` includes `return_value` separately. The sales workbook includes "Coupon discount" and "Manual discount" columns.
 - `CouponReport` counts active redemptions placed in the window (`created_at`, not `delivered_at`). Cancelled uses are omitted. Returned orders stay. `product_id`, `category_id`, and `channel` are accepted by the shared query and ignored (`channel_applies: false`).
 
 ```json
@@ -249,6 +262,8 @@ Staff inventory. `viewer` can read. Writes need `editor` or `superadmin`. Every 
 | POST | `/api/v1/admin/inventory/suppliers` | admin (editor, superadmin) | `SupplierCreate` | `SupplierRead` |
 | GET | `/api/v1/admin/inventory/suppliers/{supplier_id}` | any signed-in staff | — | `SupplierRead` |
 | PATCH | `/api/v1/admin/inventory/suppliers/{supplier_id}` | admin (editor, superadmin) | `SupplierUpdate` | `SupplierRead` |
+| GET | `/api/v1/admin/inventory/suppliers/{supplier_id}/delete-impact` | superadmin | — | `SupplierDeleteImpact` |
+| DELETE | `/api/v1/admin/inventory/suppliers/{supplier_id}` | superadmin | optional `SupplierDeleteRequest` | `SupplierDeleteResult` |
 | GET | `/api/v1/admin/inventory/purchases` | any signed-in staff | — | `Page[PurchaseRead]` |
 | POST | `/api/v1/admin/inventory/purchases` | admin (editor, superadmin) | `PurchaseCreate` | `PurchaseRead` |
 | GET | `/api/v1/admin/inventory/purchases/{purchase_id}` | any signed-in staff | — | `PurchaseRead` |
@@ -397,8 +412,11 @@ Staff inventory. `viewer` can read. Writes need `editor` or `superadmin`. Every 
 | --- | --- | --- | --- | --- |
 | GET | `/api/v1/admin/orders/new` | any signed-in staff | — | `NewOrderFeed` |
 | GET | `/api/v1/admin/orders` | admin (editor, superadmin) | — | `AdminOrderList` |
+| GET | `/api/v1/admin/orders/{order_id}/delete-impact` | superadmin | — | `OrderDeleteImpact` |
+| DELETE | `/api/v1/admin/orders/{order_id}` | superadmin | `OrderDeleteRequest` | `OrderDeleteResult` |
 | GET | `/api/v1/admin/orders/{order_id}` | admin (editor, superadmin) | — | `OrderRead` |
 | PATCH | `/api/v1/admin/orders/{order_id}` | admin (editor, superadmin) | `OrderUpdate` | `OrderRead` |
+| POST | `/api/v1/admin/orders/{order_id}/payments` | admin (editor, superadmin) | `OrderPaymentCreate` | `OrderRead` |
 
 `GET /api/v1/admin/orders/new` is a cursor feed for polling, not a page. `Cache-Control: no-store`. Anonymous, or a bearer token that is not a live staff session, is 401. A viewer is allowed here and is still 403 on the editor list.
 
@@ -513,7 +531,7 @@ Query: `page` (1–10000), `page_size` (1–50, default 10), `q` (order number, 
 }
 ```
 
-`PATCH` body is `OrderUpdate` (`extra` forbidden). At least one of `status`, `call_status`, `courier_name`, `tracking_number`, `notes`. Empty object is 422. Courier and tracking are stripped strings, max 120. Notes max 500.
+`PATCH` body is `OrderUpdate` (`extra` forbidden). At least one of `status`, `call_status`, `courier_name`, `tracking_number`, `notes`. Empty object is 422. Courier and tracking are stripped strings, max 120. Notes max 500. Optional `notify_customer` (bool, default `true`) and `notification_language` (`"bn"` or `"en"`, default `"bn"`) control in-app customer notifications when `status` changes.
 
 `PUT /api/v1/admin/orders/{order_id}/items` replaces the lines while status is `new`. After that, 422 "Items can be edited only while the order is new". Body:
 
@@ -583,13 +601,20 @@ Query: `page` (1–10000), `page_size` (1–50, default 10), `q` (order number, 
   "payment_method": "cash",
   "paid_amount": 200,
   "payment_reference": "",
-  "order_date": "2026-11-16"
+  "order_date": "2026-11-16",
+  "initial_status": "new",
+  "mark_delivered": false
 }
 ```
 
-`payment_method` is `cash`, `bkash`, `nagad`, `card`, or `due`. Unknown fields are 422. `order_date` must be from 2020-01-01 through today in Asia/Dhaka; omit it to use now. Omit `delivery_charge` to use the zone fee. A closed zone with no charge is 422 "Delivery is not available for this area". A charge of 0 is allowed. Omit `unit_price` to use the current price. The server computes `subtotal`, `shipping`, `total`, `paid_amount`, and `due_amount`. Client totals are not accepted. Not enough stock is 422 with the existing Bengali stock message, and nothing is saved. `paid_amount` above the total is 422 "Paid amount cannot be larger than the order total".
+`payment_method` is `cash`, `bkash`, `nagad`, `card`, or `due`. Unknown fields are 422. `order_date` must be from 2020-01-01 through today in Asia/Dhaka; omit it to use now. `initial_status` (`"new"`, `"confirmed"`, or `"delivered"`, default `"new"`) or `mark_delivered: true` lets walk-in counter sales start as `delivered` immediately, setting `delivered_at = ordered_at` so backdated counter sales land on the exact business date in all reports. Omit `delivery_charge` to use the zone fee. A closed zone with no charge is 422 "Delivery is not available for this area". A charge of 0 is allowed. Omit `unit_price` to use the current price. The server computes `subtotal`, `shipping`, `total`, `paid_amount`, and `due_amount`. Client totals are not accepted. Not enough stock is 422 with the existing Bengali stock message, and nothing is saved. `paid_amount` above the total is 422 "Paid amount cannot be larger than the order total".
 
-The order is `origin: "offline"`, `source: "direct"`, `channel` stored as `offline`, status `new`. Stock is deducted and `unit_cost` is snapshotted like checkout. No Meta Purchase, no Telegram new-order message, no cancel Telegram if it is later cancelled, and no GA event from the server. Do not fire the browser Purchase event for `origin: "offline"`.
+The order is `origin: "offline"`, `source: "direct"`, `channel` stored as `offline`, and automatically links `user_id` if a registered customer matches `phone`. Stock is deducted and `unit_cost` is snapshotted like checkout (`variant.cost_price` if set, else `product.cost_price`). No Meta Purchase, no Telegram new-order message, no cancel Telegram if it is later cancelled, and no GA event from the server. Do not fire the browser Purchase event for `origin: "offline"`.
+
+### Payments
+
+- `POST /api/v1/admin/orders/{order_id}/payments` (`OrderPaymentCreate`: `amount > 0`, optional `payment_method`, `payment_reference`, `note`): increments `paid_amount`, recomputes `due_amount = total - paid_amount`, logs a `payment_updated` activity row, and returns `OrderRead`. Rejects cancelled/returned orders or overpayments with 422.
+- `PATCH /api/v1/admin/orders/{order_id}` (`OrderUpdate`): also accepts optional `paid_amount` (`0 <= paid_amount <= total`) and `payment_reference`, recomputing `due_amount` and logging `payment_updated`.
 
 ### Bulk, pack, and print
 
@@ -602,7 +627,7 @@ The order is `origin: "offline"`, `source: "direct"`, `channel` stored as `offli
 
 Ready to pack is the list endpoint with `status` forced to `confirmed`. The other query params still apply.
 
-`BulkStatusRequest`: `{ "status": "packed", "ids": ["…"] }`. 1–100 ids, duplicates dropped. The HTTP status is 200 even when some ids fail. One failure does not undo the others.
+`BulkStatusRequest`: `{ "status": "packed", "ids": ["…"], "notify_customer": true, "notification_language": "bn" }`. 1–100 ids, duplicates dropped. `notify_customer` (default `true`) and `notification_language` (default `"bn"`) are optional and trigger in-app customer notifications for orders whose status changed. The HTTP status is 200 even when some ids fail. One failure does not undo the others.
 
 ```json
 {
@@ -856,6 +881,7 @@ Writes on this router use the product-write rate limit and return 429 `rate_limi
 | POST | `/api/v1/admin/products` | admin (editor, superadmin) | multipart form | `AdminProductRead` |
 | DELETE | `/api/v1/admin/products/bulk` | admin (editor, superadmin) | `ProductBulkDelete` | `ProductBulkDeleteResult` |
 | DELETE | `/api/v1/admin/products/{product_id}` | admin (editor, superadmin) | — | 204 No Content |
+| GET | `/api/v1/admin/products/{product_id}/analytics` | admin (editor, superadmin) | — | `ProductAnalyticsReport` |
 | GET | `/api/v1/admin/products/{product_id}` | admin (editor, superadmin) | — | `AdminProductRead` |
 | PATCH | `/api/v1/admin/products/{product_id}` | admin (editor, superadmin) | multipart form | `AdminProductRead` |
 
@@ -933,6 +959,47 @@ PATCH omits a field to keep it. `null` or `""` clears it (stored and returned as
 | GET | `/api/v1/categories/{slug}/products` | public | — | `PublicProductList` |
 
 `CategoryTree` nodes include `updated_at` (ISO datetime) for sitemap `lastmod`.
+
+## `customer`
+
+Customer account auth, profile, orders, tracking, purchased history, and in-app notifications. All routes return `Cache-Control: no-store`.
+
+| Method | Path | Access | Request body | Response |
+| --- | --- | --- | --- | --- |
+| POST | `/api/v1/customer/auth/register` | public | `CustomerRegisterRequest` | `TokenPair` (201) |
+| POST | `/api/v1/customer/auth/login` | public | `CustomerLoginRequest` | `TokenPair` |
+| POST | `/api/v1/customer/auth/refresh` | public | `RefreshRequest` | `TokenPair` |
+| POST | `/api/v1/customer/auth/logout` | public | `RefreshRequest` | `Message` |
+| GET | `/api/v1/customer/profile` | signed-in customer | — | `CustomerProfileRead` |
+| PATCH | `/api/v1/customer/profile` | signed-in customer | `CustomerProfileUpdate` | `CustomerProfileRead` |
+| POST | `/api/v1/customer/profile/avatar` | signed-in customer | multipart `file` | `CustomerProfileRead` |
+| DELETE | `/api/v1/customer/profile/avatar` | signed-in customer | — | `CustomerProfileRead` |
+| POST | `/api/v1/customer/change-password` | signed-in customer | `CustomerPasswordChangeRequest` | `Message` |
+| POST | `/api/v1/customer/cart/merge` | signed-in customer | `CartMergeRequest` | `CartRead` |
+| GET | `/api/v1/customer/orders` | signed-in customer | — | `Page[CustomerOrderSummary]` |
+| GET | `/api/v1/customer/orders/{order_number}` | signed-in customer | — | `CustomerOrderDetail` |
+| GET | `/api/v1/customer/orders/{order_number}/tracking` | signed-in customer | — | `OrderTrackingDetail` |
+| GET | `/api/v1/customer/dashboard-summary` | signed-in customer | — | `CustomerDashboardStats` |
+| GET | `/api/v1/customer/purchased-products` | signed-in customer | — | `list[PurchasedProductItem]` |
+| GET | `/api/v1/customer/notifications` | signed-in customer | — | `NotificationListResponse` |
+| PATCH | `/api/v1/customer/notifications/{notification_id}/read` | signed-in customer | — | `Message` |
+| POST | `/api/v1/customer/notifications/mark-all-read` | signed-in customer | — | `Message` |
+| DELETE | `/api/v1/customer/notifications/{notification_id}` | signed-in customer | — | `Message` |
+
+- `PATCH /customer/profile`: omits fields to leave them unchanged; explicitly sending `null` or `""` (or whitespace) for optional `email`, `district`, `area`, or `address` clears the stored value to `null`.
+- `DELETE /customer/profile/avatar`: sets `avatar_url` to `null`, removes the owned file under `/media/avatars/`, and returns `CustomerProfileRead`.
+- `GET /customer/dashboard-summary`: returns `total_orders`, `active_orders`, `delivered_orders`, `cancelled_orders`, `total_products_purchased` (sum of `OrderItem.quantity` across non-cancelled/non-returned orders), `unread_notifications` (within the last 30 days), `total_spent`, `customer_name`, `phone`, `email`.
+- `GET /customer/orders/{order_number}/tracking`: returns `order_number`, `status`, `courier_name`, `tracking_number`, `tracking_url` (`null` until live courier API integration), `live_events` (`[]` until live courier API integration), and `timeline` (`status`, `label`, `description`, `timestamp`, `completed`). Timestamps come from `order_activities` (`status_changed`), `order.created_at`, `order.delivered_at`, and `order.returned_at` (never fabricated from `order.updated_at`). `cancelled` and `returned` orders return reached forward steps followed by a completed terminal `cancelled` or `returned` step.
+- `GET /customer/purchased-products`: returns full purchase line history across `confirmed`, `packed`, `shipped`, and `delivered` orders (newest order first; repeat purchases of the same product across orders are preserved). Each item includes `product_id`, `title`, `slug`, `image_url`, `price`, `quantity`, `line_total`, `purchased_at`, `order_number`, `order_status`, `payment_method`, `paid_amount`, `due_amount`, `payment_status` (`paid`, `partial`, `cod_due`, or `unpaid`), and `can_review` (accurate per `product_id`).
+- `GET /customer/notifications`: returns notifications within the last 30 days plus `unread_count`, and automatically purges rows older than 30 days from `customer_notifications`. `DELETE /customer/notifications/{notification_id}` deletes an individual notification owned by the caller (404 otherwise). Notifications are automatically created on new online orders (for logged-in or phone-matched customers), admin single-order status updates, and admin bulk-status updates.
+
+## `reviews`
+
+| Method | Path | Access | Request body | Response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/v1/products/{product_id}/reviews` | public | — | `ProductReviewPage` |
+| GET | `/api/v1/products/{product_id}/can-review` | signed-in customer | — | `CanReviewResponse` |
+| POST | `/api/v1/products/{product_id}/reviews` | signed-in customer | `ProductReviewCreate` | `ProductReviewRead` (201) |
 
 ## `delivery`
 

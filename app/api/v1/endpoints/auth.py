@@ -2,11 +2,12 @@ from fastapi import APIRouter, Request, status
 
 from app.api.deps import CurrentUser, DbSession
 from app.core.config import settings
+from app.core.exceptions import PermissionDeniedError
 from app.rate_limit import limiter, login_account_key, refresh_account_key
 from app.schemas.auth import LoginRequest, PasswordChangeRequest, RefreshRequest, TokenPair
 from app.schemas.common import Message
 from app.schemas.user import UserRead
-from app.services import refresh_token_service, user_service
+from app.services import permission_service, refresh_token_service, user_service
 
 router = APIRouter()
 
@@ -17,6 +18,8 @@ router = APIRouter()
 async def login(request: Request, db: DbSession, payload: LoginRequest) -> TokenPair:
     del request
     user = await user_service.authenticate(db, payload.email, payload.password)
+    if not await permission_service.role_has_admin_access(db, user.role):
+        raise PermissionDeniedError("Admin access is restricted to staff accounts")
     return await refresh_token_service.issue_session(db, user)
 
 
@@ -25,7 +28,7 @@ async def login(request: Request, db: DbSession, payload: LoginRequest) -> Token
 @limiter.limit(settings.rate_limit_refresh_account, key_func=refresh_account_key)
 async def refresh(request: Request, db: DbSession, payload: RefreshRequest) -> TokenPair:
     del request
-    return await refresh_token_service.rotate_session(db, payload.refresh_token)
+    return await refresh_token_service.rotate_session(db, payload.refresh_token, require_staff=True)
 
 
 @router.post("/logout", response_model=Message)
@@ -35,8 +38,11 @@ async def logout(db: DbSession, payload: RefreshRequest) -> Message:
 
 
 @router.get("/me", response_model=UserRead)
-async def read_current_user(user: CurrentUser) -> UserRead:
-    return UserRead.model_validate(user)
+async def read_current_user(db: DbSession, user: CurrentUser) -> UserRead:
+    data = UserRead.model_validate(user)
+    data.admin_access = await permission_service.role_has_admin_access(db, user.role)
+    data.permissions = await permission_service.get_role_permissions_map(db, user.role)
+    return data
 
 
 @router.post("/change-password", response_model=Message, status_code=status.HTTP_200_OK)

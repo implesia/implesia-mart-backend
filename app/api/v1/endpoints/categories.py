@@ -17,7 +17,7 @@ from fastapi import (
 )
 from pydantic import ValidationError
 
-from app.api.deps import DbSession, no_store, require_editor
+from app.api.deps import DbSession, no_store, require_module_for_method
 from app.core.config import settings
 from app.core.exceptions import UnprocessableError, payload_errors
 from app.rate_limit import limiter
@@ -35,7 +35,9 @@ from app.schemas.product import CatalogQuery, PublicProductList
 from app.services import category_service, product_service
 
 public_router = APIRouter()
-admin_router = APIRouter(dependencies=[Depends(require_editor), Depends(no_store)])
+admin_router = APIRouter(
+    dependencies=[Depends(require_module_for_method("products")), Depends(no_store)]
+)
 
 _PAYLOAD_LIMIT = 20_000
 _SLUG_PATH = Path(min_length=1, max_length=80, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")

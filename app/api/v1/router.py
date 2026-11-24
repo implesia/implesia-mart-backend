@@ -8,18 +8,23 @@ from app.api.v1.endpoints import (
     admin_coupons,
     admin_delivery,
     admin_inventory,
+    admin_notifications,
     admin_orders,
     admin_pricing,
     admin_products,
     admin_reports,
+    admin_reviews,
     auth,
     cart,
     categories,
+    customer_auth,
+    customer_orders,
     dashboard,
     delivery,
     inquiries,
     orders,
     products,
+    reviews,
     search,
     site_contact,
     site_footer,
@@ -93,6 +98,21 @@ api_router = APIRouter()
 _AUDITED = [Depends(audit_admin_write)]
 
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(customer_auth.router, prefix="/customer", tags=["customer:auth"])
+api_router.include_router(customer_orders.router, prefix="/customer", tags=["customer:orders"])
+api_router.include_router(reviews.router, tags=["reviews"])
+api_router.include_router(
+    admin_reviews.router,
+    prefix="/admin/reviews",
+    tags=["admin:reviews"],
+    dependencies=_AUDITED,
+)
+api_router.include_router(
+    admin_notifications.router,
+    prefix="/admin/notifications",
+    tags=["admin:notifications"],
+    dependencies=_AUDITED,
+)
 api_router.include_router(products.router, prefix="/products", tags=["products"])
 api_router.include_router(search.router, prefix="/search", tags=["search"])
 api_router.include_router(categories.public_router, prefix="/categories", tags=["categories"])

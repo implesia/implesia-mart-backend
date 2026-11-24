@@ -8,6 +8,7 @@ summed stock) so list sorting, price filters and dashboards keep reading one col
 
 import uuid
 from collections.abc import Iterable, Sequence
+from decimal import Decimal
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -22,6 +23,13 @@ from app.schemas.product import (
     VariantInput,
     VariantRead,
 )
+
+
+def effective_unit_cost(product: Product, variant: ProductVariant | None) -> Decimal | None:
+    """Variant cost when set, otherwise the product-level cost."""
+    if variant is not None and variant.cost_price is not None:
+        return variant.cost_price
+    return product.cost_price
 
 
 def option_key(options: dict[str, str]) -> str:
@@ -177,6 +185,8 @@ async def save_variants(
         row.sku = item.sku
         row.price = item.price
         row.compare_at_price = item.compare_at_price
+        if item.id is None or "cost_price" in item.model_fields_set:
+            row.cost_price = item.cost_price
         row.quantity = item.quantity
         row.is_active = item.is_active
         row.sort_order = index
@@ -277,6 +287,7 @@ def admin_read(content: ProductContent, rows: Sequence[ProductVariant]) -> list[
             sku=row.sku,
             price=row.price,
             compare_at_price=row.compare_at_price,
+            cost_price=row.cost_price,
             quantity=row.quantity,
             is_active=row.is_active,
             sort_order=row.sort_order,
