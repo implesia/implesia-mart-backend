@@ -95,16 +95,45 @@ RequireViewer = Annotated[User, Depends(require_viewer)]
 RequireEditor = Annotated[User, Depends(require_editor)]
 RequireSuperadmin = Annotated[User, Depends(require_superadmin)]
 
+# These modules were ``require_editor`` on every method, including GET.
+# A built-in viewer with only ``read_only`` still gets 403. ``editor`` and
+# above keep read access. Granting the viewer ``read_write`` or ``full`` opens
+# the module. ``GET /admin/orders/new`` opts out via ``viewer_read=True``.
+_VIEWER_PROTECTED_MODULES = frozenset(
+    {"dashboard", "products", "inquiries", "cms", "cart", "orders"}
+)
+
+
+def _level_for_actor(
+    user: User,
+    module_key: str,
+    level: Literal["read", "write", "full"],
+    *,
+    viewer_read: bool,
+) -> Literal["read", "write", "full"]:
+    if (
+        viewer_read
+        or level != "read"
+        or str(user.role) != UserRole.VIEWER.value
+        or module_key not in _VIEWER_PROTECTED_MODULES
+    ):
+        return level
+    return "write"
+
 
 def require_module_access(
     module_key: str,
     level: Literal["read", "write", "full"],
+    *,
+    viewer_read: bool = False,
 ) -> Callable[[DbSession, User], Coroutine[Any, Any, User]]:
     """Enforce dynamic DB-backed module access for staff accounts.
 
     - ``superadmin`` always passes.
     - Non-staff accounts (``admin_access=False``, e.g. ``customer``) are always denied (403).
     - Editable system & custom staff roles are checked against their live ``role_permissions``.
+    - On ``_VIEWER_PROTECTED_MODULES``, the built-in ``viewer`` role needs ``write``
+      even when ``level`` is ``read``, unless ``viewer_read`` is set.
     """
 
     async def dependency(db: DbSession, user: CurrentUser) -> User:
@@ -116,10 +145,11 @@ def require_module_access(
         if not await permission_service.role_has_admin_access(db, user.role):
             raise PermissionDeniedError("Admin access is restricted to staff accounts")
 
+        needed = _level_for_actor(user, module_key, level, viewer_read=viewer_read)
         perms = await permission_service.get_role_permissions_map(db, user.role)
-        if not permission_service.has_module_access(perms, module_key, level):
+        if not permission_service.has_module_access(perms, module_key, needed):
             raise PermissionDeniedError(
-                f"Insufficient permissions for module '{module_key}' (requires {level} access)"
+                f"Insufficient permissions for module '{module_key}' (requires {needed} access)"
             )
         return user
 
@@ -129,7 +159,10 @@ def require_module_access(
 def require_module_for_method(
     module_key: str,
 ) -> Callable[[Request, DbSession, User], Coroutine[Any, Any, User]]:
-    """Router-level dynamic permission guard: GET/HEAD require 'read', writes require 'write'."""
+    """Router-level dynamic permission guard: GET/HEAD require 'read', writes require 'write'.
+
+    Protected modules still require ``write`` from the built-in viewer on GET.
+    """
 
     async def dependency(request: Request, db: DbSession, user: CurrentUser) -> User:
         if user.role == UserRole.SUPERADMIN:
@@ -143,10 +176,11 @@ def require_module_for_method(
         level: Literal["read", "write"] = (
             "read" if request.method.upper() in {"GET", "HEAD", "OPTIONS"} else "write"
         )
+        needed = _level_for_actor(user, module_key, level, viewer_read=False)
         perms = await permission_service.get_role_permissions_map(db, user.role)
-        if not permission_service.has_module_access(perms, module_key, level):
+        if not permission_service.has_module_access(perms, module_key, needed):
             raise PermissionDeniedError(
-                f"Insufficient permissions for module '{module_key}' (requires {level} access)"
+                f"Insufficient permissions for module '{module_key}' (requires {needed} access)"
             )
         return user
 

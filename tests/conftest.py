@@ -74,6 +74,9 @@ async def db_session() -> AsyncIterator[AsyncSession]:
 
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with session_factory() as session:
+        # System roles only. Legacy slugs (super_admin, admin, staff) are seeded
+        # by migration 0108 and the Postgres fixture. Adding them here would
+        # change the roles matrix the API tests assert.
         await permission_service.ensure_system_roles(session)
         yield session
 
