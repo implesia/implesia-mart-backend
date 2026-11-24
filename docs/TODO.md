@@ -4,8 +4,14 @@ Open items found in the code and in recent work. Remove an item when it is done.
 
 ## Done (not live / pending production deployment)
 
+- **Phases 18 & 19 — Real-Time WebSocket + Redis Pub/Sub & Direct Communication Engine (2026-11-22, migration renumbered 2026-11-24):**
+  - Configurable PostgreSQL pool settings (`DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, `DB_POOL_TIMEOUT`, `DB_POOL_RECYCLE`) + production `docker-compose.prod.yml` upgraded with internal Redis 7 (`redis:7-alpine`) and `WEB_CONCURRENCY=3` (`3 × 20 = 60 < 100` PG `max_connections`).
+  - Resilient async Redis client + worker Pub/Sub hub (`rt:*`), 30s single-use `GETDEL` WS tickets (`POST /auth/ws-ticket`, `POST /customer/ws-ticket`), hardened `WS /api/v1/ws` (zero DB session in WS loop, 5 sockets/user, 4 KB frame cap, 60s idle timeout, rate limit, typing relay), and live `order.new` / `notification.created` / `notification.unread` push.
+  - **Alembic Migration `0110_communication_system.py` (single head `0110`, `down_revision="0109"`).** The handoff's planned "Next Migration `0108`" communication tables landed here because `0108` seeds missing roles and `0109` adds `courier_check_results`. Tables: `conversations`, `messages`, `conversation_read_states` with high-scale composite DESC indexes + `communication` RBAC module registration + customer & admin communication REST endpoints (`customer_communication.py`, `admin_communication.py`) with internal note privacy, cursor pagination, zero N+1 unread queries, image attachments (`/media/chat/`), and 5-minute throttled offline notifications.
+  - Covered by `tests/test_realtime_ws.py`, `tests/test_0110_migration.py`, and `tests/test_communication.py`.
 - **Dynamic RBAC test fix (2026-11-24).** Migration `0108` seeds missing `roles` rows without rewriting users. Built-in viewer `read_only` is 403 again on dashboard, admin products, inquiries, CMS, carts, and the order list. `GET /admin/orders/new` stays open.
-
+- **Phases 11–17 — Session Hardening, Dynamic RBAC (`0106`, `0107`), Reviews & Notifications (2026-11-22):**
+  - Blocked non-staff admin logins, added 30s refresh rotation grace window, implemented dynamic module permissions (`0106`) and custom staff roles CRUD/safe-delete (`0107`), added `admin_reviews.py` and `admin_notifications.py`.
 - **Customer Authentication, Notifications & Product Reviews (2026-11-21).**
   - **Alembic Migration 0102:** Added `customer` role to `UserRole` enum, added `phone` (with index and partial unique constraint), `district`, `area`, `address` to `User` model.
   - **Alembic Migration 0103:** Added `avatar_url` (varchar 500) to `User` model; created `customer_notifications` table (with cascade delete, user index, unread index); created `product_reviews` table (rating 1-5, headline, comment, purchase verification, published index).
@@ -44,8 +50,10 @@ Open items found in the code and in recent work. Remove an item when it is done.
 
 - **Customer phone report and courier check (2026-11-24). Done, not live.** Migration `0109` (`down_revision` `0108`) adds `courier_check_results` only. Do not run it against production from a laptop. Leave `COURIER_CHECK_ENABLED` false until the courier keys are set on the host. Steadfast is the verified adapter. Pathao, RedX, and the generic URL are unverified and stay quiet until their own keys are set. The report `GET` never calls a courier. A viewer with orders read can open the report and the refresh. Protected writes stay 403.
 - **Deploy to Production (VPS 72.60.199.155):**
-  - Run `alembic upgrade head` to apply migrations through `0105` (including `0102`–`0105`) on the production database.
-  - Rebuild API container: `docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build`.
+  - Take `pg_dump` backup of production PostgreSQL first.
+  - This branch's single Alembic head is **`0110`** (`0107` → `0108` role seed → `0109` courier cache → `0110` communication). Do not run it against production from a laptop. `main` does not have this chain yet.
+  - Rebuild & start API + Redis 7 containers: `docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build`.
+  - Verify Caddy reverse proxy & Cloudflare WebSockets = ON for `wss://mart-api.implesia.com/api/v1/ws`.
 - **Customer SMS Notifications via SSL Wireless:**
   - Connect real SMS credentials (`SMS_SSLWIRELESS_API_TOKEN`, `SMS_SSLWIRELESS_SID`) in `.env.production` once account is active.
 - **Frontend Product Reviews UI & Header Notifications Drawer (2026-11-21):** Done in `implesia-mart` (Phases 8–10).

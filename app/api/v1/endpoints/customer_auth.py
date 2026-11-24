@@ -10,7 +10,7 @@ from app.rate_limit import (
     limiter,
     refresh_account_key,
 )
-from app.schemas.auth import RefreshRequest, TokenPair
+from app.schemas.auth import RefreshRequest, TokenPair, WSTicketResponse
 from app.schemas.cart import CartRead
 from app.schemas.common import Message
 from app.schemas.customer import (
@@ -35,8 +35,15 @@ from app.services import (
     refresh_token_service,
 )
 from app.services.cart_service import Shopper
+from app.services.ws_manager import ws_manager
 
 router = APIRouter(dependencies=[Depends(no_store)])
+
+
+@router.post("/ws-ticket", response_model=WSTicketResponse)
+async def issue_customer_ws_ticket(user: CurrentUser) -> WSTicketResponse:
+    """Issue a 30-second single-use WebSocket ticket for an authenticated customer."""
+    return await ws_manager.issue_customer_ticket(user)
 
 
 @router.post("/auth/register", response_model=TokenPair, status_code=status.HTTP_201_CREATED)

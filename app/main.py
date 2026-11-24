@@ -18,6 +18,10 @@ from app.core.media_files import MediaFiles
 from app.db.session import engine
 from app.middleware import RequestContextMiddleware, SecurityHeadersMiddleware
 from app.rate_limit import limiter
+from app.services import communication_service
+from app.services.realtime_hub import realtime_hub
+from app.services.redis_client import redis_client
+from app.services.ws_manager import ws_manager
 
 logger = get_logger(__name__)
 
@@ -26,9 +30,15 @@ logger = get_logger(__name__)
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     logger.info("startup", environment=settings.environment, version=__version__)
-    yield
-    await engine.dispose()
-    logger.info("shutdown")
+    ws_manager.set_conversation_access_checker(communication_service.can_access_conversation)
+    await realtime_hub.start()
+    try:
+        yield
+    finally:
+        await realtime_hub.stop()
+        await redis_client.close()
+        await engine.dispose()
+        logger.info("shutdown")
 
 
 app = FastAPI(
