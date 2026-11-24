@@ -28,6 +28,7 @@ os.environ.update(
         "TELEGRAM_NOTIFY_ORDER_CANCELLED": "false",
         "TELEGRAM_NOTIFY_LOW_STOCK": "false",
         "TELEGRAM_CHAT_FALLBACK_ENABLED": "false",
+        "TELEGRAM_CHAT_FALLBACK_CHAT_IDS": "",
         "VAPID_PUBLIC_KEY": "",
         "VAPID_PRIVATE_KEY": "",
         "ADMIN_BASE_URL": "",

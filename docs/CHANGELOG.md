@@ -2,6 +2,11 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Unanswered-chat Telegram alerts use their own chat list (2026-11-24).** No migration.
+  - Optional `TELEGRAM_CHAT_FALLBACK_CHAT_IDS` is a comma-separated list, parsed the same way as `TELEGRAM_CHAT_IDS`. When it is set and non-empty, the unanswered-chat fallback sends only to those chats. When it is empty or unset, that alert uses `TELEGRAM_CHAT_IDS`. The bot token stays `TELEGRAM_BOT_TOKEN`. Order, cancel, and low-stock alerts still go only to `TELEGRAM_CHAT_IDS`.
+  - Files: `app/core/config.py`, `app/services/telegram_notify.py`, `tests/conftest.py`, `tests/test_push_and_telegram_fallback.py`, `.env.example`, `docs/CHANGELOG.md`, `docs/BUSINESS_LOGIC.md`.
+  - Frontend (`implesia-mart`): no endpoint or response change. Set `TELEGRAM_CHAT_FALLBACK_CHAT_IDS` on the API host when chat alerts must leave the orders group. Leave the value out of the repo.
+
 - **Planning pointer (2026-11-24).**
   - Added `docs/PLANNING_POINTER.md`. Mission, vision, business plan, roadmap, 30-day targets, working agreement, and the 24 Nov 2026 production release log live in the frontend repo (`implesia-mart`) under `docs/planning/` and `docs/ops/RELEASE_LOG.md`. Short current-state banners added on `docs/HANDOFF.md`, `docs/TODO.md`, and `docs/AI_INSTRUCTIONS.md`.
   - Files touched: `docs/PLANNING_POINTER.md`, `docs/CHANGELOG.md`, `docs/AI_INSTRUCTIONS.md`, `docs/HANDOFF.md`, `docs/TODO.md`.
