@@ -4,8 +4,10 @@ Rules enforced by the API, per feature. Code locations are given so the rule can
 
 ## Roles and access
 
-- Staff roles: `superadmin` > `editor` > `viewer` (`app/api/deps.py`, `require_role`).
-- Admin writes need `editor` or higher. `viewer` can sign in but gets 403 on admin routers guarded by `require_editor`.
+- Staff roles: `superadmin` > `editor` > `viewer` (`app/api/deps.py`, `require_role`). The `roles` table also keeps the legacy slugs `super_admin`, `admin`, and `staff` so an old `users.role` value satisfies `fk_users_role_roles`. Those three do not grant admin access and are not system roles. Migration `0108` inserts them, plus any other value already stored on `users.role`, with `ON CONFLICT DO NOTHING`. Existing role rows and user rows are not updated.
+- Admin writes need `editor` or higher, or a dynamic grant of `read_write` or `full` on that module. A built-in `viewer` with only `read_only` gets 403 on writes.
+- These modules were editor-only on every method, including GET: dashboard, products (including cost price), inquiries, CMS, carts, and the order desk. A built-in `viewer` with only `read_only` still gets 403 there. `read_write` or `full` opens the module. `editor` and above still pass with `read`. `GET /admin/orders/new` stays open to a viewer who can read orders.
+- A viewer may read reports, inventory, coupons, delivery rates, pricing settings, and reviews.
 - Users and audit events need `superadmin`.
 - Shoppers may browse and check out as guests (guest carts use the `X-Cart-Token` header) or sign in with a `customer` role account (`Authorization: Bearer …`) for persistent account carts, order history, notifications, and verified product reviews.
 

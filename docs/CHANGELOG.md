@@ -2,6 +2,18 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Dynamic RBAC role seed and viewer read lock (2026-11-24).**
+  - Postgres tests failed because `create_all` adds `fk_users_role_roles` and never inserts `viewer`. Both copies of a concurrent user insert then hit the foreign key, so the unique-email race looked like two conflicts. Migration `0108` (`down_revision` `0107`) inserts the system roles (`superadmin`, `editor`, `viewer`, `customer`), the legacy slugs (`super_admin`, `admin`, `staff`), and any other distinct `users.role`, with `INSERT ... ON CONFLICT (slug) DO NOTHING`. No row is updated, dropped, or renamed. Downgrade leaves the rows in place. The Postgres fixture seeds the same set after truncate.
+  - Replacing `require_editor` with module `read` let a `read_only` viewer GET the dashboard, admin products, inquiries, CMS, carts, and the order list (200). Those reads are protected again: the built-in viewer needs `write`. `GET /admin/orders/new` stays allowed at `read`. Reports, inventory, coupons, delivery, pricing, and reviews stay readable. Writes stay 403 at `read_only`. Granting the viewer `read_write` or `full` still opens the module.
+  - `tests/integration/test_0093_migration.py` drops and restores `fk_products_supplier_id_suppliers` around the isolated 0093 downgrade. The test was wrong on the current schema: `create_all` includes the migration 0105 product→supplier foreign key, and 0093 drops `suppliers`. A full Alembic downgrade still runs 0105 first. Product and order rows in that test are not rewritten.
+  - Files touched:
+    - `alembic/versions/0108_seed_missing_roles.py`
+    - `app/api/deps.py`, `app/api/v1/endpoints/admin_orders.py`, `app/services/permission_service.py`
+    - `tests/conftest.py`, `tests/integration/conftest.py`, `tests/integration/postgres.py`
+    - `tests/integration/test_0093_migration.py`, `tests/integration/test_0108_migration.py`
+    - `docs/CHANGELOG.md`, `docs/BUSINESS_LOGIC.md`, `docs/API.md`, `docs/TODO.md`
+  - Frontend (`implesia-mart`): no new fields. A viewer token is 403 again on GET `/api/v1/admin/dashboard`, `/api/v1/admin/products`, `/api/v1/admin/inquiries`, `/api/v1/admin/site/*` CMS routes, `/api/v1/admin/carts`, and `/api/v1/admin/orders`. `GET /api/v1/admin/orders/new`, reports, inventory, coupons, delivery, pricing, and reviews are unchanged. The roles matrix can still show `read_only` for the viewer; that grant does not open the protected reads until it is `read_write` or `full`.
+
 - **Daily Handoff & Cross-Device Sync Doc (2026-11-21).**
   - Added `docs/HANDOFF.md` consolidating today's Planning decisions (Customer Platform Phases 6–10, SaaS Admin Phases A–G, Notification Architecture audit, Bengali communication preference), backend & frontend implementation summary, DevOps live audit & production deployment runbook, pending backlog, and Home Laptop resume steps.
   - Files touched: `docs/HANDOFF.md`, `docs/CHANGELOG.md`. Matching handoff added in `implesia-mart`.

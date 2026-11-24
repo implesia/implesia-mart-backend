@@ -9,6 +9,7 @@ Generated from the FastAPI routers (`app/api/v1/router.py` and `app/api/v1/endpo
 - **any signed-in staff**: a valid staff access token (`Authorization: Bearer …`), any role (`viewer`, `editor`, `superadmin`).
 - **admin (editor, superadmin)**: `require_editor`. A `viewer` or `customer` gets 403.
 - **admin (superadmin only)**: `require_superadmin`.
+- **built-in viewer**: `read_only` allows reports, inventory, coupons, delivery rates, pricing settings, reviews, and `GET /admin/orders/new`. It does not allow writes. It also does not allow GET on the dashboard, admin products (including cost price), inquiries, CMS, carts, or the order list. Those stay 403 until that viewer is granted `read_write` or `full` on the module. `editor` and above still read them with `read_only`.
 - A protected route without a token answers 401. A role that is too low answers 403.
 
 ## Errors

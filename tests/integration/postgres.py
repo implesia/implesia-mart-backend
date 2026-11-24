@@ -7,12 +7,13 @@ and dropped when the suite finishes. The catalog itself is never written.
 from urllib.parse import quote_plus
 
 import asyncpg
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 import app.models  # noqa: F401  — register every table before create_all
 from app.core.config import settings
 from app.db.base import Base
+from app.services import permission_service
 
 TEST_DATABASE = "implesia_mart_integration"
 
@@ -58,6 +59,9 @@ async def create_schema(url: str) -> None:
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            await permission_service.ensure_known_roles(session)
     finally:
         await engine.dispose()
 

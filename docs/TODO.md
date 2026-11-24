@@ -4,6 +4,8 @@ Open items found in the code and in recent work. Remove an item when it is done.
 
 ## Done (not live / pending production deployment)
 
+- **Dynamic RBAC test fix (2026-11-24).** Migration `0108` seeds missing `roles` rows without rewriting users. Built-in viewer `read_only` is 403 again on dashboard, admin products, inquiries, CMS, carts, and the order list. `GET /admin/orders/new` stays open.
+
 - **Customer Authentication, Notifications & Product Reviews (2026-11-21).**
   - **Alembic Migration 0102:** Added `customer` role to `UserRole` enum, added `phone` (with index and partial unique constraint), `district`, `area`, `address` to `User` model.
   - **Alembic Migration 0103:** Added `avatar_url` (varchar 500) to `User` model; created `customer_notifications` table (with cascade delete, user index, unread index); created `product_reviews` table (rating 1-5, headline, comment, purchase verification, published index).
