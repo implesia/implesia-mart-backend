@@ -88,6 +88,9 @@ class ActivityAction(StrEnum):
     NOTE_CHANGED = "note_changed"
     CUSTOMER_MESSAGE = "customer_message"
     PAYMENT_UPDATED = "payment_updated"
+    COURIER_BOOKED = "courier_booked"
+    COURIER_WEBHOOK = "courier_webhook"
+    RETURN_REQUESTED = "return_requested"
 
 
 # Reports group by channel. It is not `orders.source` (cart vs direct)
@@ -320,7 +323,8 @@ class OrderActivity(UUIDPrimaryKeyMixin, Base):
         CheckConstraint(
             "action IN ('created', 'status_changed', 'call_status_changed', "
             "'items_edited', 'courier_edited', 'printed', 'note_changed', "
-            "'customer_message', 'payment_updated')",
+            "'customer_message', 'payment_updated', 'courier_booked', "
+            "'courier_webhook', 'return_requested')",
             name="action_known",
         ),
         Index("ix_order_activities_order_id_created_at", "order_id", "created_at"),

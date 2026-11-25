@@ -54,8 +54,9 @@ _TOTAL_KEYS = (
 class SteadfastProvider:
     """Verified against Steadfast's merchant API.
 
-    `GET {STEADFAST_BASE_URL}/fraud_check/{phone}` with `Api-Key` and `Secret-Key`.
-    The documented body is total_parcels, total_delivered, total_cancelled.
+    Calls official `GET {STEADFAST_BASE_URL}/fraud_check/score/{phone}` with `Api-Key`
+    and `Secret-Key` (parsing delivery counts + merchant fraud reports), falling back
+    gracefully to `/fraud_check/{phone}` if `/score/` returns 404/405. Never retries 401.
     """
 
     name = "steadfast"
@@ -72,36 +73,48 @@ class SteadfastProvider:
         base = https_url(settings.steadfast_base_url)
         if base is None:
             return failed(self.name, "Steadfast base URL is not https")
-        url = f"{base}/fraud_check/{phone}"
+        headers = {
+            "Api-Key": secret_text(settings.steadfast_api_key),
+            "Secret-Key": secret_text(settings.steadfast_secret_key),
+            "Accept": "application/json",
+        }
+
+        score_url = f"{base}/fraud_check/score/{phone}"
         try:
-            response = await client.get(
-                url,
-                headers={
-                    "Api-Key": secret_text(settings.steadfast_api_key),
-                    "Secret-Key": secret_text(settings.steadfast_secret_key),
-                    "Accept": "application/json",
-                },
-            )
+            response = await client.get(score_url, headers=headers)
         except httpx.TimeoutException:
             return failed(self.name, "Timed out")
         except httpx.HTTPError:
             return failed(self.name, "Network error")
+
+        # Never retry HTTP 401 — protects against Steadfast's 60-minute IP lockout.
+        if response.status_code == 401:
+            return failed(self.name, "Steadfast returned HTTP 401")
+
+        # Graceful fallback to legacy /fraud_check/{phone} on 404/405.
+        if response.status_code in {404, 405}:
+            legacy_url = f"{base}/fraud_check/{phone}"
+            try:
+                response = await client.get(legacy_url, headers=headers)
+            except httpx.TimeoutException:
+                return failed(self.name, "Timed out")
+            except httpx.HTTPError:
+                return failed(self.name, "Network error")
+
         if response.status_code < 200 or response.status_code >= 300:
             return failed(self.name, f"Steadfast returned HTTP {response.status_code}")
-        block = _steadfast_block(response)
-        if block is None:
+
+        parsed = _parse_steadfast_score_response(response)
+        if parsed is None:
             return failed(self.name, "Unexpected response")
-        total = as_count(block.get("total_parcels"))
-        delivered = as_count(block.get("total_delivered"))
-        cancelled = as_count(block.get("total_cancelled"))
-        if total is None or delivered is None or cancelled is None:
-            return failed(self.name, "Unexpected response")
+        total, delivered, cancelled, reports = parsed
         return counted(
             self.name,
             status="ok",
             total=total,
             delivered=delivered,
             failed_count=cancelled,
+            merchant_reports=reports,
         )
 
 
@@ -303,13 +316,35 @@ def _json(response: httpx.Response) -> dict[str, Any] | None:
         return None
 
 
-def _steadfast_block(response: httpx.Response) -> dict[str, Any] | None:
+def _parse_steadfast_score_response(
+    response: httpx.Response,
+) -> tuple[int, int, int, tuple[dict[str, Any], ...]] | None:
     body = _json(response)
     if body is None:
         return None
-    if "total_parcels" in body or "total_delivered" in body:
-        return body
-    return as_dict(body.get("data"))
+    data = as_dict(body.get("data"))
+    block = data if data is not None and any(
+        k in data for k in ("total_parcels", "total_delivered", "delivered")
+    ) else body
+
+    delivered = first_count(block, _DELIVERED_KEYS)
+    cancelled = first_count(block, _FAILED_KEYS)
+    total = first_count(block, _TOTAL_KEYS)
+    if delivered is None or cancelled is None:
+        return None
+    if total is None:
+        total = delivered + cancelled
+
+    reports_list: list[dict[str, Any]] = []
+    for source in (body, data or {}):
+        for key in ("merchant_reports", "fraud_reports", "reports", "frauds"):
+            raw = source.get(key)
+            if isinstance(raw, list):
+                reports_list = [item for item in raw if isinstance(item, dict)]
+                break
+        if reports_list:
+            break
+    return total, delivered, cancelled, tuple(reports_list)
 
 
 def _pathao_token(response: httpx.Response) -> str:

@@ -1000,7 +1000,13 @@ def _mask_phone(phone: str) -> str:
     return f"{phone[:3]}••••{phone[-3:]}"
 
 
-def _public(order: Order, timeline: list[PublicTimelineEvent]) -> PublicOrderRead:
+def _public(
+    order: Order,
+    timeline: list[PublicTimelineEvent],
+    *,
+    tracking_url: str | None = None,
+    live_events: list[dict[str, Any]] | None = None,
+) -> PublicOrderRead:
     return PublicOrderRead(
         number=order.number,
         status=order.status,
@@ -1014,6 +1020,8 @@ def _public(order: Order, timeline: list[PublicTimelineEvent]) -> PublicOrderRea
         coupon_discount=order.coupon_discount,
         courier_name=order.courier_name,
         tracking_number=order.tracking_number,
+        tracking_url=tracking_url,
+        live_events=live_events or [],
         **_payment(order),
         items=[
             PublicOrderItemRead(
@@ -1077,7 +1085,11 @@ async def _timeline(db: AsyncSession, order: Order) -> list[PublicTimelineEvent]
 
 
 async def _public_order(db: AsyncSession, order: Order) -> PublicOrderRead:
-    return _public(order, await _timeline(db, order))
+    from app.services.courier import tracking_presenter
+
+    timeline = await _timeline(db, order)
+    live_events, tracking_url = await tracking_presenter.get_customer_live_tracking(db, order)
+    return _public(order, timeline, tracking_url=tracking_url, live_events=live_events)
 
 
 def _same_secret(stored: str, given: str) -> bool:

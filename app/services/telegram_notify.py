@@ -147,6 +147,60 @@ def build_low_stock_message(title: str, quantity: int) -> str:
     )
 
 
+def build_courier_alert_message(
+    *,
+    order_id: uuid.UUID | None,
+    order_number: str,
+    status: str,
+    consignment_id: str | None = None,
+    tracking_message: str = "",
+) -> str:
+    lines = [
+        f"<b>Steadfast alert: {escape_html(status)}</b>",
+        f"Order: #{escape_html(order_number)}",
+    ]
+    if consignment_id:
+        lines.append(f"Consignment: {escape_html(consignment_id)}")
+    if tracking_message:
+        lines.append(f"Message: {escape_html(tracking_message[:300])}")
+    if order_id is not None:
+        url = admin_order_url(order_id)
+        if url is not None:
+            lines.append(f'<a href="{_escape_attr(url)}">Open order</a>')
+    return "\n".join(lines)
+
+
+def schedule_courier_alert(
+    background: BackgroundTasks | None,
+    *,
+    order_id: uuid.UUID | None,
+    order_number: str,
+    status: str,
+    consignment_id: str | None = None,
+    tracking_message: str = "",
+) -> None:
+    """Queue a non-blocking Telegram alert for hold/exceptional/partial courier events."""
+    if not enabled():
+        return
+    text = build_courier_alert_message(
+        order_id=order_id,
+        order_number=order_number,
+        status=status,
+        consignment_id=consignment_id,
+        tracking_message=tracking_message,
+    )
+    if background is not None:
+        background.add_task(send_message, order_number, text)
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    task = loop.create_task(send_message(order_number, text))
+    _fallback_tasks.add(task)
+    task.add_done_callback(_fallback_tasks.discard)
+
+
 @dataclass(frozen=True)
 class LowStockAlert:
     product_id: uuid.UUID

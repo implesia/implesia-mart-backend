@@ -59,6 +59,7 @@ class AsyncRedisClient:
         self._mem_rate: dict[str, deque[float]] = {}
         self._mem_chat_rate: dict[str, deque[float]] = {}
         self._mem_notify_throttle: dict[str, float] = {}
+        self._mem_kv: dict[str, tuple[float, str]] = {}
 
     @property
     def is_redis_available(self) -> bool:
@@ -130,6 +131,7 @@ class AsyncRedisClient:
         self._mem_rate.clear()
         self._mem_chat_rate.clear()
         self._mem_notify_throttle.clear()
+        self._mem_kv.clear()
 
     def _prune_mem_tickets(self, now: float) -> None:
         expired = [k for k, (exp, _) in self._mem_tickets.items() if exp <= now]
@@ -325,6 +327,92 @@ class AsyncRedisClient:
             return False
         self._mem_notify_throttle[key] = now + ttl_seconds
         return True
+
+    async def get_str(self, key: str) -> str | None:
+        if self._connected and self._client is not None:
+            try:
+                val = await self._client.get(key)
+                return str(val) if val is not None else None
+            except (RedisError, OSError) as exc:
+                self._warn_once(f"kv_get_failed: {exc}")
+
+        entry = self._mem_kv.get(key)
+        if entry is None:
+            return None
+        exp, val = entry
+        if exp <= time.monotonic():
+            self._mem_kv.pop(key, None)
+            return None
+        return val
+
+    async def set_str(self, key: str, value: str, *, ttl_seconds: int) -> None:
+        if self._connected and self._client is not None:
+            try:
+                await self._client.set(key, value, ex=ttl_seconds)
+                return
+            except (RedisError, OSError) as exc:
+                self._warn_once(f"kv_set_failed: {exc}")
+
+        self._mem_kv[key] = (time.monotonic() + ttl_seconds, value)
+
+    async def delete_key(self, key: str) -> None:
+        if self._connected and self._client is not None:
+            try:
+                await self._client.delete(key)
+            except (RedisError, OSError) as exc:
+                self._warn_once(f"kv_delete_failed: {exc}")
+        self._mem_kv.pop(key, None)
+
+    async def get_json(self, key: str) -> Any | None:
+        raw = await self.get_str(key)
+        if raw is None:
+            return None
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+
+    async def set_json(self, key: str, value: Any, *, ttl_seconds: int) -> None:
+        serialized = json.dumps(value, separators=(",", ":"), default=str)
+        await self.set_str(key, serialized, ttl_seconds=ttl_seconds)
+
+    async def incr_with_ttl(self, key: str, *, ttl_seconds: int) -> int:
+        if self._connected and self._client is not None:
+            try:
+                async with self._client.pipeline(transaction=True) as pipe:
+                    pipe.incr(key)
+                    pipe.expire(key, ttl_seconds)
+                    results = await pipe.execute()
+                return int(results[0])
+            except (RedisError, OSError) as exc:
+                self._warn_once(f"kv_incr_failed: {exc}")
+
+        now = time.monotonic()
+        entry = self._mem_kv.get(key)
+        current = 0
+        if entry is not None and entry[0] > now:
+            with contextlib.suppress(ValueError):
+                current = int(entry[1])
+        next_val = current + 1
+        self._mem_kv[key] = (now + ttl_seconds, str(next_val))
+        return next_val
+
+    async def ttl_remaining(self, key: str) -> int:
+        if self._connected and self._client is not None:
+            try:
+                remaining = int(await self._client.ttl(key))
+                return max(remaining, 0)
+            except (RedisError, OSError) as exc:
+                self._warn_once(f"kv_ttl_failed: {exc}")
+
+        entry = self._mem_kv.get(key)
+        if entry is None:
+            return 0
+        rem = int(entry[0] - time.monotonic())
+        if rem <= 0:
+            self._mem_kv.pop(key, None)
+            return 0
+        return rem
 
     async def publish(self, channel: str, message: str) -> bool:
         """Publish to Redis Pub/Sub. Returns True if Redis accepted the publish."""

@@ -519,12 +519,19 @@ async def test_steadfast_success_error_and_timeout(monkeypatch: pytest.MonkeyPat
     provider = SteadfastProvider()
 
     def success(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/api/v1/fraud_check/01712345678"
+        assert request.url.path == "/api/v1/fraud_check/score/01712345678"
         assert request.headers["api-key"] == "test-steadfast-key"
         assert request.headers["secret-key"] == "test-steadfast-secret"
         return httpx.Response(
             200,
-            json={"data": {"total_parcels": 24, "total_delivered": 9, "total_cancelled": 15}},
+            json={
+                "data": {
+                    "total_parcels": 24,
+                    "total_delivered": 9,
+                    "total_cancelled": 15,
+                    "merchant_reports": [{"reason": "Fake address", "date": "2026-11-01"}],
+                }
+            },
         )
 
     async with _http(success) as http:
@@ -534,11 +541,43 @@ async def test_steadfast_success_error_and_timeout(monkeypatch: pytest.MonkeyPat
     assert result.delivered == 9
     assert result.returned_or_cancelled == 15
     assert result.success_rate == 0.375
+    assert len(result.merchant_reports) == 1
+    assert result.merchant_reports[0]["reason"] == "Fake address"
 
-    async with _http(lambda _request: httpx.Response(401, json={"error": "no"})) as http:
+    # Graceful 404 fallback to legacy /fraud_check/{phone}
+    seen_paths: list[str] = []
+
+    def fallback(request: httpx.Request) -> httpx.Response:
+        seen_paths.append(request.url.path)
+        if request.url.path.endswith("/fraud_check/score/01712345678"):
+            return httpx.Response(404, json={"message": "Not found"})
+        return httpx.Response(
+            200,
+            json={"total_parcels": 10, "total_delivered": 8, "total_cancelled": 2},
+        )
+
+    async with _http(fallback) as http:
+        fb_result = await provider.check(ADAPTER_PHONE, http)
+    assert fb_result.status == "ok"
+    assert fb_result.delivered == 8
+    assert seen_paths == [
+        "/api/v1/fraud_check/score/01712345678",
+        "/api/v1/fraud_check/01712345678",
+    ]
+
+    # Never retries HTTP 401 (no fallback call)
+    auth_calls = 0
+
+    def unauthorized(_request: httpx.Request) -> httpx.Response:
+        nonlocal auth_calls
+        auth_calls += 1
+        return httpx.Response(401, json={"error": "no"})
+
+    async with _http(unauthorized) as http:
         denied = await provider.check(ADAPTER_PHONE, http)
     assert denied.status == "error"
     assert denied.error_message == "Steadfast returned HTTP 401"
+    assert auth_calls == 1
 
     async with _http(_timeout) as http:
         timed = await provider.check(ADAPTER_PHONE, http)

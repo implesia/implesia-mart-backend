@@ -1,4 +1,4 @@
-# Daily Handoff & Cross-Device Sync — 2026-11-22
+# Daily Handoff & Cross-Device Sync — 2026-11-25
 
 > **Purpose:** Single source of truth for resuming work seamlessly between **Home Laptop** and **Office PC** via Git without copying local AI chat databases.
 > **Language Preference (Tushar):** Communicate with Tushar in **Bengali (বাংলা)** in chat sessions. Storefront & Customer Dashboard UI text is in **English**.
@@ -8,57 +8,40 @@
 
 ---
 
-## 1. Completed Backend Work — 2026-11-22 (Phases 11–19, Local Verified, Pending Production Deploy)
+## 1. Completed Backend Work — 2026-11-25 (Phases 23–24, Local Verified, Pending Production Deploy)
 
-### Phases 18 & 19 — Real-Time WebSocket + Redis Pub/Sub & Direct Communication Engine (Migration `0110`)
-- **Database Pool Hardening (`app/core/config.py`, `app/db/session.py`, `docker-compose.prod.yml`):**
-  - Configurable `DB_POOL_SIZE=10`, `DB_MAX_OVERFLOW=10`, `DB_POOL_TIMEOUT=15`, `DB_POOL_RECYCLE=1800` + `pool_pre_ping=True`.
-  - Upgraded `docker-compose.prod.yml` with internal **Redis 7** (`redis:7-alpine`, AOF + `256mb` `allkeys-lru`), `REDIS_URL=redis://redis:6379/0`, and `WEB_CONCURRENCY=3` → `3 × (10 + 10) = 60` max DB connections (< PostgreSQL default `max_connections = 100`).
-- **Real-Time WebSocket & Redis Pub/Sub Foundation (`app/services/redis_client.py`, `realtime_hub.py`, `ws_manager.py`, `app/api/v1/endpoints/ws.py`):**
-  - Single worker Pub/Sub subscriber loop on `rt:*` (`rt:user:{id}`, `rt:staff:orders`, `rt:staff:communication`, `rt:conv:{id}`) with transparent in-process fallback when Redis is unreachable or `memory://`.
-  - Single-use 30s WS auth tickets (`POST /api/v1/auth/ws-ticket`, `POST /api/v1/customer/ws-ticket`, consumed via atomic `GETDEL`), 60s TTL Redis presence (`presence:user:{id}`), sliding-window WS rate limit (`20 events / 10s`), max 5 concurrent sockets/user (`4008`), 4 KB frame cap (`1009`), 60s idle timeout (`4000`), **ZERO PostgreSQL session held in the WS loop**.
-  - Live event pushes wired into `order_service.py` (`order.new`) and `notification_service.py` (`notification.created`, `notification.unread`).
-- **Seller-Ready Direct Communication Engine (Migration `0110_communication_system.py`, `app/models/communication.py`, `app/services/communication_service.py`, `customer_communication.py`, `admin_communication.py`):**
-  - The 2026-11-22 handoff planned these tables as **Next Migration `0108`**. That number is now the role seed (`0108_seed_missing_roles.py`). `0109` is `courier_check_results`. The communication schema is migration `0110` (`revision = "0110"`, `down_revision = "0109"`), the single Alembic head.
-  - Additive migration creating `conversations` (`customer_support`, `seller_support`, `customer_seller`; composite DESC scale indexes), `messages` (composite keyset index `(conversation_id, created_at DESC, id DESC)`), and `conversation_read_states`, plus seeding `communication` RBAC defaults (`editor=read_write`, `viewer=read_only`). Constraint names use `op.f()`.
-  - Dynamic RBAC module `communication` registered in `permission_service.py` (`superadmin=full`, grantable to custom roles).
-  - Strict customer isolation, internal staff note privacy (REST + `last_message_preview` + WS scope filtering), O(1) cursor pagination, single-query aggregated unread counts (zero N+1), `20 msgs / 10s` Redis send rate limit, `/media/chat/` image uploads, and 5-minute throttled offline `CustomerNotification`.
-  - Chain: `0107` → `0108` role seed → `0109` courier cache → `0110` communication. Covered by `tests/test_0110_migration.py`, `tests/test_communication.py`, and `tests/test_realtime_ws.py`.
+### Phase 23 — Hardened Steadfast Merchant API Client & Courier Operations (Migration `0112`)
+- **Additive Migration `0112_steadfast_courier_integration.py` (Single Alembic head `0112`, `down_revision = "0111"`):**
+  - Created `courier_shipments` (partial unique index on non-null `consignment_id`, `cod_amount >= 0`, `tracking_events` & `raw_payload` JSONB/JSON), `courier_webhook_events` (`event_key` unique), and `courier_locations` (unique `(provider, district, police_station)`), and widened `order_activities.action` CHECK (`courier_booked`, `courier_webhook`, `return_requested`).
+- **Hardened `SteadfastClient` (`app/services/courier/steadfast_client.py`):**
+  - Input sanitizer (`{};<>$` → spaces) & exact Steadfast length caps, Redis-backed 3-strike 10-minute `401` circuit breaker (never retries 401), 60s Redis caches, per-item HTTP 200 payload inspection for bulk booking, and upgraded `SteadfastProvider` (`/fraud_check/score/{phone}` with 404 fallback).
+- **Courier Operations & Public Locations (`admin_courier.py`, `steadfast_service.py`, `delivery.py`):**
+  - Mounted `/api/v1/admin/courier/steadfast/*` (`ping`, `orders/{id}/book`, `orders/bulk-book`, `orders/{id}/refresh-status`, `orders/{id}/tracking`, `pickup-request`, `return-requests`, `overview`, `sync-locations`) + public cached `GET /api/v1/delivery/locations`.
 
-### Phases 11–17 — Security, Dynamic RBAC (`0106`, `0107`), Reviews & Notifications
-- Blocked non-staff login on `/api/v1/auth/login` & `/refresh`; 30s refresh rotation grace window in `refresh_token_service.py`.
-- Dynamic role permissions (`0106_dynamic_role_permissions.py`) + dynamic custom roles CRUD & safe delete (`0107_dynamic_roles.py`).
-- Admin reviews (`admin_reviews.py`), admin notifications (`admin_notifications.py`), single customer notification detail + read/unread toggle, and purchase picker thumbnails.
+### Phase 24 — Webhook Automation, Superadmin COD Reconciliation & Customer Live Tracking
+- **Webhook Receiver (`app/api/v1/endpoints/webhooks.py`, `steadfast_webhook_service.py`):**
+  - `POST /api/v1/webhooks/steadfast` with constant-time `STEADFAST_WEBHOOK_SECRET` auth (fails closed when unset) and deterministic `courier_webhook_events` idempotency.
+  - Strict accounting rules: never finalizes on `*_approval_pending`; auto-transitions confirmed `delivered` orders (setting `delivered_at` + customer notification + WS + Web Push); flags `partial_delivered` without overwriting totals; sets `is_return_received=True` ONLY on `cancelled_return_received` or `partial_delivered_return_received`; alerts + optional Telegram on `hold`/`exceptional`.
+- **Superadmin-Only Finance & COD Reconciliation (`steadfast_finance_service.py`, `admin_courier.py`):**
+  - Strictly `RequireSuperadmin` (`403` for editors/viewers): `GET /balance`, `GET /payments` (paginated), `GET /payments/{id}` (zero-N+1 parcel cross-match), `POST /payments/{id}/reconcile` (atomic, idempotent COD settlement + `COURIER_COD_RECONCILED` audit event).
+- **Live Customer & Public Tracking (`tracking_presenter.py`, `customer_purchased_service.py`, `order_service.py`):**
+  - Enriched `GET /api/v1/customer/orders/{number}/tracking` and `POST /api/v1/orders/lookup` with `tracking_url` and sanitized `live_events` (60s cached on demand; never leaks `*_approval_pending`, `fraud_score`, `merchant_reports`, or internal notes).
 
-*(Companion Frontend `implesia-mart`: Phases 11–17 + Phases 20–21 complete and verified with 399 passing tests, 0 lint/type errors, and clean Next.js production build.)*
+### Already Live in Production (Migrations `0093`–`0111`)
+- Inventory (`0093`), Reports (`0094`), Coupons (`0096`), Orders Desk (`0097`–`0098`), SEO (`0099`), Customer Auth/Reviews/Notifications (`0102`–`0104`), SaaS Accounting & Safe Delete (`0105`), Dynamic RBAC (`0106`–`0108`), Customer Phone Report (`0109`), Real-Time WS + Redis Pub/Sub & Communication Engine (`0110`), and Web Push (`0111`).
 
 ---
 
-## 2. Production Deployment & WebSocket Proxy Checklist (VPS `72.60.199.155`)
-
-- **Alembic Head:** `0110` on this branch (single head: `0107` → `0108` role seed → `0109` courier cache → `0110` communication). Not merged to `testing` or `main`. Do not run it against production from a laptop.
-- **Caddy v2 (`/etc/caddy/Caddyfile`):**
-  - Caddy v2 supports WebSocket upgrades natively on `reverse_proxy 127.0.0.1:8000` (HTTP/1.1 upstream, no idle read timeout).
-  - Ensure `mart-api.implesia.com` forwards `CF-Connecting-IP` / `X-Forwarded-For` and `.env.production` includes `TRUSTED_PROXIES=127.0.0.1,172.16.0.0/12`.
-- **Cloudflare Proxy:**
-  - Verify **Network → WebSockets = ON** for `implesia.com` (25s client ping keeps sockets well below Cloudflare's ~100s idle timeout).
-  - Verify `CORS_ORIGINS` includes `https://mart.implesia.com` and frontend `NEXT_PUBLIC_MART_API_URL=https://mart-api.implesia.com`.
-- **Rollout Sequence (run only with explicit approval):**
-  1. `pg_dump` full compressed backup on VPS `72.60.199.155`.
-  2. After this branch is merged, `alembic upgrade head` applies through `0110`. Do not run that against production until a backup and an explicit approval. Then `docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build`.
-  3. Deploy frontend: `npm run deploy:vinext`.
-  4. Live smoke test: WS handshake, instant admin/customer notifications, live Customer↔Admin chat + internal note privacy, dynamic RBAC roles, reports, and invoice QR.
+## 2. Steadfast Production Rollout Checklist (VPS `72.60.199.155` — Pending Explicit Approval)
+1. **VPS `.env.production`:** Set `STEADFAST_API_KEY`, `STEADFAST_SECRET_KEY`, `STEADFAST_WEBHOOK_SECRET`, and `COURIER_CHECK_ENABLED=true` (plus optional `STEADFAST_PICKUP_ADDRESS` / `STEADFAST_PICKUP_PHONE`).
+2. **Steadfast Merchant Portal:** Register `https://mart-api.implesia.com/api/v1/webhooks/steadfast` with the matching Bearer secret.
+3. **Backup & Migrate:** Take full `pg_dump` backup → pull `main` → run `alembic upgrade head` (applies **`0112`**, single head).
+4. **Rebuild Backend:** `docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build`.
+5. **Deploy Frontend:** `npm run deploy:vinext` (Cloudflare Workers).
+6. **Live Smoke Test:** Run **"Sync Delivery Thanas"** on `/admin/orders/courier` → test `GET /api/v1/admin/courier/steadfast/ping` → book 1 real test parcel → verify webhook delivery, customer tracking, and superadmin balance/payouts.
 
 ---
 
-## 3. Home Laptop Resume Commands (Branch `feat/phases-18-21-realtime-communication`)
-```bash
-git -C implesia-mart-backend fetch origin
-git -C implesia-mart-backend checkout -B feat/phases-18-21-realtime-communication origin/feat/phases-18-21-realtime-communication
-cd implesia-mart-backend && alembic upgrade head
-```
-See full daily details in `docs/WORK_REPORT_2026-11-22.md`.
-
-## 4. Next Milestone Backlog
-- **SaaS Dropshipping / Seller Portal (Milestone 2/3):** Seller registration & KYC application → Admin approval → Seller Portal (catalog sync, order fulfillment, commissions, payouts, and activating `seller_support` / `customer_seller` threads already supported by Migration `0110`).
-- **SSL Wireless SMS Credentials:** Supply `SMS_SSLWIRELESS_API_TOKEN` and `SMS_SSLWIRELESS_SID` in `.env.production` when ready.
+## 3. Next Milestone Backlog
+- **SaaS Dropshipping / Seller Portal (Milestone 2/3):** Seller registration & KYC → Admin approval → Seller Portal (catalog sync, orders, commissions, payouts, seller live chat).
+- **SSL Wireless SMS Credentials:** Add provider adapter + production credentials when ready.
