@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     admin_cart,
     admin_communication,
     admin_coupons,
+    admin_courier,
     admin_customers,
     admin_delivery,
     admin_inventory,
@@ -36,6 +37,7 @@ from app.api.v1.endpoints import (
     site_payment,
     site_settings,
     users,
+    webhooks,
     ws,
 )
 from app.api.v1.endpoints.about import cta as about_cta
@@ -174,6 +176,10 @@ api_router.include_router(
 api_router.include_router(
     admin_coupons.router, prefix="/admin/coupons", tags=["admin:coupons"], dependencies=_AUDITED
 )
+api_router.include_router(
+    admin_courier.router, prefix="/admin/courier", tags=["admin:courier"], dependencies=_AUDITED
+)
+api_router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
 api_router.include_router(
     admin_inventory.router,
     prefix="/admin/inventory",

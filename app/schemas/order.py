@@ -329,6 +329,8 @@ class PublicOrderRead(BaseModel):
     coupon_discount: int | None = None
     courier_name: str
     tracking_number: str
+    tracking_url: str | None = None
+    live_events: list[dict[str, Any]] = Field(default_factory=list)
     payment_method: AnyPaymentMethod
     advance_percent: int | None = None
     advance_amount: int = 0
@@ -743,6 +745,8 @@ class PrintOrder(BaseModel):
     notes: str
     courier_name: str
     tracking_number: str
+    tracking_url: str | None = None
+    live_events: list[dict[str, Any]] = Field(default_factory=list)
     payment_method: AnyPaymentMethod
     payment_status: Literal["unpaid", "partial", "paid"]
     subtotal: int

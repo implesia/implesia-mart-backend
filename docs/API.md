@@ -1099,6 +1099,7 @@ Customer account auth, profile, orders, tracking, purchased history, and in-app 
 | Method | Path | Access | Request body | Response |
 | --- | --- | --- | --- | --- |
 | GET | `/api/v1/delivery` | public | — | `DeliveryRatesRead` |
+| GET | `/api/v1/delivery/locations` | public (`Cache-Control: public, max-age=300`) | — | `DeliveryLocationsResponse` (`provider`, `districts: [{name, areas}]`, `total_areas`) |
 
 ## `home/banner`
 
@@ -1473,3 +1474,31 @@ Protected by dynamic RBAC module `communication` (`read` for GET & `/read`; `wri
 | POST | `/api/v1/admin/communication/conversations/{conversation_id}/attachment` | staff (`communication:write`) | multipart `file` (image) | `201 AttachmentUploadResponse` |
 | PATCH | `/api/v1/admin/communication/conversations/{conversation_id}` | staff (`communication:write`) | `AdminConversationUpdateRequest` (`status`, `assigned_staff_id` — explicit `null` unassigns) | `ConversationRead` |
 | POST | `/api/v1/admin/communication/conversations/{conversation_id}/read` | staff (`communication:read`) | — | `MarkReadResponse` |
+
+## `admin/courier` (Steadfast Courier Operations — Phase 23)
+
+Protected by dynamic RBAC module `orders` (`read` for GET routes; `write` for POST routes). All routes set `Cache-Control: no-store` and writes are audit-logged. Uses a Redis-backed 3-strike 10-minute `401` circuit breaker (returns `503 steadfast_circuit_open` when tripped).
+
+| Method | Path | Access | Request body / Query | Response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/v1/admin/courier/steadfast/ping` | staff (`orders:read`) | — | `SteadfastPingResponse` (`configured`, `ok`, `balance`, `circuit_open`, `circuit_retry_after_seconds`) |
+| POST | `/api/v1/admin/courier/steadfast/orders/{order_id}/book` | staff (`orders:write`) | optional `BookOrderRequest` | `CourierShipmentRead` (`409` if already booked or cancelled/returned) |
+| POST | `/api/v1/admin/courier/steadfast/orders/bulk-book` | staff (`orders:write`) | `BulkBookOrdersRequest` (`order_ids`, `note`) | `BulkBookOrdersResponse` (per-item `booked`/`skipped`/`error` with HTTP 200 field error inspection) |
+| POST | `/api/v1/admin/courier/steadfast/orders/{order_id}/refresh-status` | staff (`orders:write`) | — | `RefreshStatusResponse` (60s Redis cooldown; auto-syncs final delivered/returned statuses) |
+| GET | `/api/v1/admin/courier/steadfast/orders/{order_id}/tracking` | staff (`orders:read`) | — | `OrderTrackingResponse` (60s Redis cache) |
+| POST | `/api/v1/admin/courier/steadfast/pickup-request` | staff (`orders:write`) | optional `PickupRequestCreate` | `PickupRequestResponse` |
+| POST | `/api/v1/admin/courier/steadfast/return-requests` | staff (`orders:write`) | `ReturnRequestCreate` | `ReturnRequestResponse` |
+| GET | `/api/v1/admin/courier/steadfast/return-requests` | staff (`orders:read`) | — | `list[dict]` |
+| GET | `/api/v1/admin/courier/steadfast/return-requests/{request_id}` | staff (`orders:read`) | — | `dict` |
+| GET | `/api/v1/admin/courier/steadfast/overview` | staff (`orders:read`) | optional `start_date`, `end_date` | `SteadfastOverviewResponse` (`balance`, `parcel_states`, `stats`, `cached`) |
+| POST | `/api/v1/admin/courier/steadfast/sync-locations` | staff (`orders:write`) | — | `SyncLocationsResponse` |
+| GET | `/api/v1/admin/courier/steadfast/balance` | admin (superadmin only) | — | `SteadfastBalanceResponse` (`current_balance`, `raw`) |
+| GET | `/api/v1/admin/courier/steadfast/payments` | admin (superadmin only) | `page`, `page_size` (1–100) | `SteadfastPaymentsListResponse` |
+| GET | `/api/v1/admin/courier/steadfast/payments/{payment_id}` | admin (superadmin only) | — | `SteadfastPaymentDetailResponse` (`payment`, `matched_orders`, `unmatched_parcels`, `already_reconciled_count`, `pending_reconcile_count`) |
+| POST | `/api/v1/admin/courier/steadfast/payments/{payment_id}/reconcile` | admin (superadmin only) | — | `SteadfastReconcileResponse` (atomic, idempotent COD settlement) |
+
+## `webhooks` (Inbound Courier Webhooks — Phase 24)
+
+| Method | Path | Access | Request body | Response |
+| --- | --- | --- | --- | --- |
+| POST | `/api/v1/webhooks/steadfast` | `STEADFAST_WEBHOOK_SECRET` (Bearer or `X-Steadfast-Webhook-Secret`; fails closed if unset) | Steadfast webhook JSON | `SteadfastWebhookResponse` (`ok`, `status: processed/duplicate/ignored`, `event_key`, `order_number`, `order_status`, `delivery_status`, `return_status`, `is_return_received`) |

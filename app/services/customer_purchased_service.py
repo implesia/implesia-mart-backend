@@ -16,6 +16,7 @@ from app.schemas.customer import (
     TrackingTimelineStep,
 )
 from app.services import notification_service, order_service
+from app.services.courier import tracking_presenter
 
 PURCHASED_STATUSES = {
     OrderStatus.CONFIRMED.value,
@@ -293,12 +294,14 @@ async def get_order_tracking(
                 )
             )
 
+    live_events, tracking_url = await tracking_presenter.get_customer_live_tracking(db, order)
+
     return OrderTrackingDetail(
         order_number=order.number,
         status=order.status,
         courier_name=order.courier_name or "",
         tracking_number=order.tracking_number or "",
-        tracking_url=None,
-        live_events=[],
+        tracking_url=tracking_url,
+        live_events=live_events,
         timeline=timeline,
     )

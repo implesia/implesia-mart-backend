@@ -29,9 +29,10 @@ class ProviderResult:
     returned_or_cancelled: int | None = None
     success_rate: float | None = None
     error_message: str | None = None
+    merchant_reports: tuple[dict[str, Any], ...] = ()
 
     def as_payload(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "status": self.status,
             "total_parcels": self.total_parcels,
             "delivered": self.delivered,
@@ -39,6 +40,9 @@ class ProviderResult:
             "success_rate": self.success_rate,
             "error_message": self.error_message,
         }
+        if self.merchant_reports:
+            payload["merchant_reports"] = list(self.merchant_reports)
+        return payload
 
 
 class CourierHistoryProvider(Protocol):
@@ -77,6 +81,7 @@ def counted(
     total: int | None,
     delivered: int | None,
     failed_count: int | None,
+    merchant_reports: tuple[dict[str, Any], ...] = (),
 ) -> ProviderResult:
     rate = None
     if delivered is not None and failed_count is not None:
@@ -88,6 +93,7 @@ def counted(
         delivered=delivered,
         returned_or_cancelled=failed_count,
         success_rate=rate,
+        merchant_reports=merchant_reports,
     )
 
 

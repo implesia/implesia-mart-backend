@@ -41,6 +41,7 @@ from app.models.contact.form import ContactForm
 from app.models.contact.hero import ContactHero
 from app.models.contact.support import ContactSupport, ContactSupportHour, ContactSupportLink
 from app.models.coupon import Coupon, CouponCategory, CouponProduct, CouponRedemption
+from app.models.courier import CourierLocation, CourierShipment, CourierWebhookEvent
 from app.models.courier_check import CourierCheckResult
 from app.models.delivery import DeliverySettings
 from app.models.faqs.callout import FaqCallout
@@ -167,6 +168,9 @@ __all__ = [
     "CouponCategory",
     "CouponProduct",
     "CouponRedemption",
+    "CourierLocation",
+    "CourierShipment",
+    "CourierWebhookEvent",
     "ContactFaq",
     "ContactFaqItem",
     "ContactForm",

@@ -164,6 +164,9 @@ class Settings(BaseSettings):
     steadfast_api_key: SecretStr = SecretStr("")
     steadfast_secret_key: SecretStr = SecretStr("")
     steadfast_base_url: str = "https://portal.packzy.com/api/v1"
+    steadfast_webhook_secret: SecretStr = SecretStr("")
+    steadfast_pickup_address: str = ""
+    steadfast_pickup_phone: str = ""
     pathao_username: str = ""
     pathao_password: SecretStr = SecretStr("")
     pathao_base_url: str = "https://merchant.pathao.com"
