@@ -20,11 +20,11 @@ Open items found in the code and in recent work. Remove an item when it is done.
 
 ## Open / Pending Next Steps
 
-- **Deploy Steadfast Integration (`0112`) to Production (VPS `72.60.199.155`):**
-  1. Set `STEADFAST_API_KEY`, `STEADFAST_SECRET_KEY`, `STEADFAST_WEBHOOK_SECRET`, and `COURIER_CHECK_ENABLED=true` in `.env.production` (plus optional `STEADFAST_PICKUP_ADDRESS`, `STEADFAST_PICKUP_PHONE`).
-  2. Register `https://mart-api.implesia.com/api/v1/webhooks/steadfast` in Steadfast Merchant Portal with the matching Bearer secret.
-  3. Take `pg_dump` backup → pull `main` → `alembic upgrade head` (`0112`, single head) → `docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build`.
-  4. Deploy frontend (`npm run deploy:vinext`) → run **"Sync Delivery Thanas"** + test `GET /api/v1/admin/courier/steadfast/ping` + book 1 real test parcel.
+- **Finish Steadfast Production Rollout (`0112`) on Slasha VPS (`implesia-mart-api`):**
+  1. *(Done)* Steadfast API key `implesia-mart-prod` + Webhook `https://mart-api.implesia.com/api/v1/webhooks/steadfast` configured; pre-migration DB snapshot `db-20261125110141.dmp` (`562.4 KB`) succeeded; Phases 23–26 merged to `main`.
+  2. Restore clean 33-line formatting (28 original + 5 Steadfast vars) in Slasha `Settings` → `Environment Variables` → **Save Changes**.
+  3. Deploy latest `main` in Slasha `Deployments` (runs `alembic upgrade head` → `0112`) and verify healthy Gunicorn startup.
+  4. Deploy frontend (`npm run deploy:vinext`) → verify green `Ping` + run **"Sync Delivery Thanas"** on `/admin/orders/courier` + book 1 test parcel.
 - **Customer SMS Notifications via SSL Wireless:**
   - Add SSL Wireless provider adapter and connect `SMS_SSLWIRELESS_API_TOKEN` / `SMS_SSLWIRELESS_SID` in `.env.production` once account is active.
 - **PATCH product errors:** Bring `PATCH /api/v1/admin/products/{id}` 422 errors in line with `POST`'s Bengali `{"errors": [{"field","message","fix"}]}` contract.

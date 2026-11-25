@@ -32,13 +32,14 @@
 
 ---
 
-## 2. Steadfast Production Rollout Checklist (VPS `72.60.199.155` — Pending Explicit Approval)
-1. **VPS `.env.production`:** Set `STEADFAST_API_KEY`, `STEADFAST_SECRET_KEY`, `STEADFAST_WEBHOOK_SECRET`, and `COURIER_CHECK_ENABLED=true` (plus optional `STEADFAST_PICKUP_ADDRESS` / `STEADFAST_PICKUP_PHONE`).
-2. **Steadfast Merchant Portal:** Register `https://mart-api.implesia.com/api/v1/webhooks/steadfast` with the matching Bearer secret.
-3. **Backup & Migrate:** Take full `pg_dump` backup → pull `main` → run `alembic upgrade head` (applies **`0112`**, single head).
-4. **Rebuild Backend:** `docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build`.
-5. **Deploy Frontend:** `npm run deploy:vinext` (Cloudflare Workers).
-6. **Live Smoke Test:** Run **"Sync Delivery Thanas"** on `/admin/orders/courier` → test `GET /api/v1/admin/courier/steadfast/ping` → book 1 real test parcel → verify webhook delivery, customer tracking, and superadmin balance/payouts.
+## 2. Steadfast Production Rollout Checklist (Slasha VPS — In Progress)
+1. **Steadfast Merchant Portal (`https://steadfast.com.bd`) — DONE:** API key `implesia-mart-prod` created and Webhook `https://mart-api.implesia.com/api/v1/webhooks/steadfast` saved with Bearer secret.
+2. **Pre-Migration DB Backup — DONE:** PostgreSQL 16 snapshot `db-20261125110141.dmp` (`562.4 KB`) completed with status **Succeeded** in Slasha (`implesia-mart-api` → `Services` → `db` → `Backups`).
+3. **GitHub `main` — DONE:** `feat/phases-23-26-steadfast-courier` verified and merged into `main` (`19c8207`).
+4. **Slasha Environment Variables (NEXT — Before Deploy):** Restore clean newline formatting for all 33 variables (28 original + `COURIER_CHECK_ENABLED=true`, `STEADFAST_BASE_URL=https://portal.packzy.com/api/v1`, `STEADFAST_API_KEY`, `STEADFAST_SECRET_KEY`, `STEADFAST_WEBHOOK_SECRET`) in `implesia-mart-api` → `Settings` → `Environment Variables` → **Save Changes** (no deploy triggered yet; live app still healthy on `ade799b`).
+5. **Deploy Backend (`0112`):** Deploy latest `main` in Slasha `Deployments` (`scripts/start.sh` automatically runs `alembic upgrade head` → `0112`) and verify healthy logs.
+6. **Deploy Frontend:** Run `npm run deploy:vinext` from `implesia-mart` (`main`) on Cloudflare Workers.
+7. **Live Smoke Test:** Open `https://mart.implesia.com/admin/orders/courier` → verify green `Ping` (`GET /api/v1/admin/courier/steadfast/ping`) → click **"Sync Delivery Thanas"** → book 1 test parcel → verify webhook delivery, customer tracking, and superadmin balance/payouts.
 
 ---
 
