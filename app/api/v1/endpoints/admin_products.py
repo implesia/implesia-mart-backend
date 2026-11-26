@@ -78,6 +78,22 @@ def _alts(raw: str) -> list[str]:
     return parsed
 
 
+def _positions(raw: str) -> list[int]:
+    if not raw.strip():
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise UnprocessableError("image_positions must be a JSON list") from exc
+    if (
+        not isinstance(parsed, list)
+        or len(parsed) > 12
+        or any(isinstance(item, bool) or not isinstance(item, int) or item < 0 for item in parsed)
+    ):
+        raise UnprocessableError("image_positions must be a JSON list of non-negative integers")
+    return parsed
+
+
 @router.get("", response_model=AdminProductList)
 async def list_products(
     db: DbSession,
@@ -485,8 +501,10 @@ async def create_product(
     request: Request,
     db: DbSession,
     payload: Annotated[str, Form()] = "",
+    main_image: Annotated[UploadFile | None, File()] = None,
     images: Annotated[list[UploadFile] | None, File()] = None,
     image_alts: Annotated[str, Form()] = "[]",
+    image_positions: Annotated[str, Form()] = "[]",
     quality_image: Annotated[UploadFile | None, File()] = None,
     quality_image_alt: Annotated[str, Form()] = "",
     videos: Annotated[list[UploadFile] | None, File()] = None,
@@ -512,6 +530,8 @@ async def create_product(
             alts,
             quality_image,
             quality_image_alt,
+            main_image=main_image,
+            image_positions=_positions(image_positions),
             videos=videos,
             video_alts=_alts(video_alts),
             thumbnails=thumbnails,
@@ -573,8 +593,10 @@ async def update_product(
     actor: _ProductsWrite,
     product_id: uuid.UUID,
     payload: Annotated[str, Form()] = "{}",
+    main_image: Annotated[UploadFile | None, File()] = None,
     images: Annotated[list[UploadFile] | None, File()] = None,
     image_alts: Annotated[str, Form()] = "[]",
+    image_positions: Annotated[str, Form()] = "[]",
     quality_image: Annotated[UploadFile | None, File()] = None,
     quality_image_alt: Annotated[str, Form()] = "",
     videos: Annotated[list[UploadFile] | None, File()] = None,
@@ -596,6 +618,8 @@ async def update_product(
             quality_image,
             quality_image_alt,
             actor=actor,
+            main_image=main_image,
+            image_positions=_positions(image_positions),
             videos=videos,
             video_alts=_alts(video_alts),
             thumbnails=thumbnails,

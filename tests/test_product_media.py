@@ -236,3 +236,94 @@ async def test_thumbnail_uploads_are_checked(
     assert (await post(("a.jpg", JPEG, "image/jpeg"), ["video:0"]))[0]["message"] == no_match
     assert (await post(("a.jpg", JPEG, "image/jpeg"), []))[0]["message"] == no_match
     assert _files(tmp_path) == set()
+
+
+async def test_replacing_main_image_and_gallery_image_in_place(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(settings, "media_root", tmp_path)
+
+    # Create a product with a dedicated main_image and 2 gallery images.
+    create_parts = _parts(_product(title="Replaceable Product", image_src=""))
+    create_parts.append(("main_image", ("main1.jpg", JPEG, "image/jpeg")))
+    create_parts.append(("images", ("gal1.jpg", JPEG, "image/jpeg")))
+    create_parts.append(("images", ("gal2.png", PNG, "image/png")))
+    create_parts.append(("image_alts", (None, json.dumps(["Gallery 1", "Gallery 2"]))))
+    created_res = await client.post(ADMIN, headers=auth_headers, files=create_parts)
+    assert created_res.status_code == 201, created_res.text
+    product = created_res.json()
+    old_main = product["image_src"]
+    old_gal1 = product["content"]["gallery"][0]["src"]
+    old_gal2 = product["content"]["gallery"][1]["src"]
+    assert old_main.startswith("/media/products/")
+    assert len(product["content"]["gallery"]) == 2
+    assert old_main not in {old_gal1, old_gal2}
+    assert len(_files(tmp_path)) == 3
+
+    # 1. Replace ONLY the main image while keeping existing gallery images.
+    patch_main = [
+        (
+            "payload",
+            (
+                None,
+                json.dumps(
+                    {
+                        "image_src": "",
+                        "content": product["content"],
+                    }
+                ),
+            ),
+        ),
+        ("main_image", ("main2.png", PNG, "image/png")),
+    ]
+    res1 = await client.patch(f"{ADMIN}/{product['id']}", headers=auth_headers, files=patch_main)
+    assert res1.status_code == 200, res1.text
+    after1 = res1.json()
+    new_main = after1["image_src"]
+    assert new_main != old_main
+    assert new_main != old_gal1
+    assert new_main.endswith(".png")
+    # Gallery stays untouched (no duplicate main image appended)
+    assert [item["src"] for item in after1["content"]["gallery"]] == [old_gal1, old_gal2]
+    # Old main image was removed from storage
+    assert old_main.rsplit("/", 1)[1] not in _files(tmp_path)
+    assert new_main.rsplit("/", 1)[1] in _files(tmp_path)
+
+    # 2. Replace gallery[0] in place using image_positions=[0] AND replace main_image again.
+    kept_gallery = [after1["content"]["gallery"][1]]
+    patch_both = [
+        (
+            "payload",
+            (
+                None,
+                json.dumps(
+                    {
+                        "image_src": "",
+                        "content": {**after1["content"], "gallery": kept_gallery},
+                    }
+                ),
+            ),
+        ),
+        ("main_image", ("main3.jpg", JPEG, "image/jpeg")),
+        ("images", ("gal1-new.png", PNG, "image/png")),
+        ("image_alts", (None, json.dumps(["Gallery 1 Updated"]))),
+        ("image_positions", (None, json.dumps([0]))),
+    ]
+    res2 = await client.patch(f"{ADMIN}/{product['id']}", headers=auth_headers, files=patch_both)
+    assert res2.status_code == 200, res2.text
+    after2 = res2.json()
+    assert after2["image_src"].endswith(".jpg")
+    assert after2["image_src"] != new_main
+    # Replaced gallery photo lands back at index 0, before old_gal2!
+    assert len(after2["content"]["gallery"]) == 2
+    assert after2["content"]["gallery"][0]["src"].endswith(".png")
+    assert after2["content"]["gallery"][0]["alt"] == "Gallery 1 Updated"
+    assert after2["content"]["gallery"][1]["src"] == old_gal2
+    # Both replaced files were cleaned up from storage
+    names = _files(tmp_path)
+    assert new_main.rsplit("/", 1)[1] not in names
+    assert old_gal1.rsplit("/", 1)[1] not in names
+    assert len(names) == 3
