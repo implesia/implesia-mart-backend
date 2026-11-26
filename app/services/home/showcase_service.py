@@ -23,7 +23,6 @@ from app.schemas.home.showcase import (
 from app.services import category_service
 
 SHOWCASE_SLUG = "home"
-MAX_ITEMS = 12
 SEED_LIMIT = 4
 ROW_DEFAULTS: tuple[tuple[str, str, str], ...] = (
     ("gadgets", "ট্রেন্ডিং গ্যাজেট", "/products?category=gadgets"),
@@ -276,11 +275,6 @@ async def create_item(
 ) -> ShowcaseItemRead:
     await _require_product(db, payload.product_id)
     await _reject_duplicate(db, row.id, payload.product_id)
-    count = await db.scalar(
-        select(func.count()).select_from(HomeShowcaseItem).where(HomeShowcaseItem.row_id == row.id)
-    )
-    if int(count or 0) >= MAX_ITEMS:
-        raise UnprocessableError("You can show up to 12 products in this row")
     current = await db.scalar(
         select(func.max(HomeShowcaseItem.sort_order)).where(HomeShowcaseItem.row_id == row.id)
     )

@@ -1,3 +1,4 @@
+import copy
 import json
 import re
 import uuid
@@ -65,6 +66,7 @@ from app.services import (
 )
 from app.services.category_service import CategoryIndex
 from app.services.image_storage import (
+    copy_owned_media,
     delete_owned_media,
     owned_refs,
     read_image,
@@ -690,6 +692,171 @@ async def delete_product(db: AsyncSession, product: Product) -> None:
     await db.delete(product)
     await db.commit()
     delete_owned_media(refs)
+
+
+_COPY_TITLE_SUFFIX = re.compile(r"\s+\(Copy(?:\s+(\d+))?\)$")
+_COPY_SKU_SUFFIX = re.compile(r"-COPY(?:-(\d+))?$", re.IGNORECASE)
+
+
+def _duplicate_title(title: str) -> str:
+    """Append ` (Copy)` or increment ` (Copy N)` while staying within 200 chars."""
+    cleaned = title.strip() or "Product"
+    match = _COPY_TITLE_SUFFIX.search(cleaned)
+    if match:
+        base = cleaned[: match.start()].rstrip()
+        next_num = int(match.group(1)) + 1 if match.group(1) else 2
+        suffix = f" (Copy {next_num})"
+    else:
+        base = cleaned
+        suffix = " (Copy)"
+    return f"{base[: 200 - len(suffix)].rstrip()}{suffix}"
+
+
+async def _allocate_copy_sku(db: AsyncSession, source_sku: str, taken_lower: set[str]) -> str:
+    """Generate a unique variant SKU from `source_sku`, keeping empty SKUs empty."""
+    cleaned = source_sku.strip()
+    if not cleaned:
+        return ""
+    base = _COPY_SKU_SUFFIX.sub("", cleaned) or cleaned
+    for index in range(1, 100):
+        suffix = "-COPY" if index == 1 else f"-COPY-{index}"
+        candidate = f"{base[: 64 - len(suffix)]}{suffix}"
+        folded = candidate.casefold()
+        if folded in taken_lower:
+            continue
+        exists = await db.scalar(
+            select(ProductVariant.id).where(func.lower(ProductVariant.sku) == folded).limit(1)
+        )
+        if exists is None:
+            taken_lower.add(folded)
+            return candidate
+    fallback = f"{base[:50]}-{uuid.uuid4().hex[:8].upper()}"
+    taken_lower.add(fallback.casefold())
+    return fallback
+
+
+async def duplicate_product(db: AsyncSession, source: Product, *, actor: User) -> Product:
+    """Clone a product as an unpublished Draft with independent media, badges, and variants."""
+    new_title = _duplicate_title(source.title)
+    new_slug = await allocate_slug(db, new_title)
+
+    # Clone owned media so editing or deleting the duplicate never removes the source's files.
+    cloned_media: dict[str, str] = {}
+
+    def _clone_ref(ref: str) -> str:
+        if not ref or not ref.startswith("/media/products/"):
+            return ref
+        if ref in cloned_media:
+            return cloned_media[ref]
+        copied = copy_owned_media(ref, folder="products")
+        if copied is None:
+            return ref
+        cloned_media[ref] = copied
+        return copied
+
+    try:
+        new_image_src = _clone_ref(source.image_src)
+        new_content: dict[str, Any] = (
+            copy.deepcopy(source.content) if isinstance(source.content, dict) else {}
+        )
+        if isinstance(new_content.get("quality_image_src"), str):
+            new_content["quality_image_src"] = _clone_ref(new_content["quality_image_src"])
+        raw_gallery = new_content.get("gallery")
+        if isinstance(raw_gallery, list):
+            for item in raw_gallery:
+                if not isinstance(item, dict):
+                    continue
+                if isinstance(item.get("src"), str):
+                    item["src"] = _clone_ref(item["src"])
+                if isinstance(item.get("thumbnail"), str):
+                    item["thumbnail"] = _clone_ref(item["thumbnail"])
+
+        # Keep active supplier only; silently detach a soft-deleted supplier.
+        supplier_id = source.supplier_id
+        if supplier_id is not None:
+            supplier = await db.get(Supplier, supplier_id)
+            if supplier is None or supplier.is_deleted:
+                supplier_id = None
+
+        source_variants = await variant_service.list_variants(db, source.id)
+        source_badges = (await badge_service.for_products(db, [source.id])).get(source.id, [])
+
+        # Clear any stale redirect claiming the freshly allocated slug.
+        await db.execute(delete(ProductSlugRedirect).where(ProductSlugRedirect.slug == new_slug))
+
+        duplicate = Product(
+            slug=new_slug,
+            title=new_title,
+            subtitle=source.subtitle,
+            category_id=source.category_id,
+            supplier_id=supplier_id,
+            price=source.price,
+            compare_at_price=source.compare_at_price,
+            cost_price=source.cost_price,
+            base_discount=source.base_discount,
+            tier_mode=source.tier_mode,
+            tiers=copy.deepcopy(source.tiers) if isinstance(source.tiers, list) else [],
+            quantity=source.quantity,
+            status=source.status,
+            badge=source.badge,
+            image_src=new_image_src,
+            image_alt=source.image_alt,
+            unit_label=source.unit_label,
+            seo_title=source.seo_title,
+            seo_description=source.seo_description,
+            seo_keywords=source.seo_keywords,
+            has_variants=bool(source_variants),
+            min_order_quantity=source.min_order_quantity,
+            max_order_quantity=source.max_order_quantity,
+            featured=False,
+            published=False,
+            sort_order=source.sort_order,
+            content=new_content,
+        )
+        db.add(duplicate)
+        await db.flush()
+
+        taken_skus: set[str] = set()
+        for variant in source_variants:
+            sku = await _allocate_copy_sku(db, variant.sku, taken_skus)
+            db.add(
+                ProductVariant(
+                    product_id=duplicate.id,
+                    options=copy.deepcopy(variant.options),
+                    option_key=variant.option_key,
+                    sku=sku,
+                    price=variant.price,
+                    compare_at_price=variant.compare_at_price,
+                    cost_price=variant.cost_price,
+                    quantity=variant.quantity,
+                    is_active=variant.is_active,
+                    sort_order=variant.sort_order,
+                )
+            )
+
+        if source_badges:
+            await badge_service.replace_links(db, duplicate.id, source_badges)
+
+        await audit_service.record(
+            db,
+            actor_id=actor.id,
+            action=AuditAction.PRODUCT_DUPLICATED,
+            target_type="product",
+            target_id=duplicate.id,
+            metadata={
+                "source_product_id": str(source.id),
+                "source_slug": source.slug,
+                "new_slug": new_slug,
+            },
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        delete_owned_media(set(cloned_media.values()))
+        raise
+
+    await db.refresh(duplicate)
+    return duplicate
 
 
 async def bulk_delete(db: AsyncSession, ids: list[uuid.UUID]) -> ProductBulkDeleteResult:

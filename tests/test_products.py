@@ -609,3 +609,128 @@ async def test_public_product_by_slug_hides_unpublished(
     assert hidden.status_code == 200, hidden.text
     assert (await client.get(f"/api/v1/products/by-slug/{created['slug']}")).status_code == 404
     assert (await client.get("/api/v1/products/by-slug/Bad Slug")).status_code == 422
+
+
+async def test_duplicate_product_clones_draft_media_variants_and_badges(
+    client: AsyncClient, auth_headers: dict[str, str], tmp_path, monkeypatch
+) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "media_root", tmp_path)
+
+    payload = _product(
+        title="Sunset Lamp",
+        subtitle="Warm ambient glow",
+        price=1200,
+        compare_at_price=1500,
+        cost_price=700,
+        badge="Best Seller",
+        featured=True,
+        published=True,
+        image_src="",
+        seo_title="Sunset Lamp BD",
+        seo_description="Ambient projection lamp",
+        seo_keywords="lamp, sunset",
+        content={
+            "tagline": "Warm glow",
+            "description": "Projection lamp for desk.",
+            "unit_label": "piece",
+            "image_alt": "Sunset Lamp",
+            "highlights": ["USB powered"],
+            "specs": [{"label": "Power", "value": "5W", "group": "power"}],
+            "faqs": [{"question": "Warranty?", "answer": "7 days."}],
+            "options": [
+                {
+                    "id": "color",
+                    "name": "Color",
+                    "kind": "color",
+                    "values": [
+                        {"id": "warm", "label": "Warm", "swatch": "#f59e0b"},
+                        {"id": "rgb", "label": "RGB", "swatch": "#6366f1"},
+                    ],
+                }
+            ],
+        },
+        variants=[
+            {
+                "options": {"color": "warm"},
+                "sku": "LAMP-WARM",
+                "price": 1200,
+                "compare_at_price": 1500,
+                "cost_price": 700,
+                "quantity": 10,
+                "is_active": True,
+            },
+            {
+                "options": {"color": "rgb"},
+                "sku": "LAMP-RGB",
+                "price": 1450,
+                "compare_at_price": 1700,
+                "cost_price": 820,
+                "quantity": 6,
+                "is_active": True,
+            },
+        ],
+    )
+    created_res = await client.post(
+        "/api/v1/admin/products",
+        headers=auth_headers,
+        files=_parts(payload, images=[("lamp.jpg", JPEG, "image/jpeg")], alts=["Lamp photo"]),
+    )
+    assert created_res.status_code == 201, created_res.text
+    original = created_res.json()
+    orig_media = tmp_path / "products" / original["image_src"].removeprefix("/media/products/")
+    assert orig_media.is_file()
+
+    dup_res = await client.post(
+        f"/api/v1/admin/products/{original['id']}/duplicate",
+        headers=auth_headers,
+    )
+    assert dup_res.status_code == 201, dup_res.text
+    copy1 = dup_res.json()
+
+    assert copy1["id"] != original["id"]
+    assert copy1["slug"] != original["slug"]
+    assert copy1["title"] == "Sunset Lamp (Copy)"
+    assert copy1["subtitle"] == "Warm ambient glow"
+    assert copy1["published"] is False
+    assert copy1["featured"] is False
+    assert copy1["badge"] == "Best Seller"
+    assert [b["slug"] for b in copy1["badges"]] == [b["slug"] for b in original["badges"]]
+    assert copy1["seo_title"] == "Sunset Lamp BD"
+    assert copy1["has_variants"] is True
+    assert len(copy1["variants"]) == 2
+    assert {v["sku"] for v in copy1["variants"]} == {"LAMP-WARM-COPY", "LAMP-RGB-COPY"}
+    assert copy1["image_src"].startswith("/media/products/")
+    assert copy1["image_src"] != original["image_src"]
+    copy_media = tmp_path / "products" / copy1["image_src"].removeprefix("/media/products/")
+    assert copy_media.is_file()
+    assert copy1["content"]["gallery"][0]["src"] == copy1["image_src"]
+
+    # Duplicating the duplicate increments cleanly to "(Copy 2)" and unique SKUs.
+    dup2_res = await client.post(
+        f"/api/v1/admin/products/{copy1['id']}/duplicate",
+        headers=auth_headers,
+    )
+    assert dup2_res.status_code == 201, dup2_res.text
+    copy2 = dup2_res.json()
+    assert copy2["title"] == "Sunset Lamp (Copy 2)"
+    assert {v["sku"] for v in copy2["variants"]} == {"LAMP-WARM-COPY-2", "LAMP-RGB-COPY-2"}
+
+    # Deleting the duplicate cleans up ONLY its own cloned media, never the original's.
+    del_res = await client.delete(
+        f"/api/v1/admin/products/{copy1['id']}",
+        headers=auth_headers,
+    )
+    assert del_res.status_code == 204
+    assert not copy_media.is_file()
+    assert orig_media.is_file()
+
+    # Unknown product returns 404; unauthenticated returns 401.
+    missing = "00000000-0000-4000-8000-000000000099"
+    assert (
+        await client.post(f"/api/v1/admin/products/{missing}/duplicate", headers=auth_headers)
+    ).status_code == 404
+    assert (
+        await client.post(f"/api/v1/admin/products/{original['id']}/duplicate")
+    ).status_code == 401
