@@ -530,6 +530,26 @@ async def create_product(
         return _errors_response(500, [_SERVER_ERROR])
 
 
+@router.post(
+    "/{product_id}/duplicate",
+    response_model=AdminProductRead,
+    status_code=status.HTTP_201_CREATED,
+)
+@limiter.limit(settings.rate_limit_product_writes)
+async def duplicate_product(
+    request: Request,
+    db: DbSession,
+    actor: _ProductsWrite,
+    product_id: uuid.UUID,
+) -> AdminProductRead:
+    del request
+    source = await product_service.get_by_id(db, product_id)
+    duplicated = await product_service.duplicate_product(db, source, actor=actor)
+    return await product_service.admin_read_full(
+        db, duplicated, await category_service.load_index(db)
+    )
+
+
 @router.get("/{product_id}/analytics", response_model=ProductAnalyticsReport)
 async def read_product_analytics(db: DbSession, product_id: uuid.UUID) -> ProductAnalyticsReport:
     return await report_service.product_analytics(db, product_id)

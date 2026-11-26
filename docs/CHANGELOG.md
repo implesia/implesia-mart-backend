@@ -2,6 +2,16 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Unlimited Products in Home Showcase Rows (2026-11-26). Done (not live).** No database migration.
+  - Removed the 12-product cap (`MAX_ITEMS = 12`) in `showcase_service.create_item` and `max_length=12` in `ShowcaseReorder.ids` so admins can pin and reorder any number of published products in `/admin/home/showcase` rows (`gadgets` / Trending and `fashion`).
+  - Files touched: `app/services/home/showcase_service.py`, `app/schemas/home/showcase.py`, `tests/test_home_showcase.py`, `docs/CHANGELOG.md`.
+
+- **Admin Product Duplication (`POST /api/v1/admin/products/{product_id}/duplicate`) (2026-11-26). Done (not live).** No database migration.
+  - Added `POST /api/v1/admin/products/{product_id}/duplicate` (requires `products` write permission, rate-limited, returns `201 AdminProductRead`) backed by `product_service.duplicate_product` and `image_storage.copy_owned_media`.
+  - Clones products safely as unpublished Drafts (`published=False`, `featured=False`) with auto-incremented title (`(Copy)` / `(Copy N)`), freshly allocated unique slug, copied badges, copied variants with unique `-COPY` SKUs, active supplier preservation, independent cloned `/media/products/*` files (so deleting a duplicate never deletes the original's media on disk or Cloudflare R2), and `AuditAction.PRODUCT_DUPLICATED` audit logging.
+  - Files touched: `app/models/audit_event.py`, `app/services/image_storage.py`, `app/services/product_service.py`, `app/api/v1/endpoints/admin_products.py`, `tests/test_products.py`, `docs/CHANGELOG.md`.
+  - Frontend (`implesia-mart`): `/admin/products` row/card actions and `/admin/products/[id]/view` call `POST /api/v1/admin/products/{id}/duplicate`.
+
 - **Home Hero Multi-Template Support (`classic` & `image_only`) (2026-11-26). Done (not live).** Additive migration `0113_home_banner_template.py` (`down_revision = "0112"`). Single Alembic head `0113`.
   - Added `template` (`VARCHAR(32)`, default `'classic'`, check constraint `ck_home_banners_template_known` allowing `'classic'` and `'image_only'`) to `home_banners` (`HomeBanner` + `BannerTemplate` `StrEnum`).
   - Exposed `template` in `GET /api/v1/home/banner` (`HomeBannerPublic`), `GET /api/v1/admin/home/banner` (`HomeBannerRead`), and `PATCH /api/v1/admin/home/banner` (`HomeBannerUpdate`, rejects unknown values with HTTP 422). Existing banners default to `'classic'` and switching templates preserves all slide copy and media intact.

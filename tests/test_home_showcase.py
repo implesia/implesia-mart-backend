@@ -129,10 +129,8 @@ async def test_showcase_admin_requires_an_editor(
 
 
 async def test_editor_can_add_reorder_and_remove_a_showcase_product(
-    client: AsyncClient, auth_headers: dict[str, str], monkeypatch
+    client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
-    from app.services.home import showcase_service
-
     lamp = await _create(
         client, auth_headers, title="Lamp", slug="showcase-lamp", category="gadgets"
     )
@@ -170,17 +168,9 @@ async def test_editor_can_add_reorder_and_remove_a_showcase_product(
     )
     assert duplicate.status_code == 422
 
-    monkeypatch.setattr(showcase_service, "MAX_ITEMS", 2)
     extra = await _create(
         client, auth_headers, title="Cable", slug="showcase-cable", category="gadgets"
     )
-    capped = await client.post(
-        "/api/v1/admin/home/showcase/rows/gadgets/items",
-        headers=auth_headers,
-        json={"product_id": extra["id"]},
-    )
-    assert capped.status_code == 422
-    monkeypatch.setattr(showcase_service, "MAX_ITEMS", 12)
     created = await client.post(
         "/api/v1/admin/home/showcase/rows/gadgets/items",
         headers=auth_headers,
@@ -297,3 +287,40 @@ async def test_showcase_choices_are_published_products_from_any_category(
         json={"product_id": hidden["id"]},
     )
     assert swapped.status_code == 422
+
+
+async def test_showcase_row_allows_more_than_twelve_products_and_reordering(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    # Seed the showcase first so all 15 products can be added explicitly.
+    initial = await client.get("/api/v1/admin/home/showcase", headers=auth_headers)
+    assert initial.status_code == 200, initial.text
+
+    item_ids: list[str] = []
+    for index in range(1, 16):
+        prod = await _create(
+            client,
+            auth_headers,
+            title=f"Showcase Item {index}",
+            slug=f"showcase-item-{index}",
+            category="gadgets",
+        )
+        added = await client.post(
+            "/api/v1/admin/home/showcase/rows/gadgets/items",
+            headers=auth_headers,
+            json={"product_id": prod["id"]},
+        )
+        assert added.status_code == 201, added.text
+        item_ids.append(added.json()["id"])
+
+    listed = await client.get("/api/v1/admin/home/showcase", headers=auth_headers)
+    assert len(_row(listed.json(), "gadgets")["items"]) == 15
+
+    reversed_ids = list(reversed(item_ids))
+    reordered = await client.put(
+        "/api/v1/admin/home/showcase/rows/gadgets/items/order",
+        headers=auth_headers,
+        json={"ids": reversed_ids},
+    )
+    assert reordered.status_code == 200, reordered.text
+    assert [item["id"] for item in _row(reordered.json(), "gadgets")["items"]] == reversed_ids

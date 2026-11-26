@@ -257,6 +257,65 @@ def _delete_object(key: str) -> None:
         raise RuntimeError("Could not delete the uploaded file") from exc
 
 
+def copy_owned_media(ref: str, *, folder: str = "products") -> str | None:
+    """Clone one owned `/media/<folder>/<name>` object to a fresh UUID filename.
+
+    Returns the new `/media/<folder>/<new_name>` path, or None if the input is not an
+    owned file or no longer exists in storage.
+    """
+    folder = _folder(folder)
+    prefix = f"/media/{folder}/"
+    if not ref.startswith(prefix):
+        return None
+    name = ref.removeprefix(prefix)
+    if (
+        not name
+        or "/" in name
+        or "\\" in name
+        or name.startswith(".")
+        or not _OBJECT_NAME.fullmatch(name)
+    ):
+        return None
+    dot = name.rfind(".")
+    if dot <= 0:
+        return None
+    suffix = name[dot:].lower()
+    if suffix not in _CONTENT_TYPES:
+        return None
+    new_name = f"{uuid.uuid4().hex}{suffix}"
+    src_key = f"{folder}/{name}"
+    dst_key = f"{folder}/{new_name}"
+    if settings.object_storage_enabled:
+        bucket = settings.s3_bucket.strip()
+        try:
+            _s3().copy_object(
+                Bucket=bucket,
+                CopySource={"Bucket": bucket, "Key": src_key},
+                Key=dst_key,
+                MetadataDirective="COPY",
+            )
+        except ClientError as exc:
+            code = str(exc.response.get("Error", {}).get("Code", ""))
+            if code in {"NoSuchKey", "404", "NotFound"}:
+                logger.warning("media_copy_source_missing", key=src_key)
+                return None
+            _log_storage_failure("media_copy_failed", src_key, exc)
+            raise RuntimeError("Could not copy the product media file") from exc
+        except BotoCoreError as exc:
+            _log_storage_failure("media_copy_failed", src_key, exc)
+            raise RuntimeError("Could not copy the product media file") from exc
+        return f"/media/{dst_key}"
+
+    root = (settings.media_root / folder).resolve()
+    src_path = (root / name).resolve()
+    if src_path.parent != root or not src_path.is_file():
+        logger.warning("media_copy_source_missing", key=src_key)
+        return None
+    root.mkdir(parents=True, exist_ok=True)
+    (root / new_name).write_bytes(src_path.read_bytes())
+    return f"/media/{dst_key}"
+
+
 def _log_storage_failure(event: str, key: str, exc: Exception) -> None:
     code = ""
     if isinstance(exc, ClientError):

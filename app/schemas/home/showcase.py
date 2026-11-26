@@ -63,7 +63,7 @@ class ShowcaseItemWrite(WriteModel):
 
 
 class ShowcaseReorder(WriteModel):
-    ids: list[uuid.UUID] = Field(max_length=12)
+    ids: list[uuid.UUID]
 
 
 def clean_href(value: str, fallback: str) -> str:
