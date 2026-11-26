@@ -4,6 +4,7 @@ BANNER_SLUG = "home"
 
 BANNER_DEFAULTS = {
     "slug": BANNER_SLUG,
+    "template": "classic",
     "brand_name": "Implesia Mart",
     "aria_label": "ফিচার্ড প্রোডাক্ট",
     "trust_line": "সারাদেশে ক্যাশ অন ডেলিভারি · ৩ দিনের ইজি রিটার্ন",

@@ -1,7 +1,7 @@
 import uuid
 from enum import StrEnum
 
-from sqlalchemy import Boolean, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -14,12 +14,29 @@ class BannerAccent(StrEnum):
     INK = "ink"
 
 
+class BannerTemplate(StrEnum):
+    CLASSIC = "classic"
+    IMAGE_ONLY = "image_only"
+
+
 class HomeBanner(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Chrome for the home hero: brand line, trust copy, and carousel timing."""
+    """Chrome for the home hero: layout template, brand line, trust copy, and carousel timing."""
 
     __tablename__ = "home_banners"
+    __table_args__ = (
+        CheckConstraint(
+            "template IN ('classic', 'image_only')",
+            name="template_known",
+        ),
+    )
 
     slug: Mapped[str] = mapped_column(String(40), unique=True, index=True, nullable=False)
+    template: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=BannerTemplate.CLASSIC.value,
+        server_default=BannerTemplate.CLASSIC.value,
+    )
     brand_name: Mapped[str] = mapped_column(String(80), nullable=False)
     aria_label: Mapped[str] = mapped_column(String(120), nullable=False)
     trust_line: Mapped[str] = mapped_column(String(200), nullable=False)

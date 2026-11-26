@@ -2,6 +2,12 @@
 
 Newest first. Every task adds an entry: date, what changed, files touched, and anything the frontend repo (`implesia-mart`) must change.
 
+- **Home Hero Multi-Template Support (`classic` & `image_only`) (2026-11-26). Done (not live).** Additive migration `0113_home_banner_template.py` (`down_revision = "0112"`). Single Alembic head `0113`.
+  - Added `template` (`VARCHAR(32)`, default `'classic'`, check constraint `ck_home_banners_template_known` allowing `'classic'` and `'image_only'`) to `home_banners` (`HomeBanner` + `BannerTemplate` `StrEnum`).
+  - Exposed `template` in `GET /api/v1/home/banner` (`HomeBannerPublic`), `GET /api/v1/admin/home/banner` (`HomeBannerRead`), and `PATCH /api/v1/admin/home/banner` (`HomeBannerUpdate`, rejects unknown values with HTTP 422). Existing banners default to `'classic'` and switching templates preserves all slide copy and media intact.
+  - Files touched: `alembic/versions/0113_home_banner_template.py`, `app/models/home/banner.py`, `app/schemas/home/banner.py`, `app/services/home/banner_defaults.py`, `app/services/home/banner_service.py`, `tests/test_home_banner.py`, `tests/test_0113_migration.py`, `docs/CHANGELOG.md`.
+  - Frontend (`implesia-mart`): reads `template` (`"classic" | "image_only"`) from `GET /api/v1/home/banner` to render either the existing split layout or the full-bleed image-only banner, and updates it via `PATCH /api/v1/admin/home/banner` from `/admin/home/hero`.
+
 - **Phase 24 Steadfast Webhook Automation, Superadmin COD Reconciliation & Customer Live Tracking (2026-11-25). Done (not live).** No new database migration (uses Phase 23 `0112` tables).
   - **Steadfast Webhook Receiver (`app/api/v1/endpoints/webhooks.py`, `app/services/courier/steadfast_webhook_service.py`, `app/api/v1/router.py`, `app/services/telegram_notify.py`):**
     - Mounted `POST /api/v1/webhooks/steadfast` authenticated via `STEADFAST_WEBHOOK_SECRET` (Bearer token or `X-Steadfast-Webhook-Secret` / `X-Webhook-Secret` / `X-Steadfast-Token`, constant-time `hmac.compare_digest`, fails closed when secret is empty).

@@ -25,6 +25,7 @@ async def test_public_banner_matches_the_live_hero(client: AsyncClient) -> None:
     assert response.status_code == 200, response.text
     body = response.json()
 
+    assert body["template"] == "classic"
     assert body["brand_name"] == "Implesia Mart"
     assert body["aria_label"] == "ফিচার্ড প্রোডাক্ট"
     assert body["trust_line"] == "সারাদেশে ক্যাশ অন ডেলিভারি · ৩ দিনের ইজি রিটার্ন"
@@ -292,3 +293,40 @@ async def test_banner_text_is_trimmed_and_blank_text_rejected(
     assert saved.json()["next_label"] == "Next"
     public = await client.get("/api/v1/home/banner")
     assert public.json()["brand_name"] == xss
+
+
+async def test_banner_template_switching_and_validation(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    initial = await client.get("/api/v1/admin/home/banner", headers=auth_headers)
+    assert initial.status_code == 200, initial.text
+    assert initial.json()["template"] == "classic"
+
+    switched = await client.patch(
+        "/api/v1/admin/home/banner",
+        headers=auth_headers,
+        json={"template": "image_only"},
+    )
+    assert switched.status_code == 200, switched.text
+    assert switched.json()["template"] == "image_only"
+
+    public_image_only = await client.get("/api/v1/home/banner")
+    assert public_image_only.status_code == 200
+    assert public_image_only.json()["template"] == "image_only"
+
+    invalid = await client.patch(
+        "/api/v1/admin/home/banner",
+        headers=auth_headers,
+        json={"template": "nonexistent_layout"},
+    )
+    assert invalid.status_code == 422
+
+    restored = await client.patch(
+        "/api/v1/admin/home/banner",
+        headers=auth_headers,
+        json={"template": "classic"},
+    )
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["template"] == "classic"
+    public_classic = await client.get("/api/v1/home/banner")
+    assert public_classic.json()["template"] == "classic"

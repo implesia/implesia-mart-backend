@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models.home.banner import BannerAccent
+from app.models.home.banner import BannerAccent, BannerTemplate
 from app.schemas.common import WriteModel
 
 
@@ -45,6 +45,7 @@ class BannerSlidePublic(BaseModel):
 
 
 class HomeBannerPublic(BaseModel):
+    template: BannerTemplate = BannerTemplate.CLASSIC
     brand_name: str
     aria_label: str
     trust_line: str
@@ -66,6 +67,7 @@ class HomeBannerRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
+    template: BannerTemplate = BannerTemplate.CLASSIC
     brand_name: str
     aria_label: str
     trust_line: str
@@ -84,6 +86,7 @@ class HomeBannerRead(BaseModel):
 
 
 class HomeBannerUpdate(WriteModel):
+    template: BannerTemplate | None = None
     brand_name: str | None = Field(None, min_length=1, max_length=80)
     aria_label: str | None = Field(None, min_length=1, max_length=120)
     trust_line: str | None = Field(None, min_length=1, max_length=200)

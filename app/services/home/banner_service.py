@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, NotFoundError, UnprocessableError
-from app.models.home.banner import BannerAccent, HomeBanner, HomeBannerSlide
+from app.models.home.banner import BannerAccent, BannerTemplate, HomeBanner, HomeBannerSlide
 from app.schemas.home.banner import (
     BannerCta,
     BannerSlideAdmin,
@@ -108,6 +108,7 @@ def present_admin_slide(
 
 def present_public(banner: HomeBanner, slides: list[HomeBannerSlide]) -> HomeBannerPublic:
     return HomeBannerPublic(
+        template=BannerTemplate(banner.template),
         brand_name=banner.brand_name,
         aria_label=banner.aria_label,
         trust_line=banner.trust_line,
@@ -173,6 +174,8 @@ async def update_banner(
     db: AsyncSession, banner: HomeBanner, payload: HomeBannerUpdate
 ) -> HomeBanner:
     for field, value in payload.model_dump(exclude_unset=True).items():
+        if isinstance(value, BannerTemplate):
+            value = value.value
         setattr(banner, field, value)
     await db.commit()
     await db.refresh(banner)
