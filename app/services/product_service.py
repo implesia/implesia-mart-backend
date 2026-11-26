@@ -307,6 +307,24 @@ def _media_refs(product: Product) -> set[str]:
     )
 
 
+def _merge_gallery(
+    base: list[GalleryImage],
+    added_images: list[GalleryImage],
+    added_videos: list[GalleryImage],
+    image_positions: list[int] | None = None,
+) -> list[GalleryImage]:
+    """Place uploaded gallery images at their original slots when positions are provided."""
+    merged = list(base)
+    if image_positions and len(image_positions) == len(added_images):
+        positioned = sorted(zip(image_positions, added_images, strict=True), key=lambda p: p[0])
+        for pos, item in positioned:
+            merged.insert(max(0, min(pos, len(merged))), item)
+    else:
+        merged.extend(added_images)
+    merged.extend(added_videos)
+    return merged
+
+
 async def create_product(
     db: AsyncSession,
     payload: ProductCreate,
@@ -314,28 +332,40 @@ async def create_product(
     image_alts: list[str] | None = None,
     quality_image: UploadFile | None = None,
     quality_image_alt: str = "",
+    *,
+    main_image: UploadFile | None = None,
+    image_positions: list[int] | None = None,
     videos: list[UploadFile] | None = None,
     video_alts: list[str] | None = None,
     thumbnails: list[UploadFile] | None = None,
     thumbnail_targets: list[str] | None = None,
 ) -> Product:
     fallback_alt = payload.content.image_alt or payload.title
-    added: list[GalleryImage] = []
+    added_images: list[GalleryImage] = []
+    added_videos: list[GalleryImage] = []
     thumbs: list[Thumbnail] = []
+    main_image_url = ""
     quality_url = ""
     try:
-        added = await _saved_images(images or [], image_alts or [], fallback_alt)
-        added += await _saved_videos(videos or [], video_alts or [], fallback_alt)
+        if main_image is not None and main_image.filename:
+            saved_main = await _saved_images([main_image], [fallback_alt], fallback_alt)
+            main_image_url = saved_main[0].src
+        added_images = await _saved_images(images or [], image_alts or [], fallback_alt)
+        added_videos = await _saved_videos(videos or [], video_alts or [], fallback_alt)
+        added = [*added_images, *added_videos]
         thumbs = await _saved_thumbnails(thumbnails or [], thumbnail_targets or [])
         if quality_image is not None and quality_image.filename:
             saved = await _saved_images([quality_image], [quality_image_alt], fallback_alt)
             quality_url = saved[0].src
             if not quality_image_alt:
                 quality_image_alt = saved[0].alt
-        gallery = _with_thumbnails([*payload.content.gallery, *added], added, thumbs)
+        merged = _merge_gallery(
+            payload.content.gallery, added_images, added_videos, image_positions
+        )
+        gallery = _with_thumbnails(merged, added, thumbs)
         if len(gallery) > 12:
             raise UnprocessableError("A product can have at most 12 images")
-        image_src = payload.image_src or _first_photo(gallery)
+        image_src = main_image_url or payload.image_src or _first_photo(gallery)
         if not image_src and payload.published:
             raise UnprocessableError("Add a product image")
         payload = payload.model_copy(
@@ -353,7 +383,15 @@ async def create_product(
         return await _insert_product(db, payload)
     except Exception:
         thumb_urls = (url for _, url in thumbs)
-        delete_owned_media(owned_refs(*(item.src for item in added), quality_url, *thumb_urls))
+        delete_owned_media(
+            owned_refs(
+                main_image_url,
+                *(item.src for item in added_images),
+                *(item.src for item in added_videos),
+                quality_url,
+                *thumb_urls,
+            )
+        )
         raise
 
 
@@ -474,6 +512,8 @@ async def update_product(
     quality_image_alt: str = "",
     *,
     actor: User,
+    main_image: UploadFile | None = None,
+    image_positions: list[int] | None = None,
     videos: list[UploadFile] | None = None,
     video_alts: list[str] | None = None,
     thumbnails: list[UploadFile] | None = None,
@@ -485,22 +525,45 @@ async def update_product(
         if payload.content is not None and payload.content.image_alt
         else product.image_alt or product.title
     )
-    added: list[GalleryImage] = []
+    added_images: list[GalleryImage] = []
+    added_videos: list[GalleryImage] = []
     thumbs: list[Thumbnail] = []
+    main_image_url = ""
     quality_url = ""
     try:
-        added = await _saved_images(images or [], image_alts or [], fallback_alt)
-        added += await _saved_videos(videos or [], video_alts or [], fallback_alt)
+        if main_image is not None and main_image.filename:
+            saved_main = await _saved_images([main_image], [fallback_alt], fallback_alt)
+            main_image_url = saved_main[0].src
+        added_images = await _saved_images(images or [], image_alts or [], fallback_alt)
+        added_videos = await _saved_videos(videos or [], video_alts or [], fallback_alt)
         thumbs = await _saved_thumbnails(thumbnails or [], thumbnail_targets or [])
         if quality_image is not None and quality_image.filename:
             saved = await _saved_images([quality_image], [quality_image_alt], fallback_alt)
             quality_url = saved[0].src
         await _apply_update(
-            db, product, payload, added, quality_url, quality_image_alt, actor, thumbs
+            db,
+            product,
+            payload,
+            added_images,
+            added_videos,
+            quality_url,
+            quality_image_alt,
+            actor,
+            thumbs,
+            main_image_url=main_image_url,
+            image_positions=image_positions,
         )
     except Exception:
         thumb_urls = (url for _, url in thumbs)
-        delete_owned_media(owned_refs(*(item.src for item in added), quality_url, *thumb_urls))
+        delete_owned_media(
+            owned_refs(
+                main_image_url,
+                *(item.src for item in added_images),
+                *(item.src for item in added_videos),
+                quality_url,
+                *thumb_urls,
+            )
+        )
         raise
     delete_owned_media(before - _media_refs(product))
     return product
@@ -510,11 +573,15 @@ async def _apply_update(
     db: AsyncSession,
     product: Product,
     payload: ProductUpdate,
-    added: list[GalleryImage],
+    added_images: list[GalleryImage],
+    added_videos: list[GalleryImage],
     quality_url: str,
     quality_image_alt: str,
     actor: User,
     thumbs: list[Thumbnail] | None = None,
+    *,
+    main_image_url: str = "",
+    image_positions: list[int] | None = None,
 ) -> None:
     before = {
         "price": product.price,
@@ -572,12 +639,17 @@ async def _apply_update(
             value = value.value
         setattr(product, field, value)
 
+    if main_image_url:
+        product.image_src = main_image_url
+
+    added = [*added_images, *added_videos]
     has_content = "content" in payload.model_fields_set and payload.content is not None
     if added or quality_url or quality_image_alt or has_content or thumbs:
         content = content_of(product)
         if has_content and payload.content is not None:
             content = payload.content
-        gallery = _with_thumbnails([*content.gallery, *added], added, thumbs or [])
+        merged = _merge_gallery(content.gallery, added_images, added_videos, image_positions)
+        gallery = _with_thumbnails(merged, added, thumbs or [])
         if len(gallery) > 12:
             raise UnprocessableError("A product can have at most 12 images")
         updates: dict[str, Any] = {"gallery": gallery}
