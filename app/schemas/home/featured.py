@@ -68,4 +68,4 @@ class FeaturedItemWrite(WriteModel):
 
 
 class FeaturedReorder(WriteModel):
-    ids: list[uuid.UUID] = Field(max_length=12)
+    ids: list[uuid.UUID]

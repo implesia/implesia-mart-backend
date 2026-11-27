@@ -1,3 +1,4 @@
+import re
 import uuid
 from typing import Any
 
@@ -16,14 +17,18 @@ from app.schemas.home.showcase import (
     ShowcasePublic,
     ShowcaseReorder,
     ShowcaseRowAdmin,
+    ShowcaseRowCreate,
     ShowcaseRowPublic,
+    ShowcaseRowReorder,
     ShowcaseRowUpdate,
     clean_href,
 )
 from app.services import category_service
 
 SHOWCASE_SLUG = "home"
+TRENDING_ROW_KEY = "gadgets"
 SEED_LIMIT = 4
+_NON_SLUG = re.compile(r"[^a-z0-9]+")
 ROW_DEFAULTS: tuple[tuple[str, str, str], ...] = (
     ("gadgets", "ট্রেন্ডিং গ্যাজেট", "/products?category=gadgets"),
     ("fashion", "গর্জিয়াস ড্রেস", "/products?category=fashion"),
@@ -218,6 +223,64 @@ async def get_row(db: AsyncSession, key: str) -> HomeShowcaseRow:
     if row is None:
         raise NotFoundError("Showcase row not found")
     return row
+
+
+def _slugify_row_key(heading: str, existing: set[str]) -> str:
+    base = _NON_SLUG.sub("-", heading.lower()).strip("-")[:24]
+    if not base or base == TRENDING_ROW_KEY:
+        base = f"section-{uuid.uuid4().hex[:8]}"
+    candidate = base
+    suffix = 2
+    while candidate in existing or candidate == TRENDING_ROW_KEY:
+        tail = f"-{suffix}"
+        candidate = f"{base[: 32 - len(tail)]}{tail}"
+        suffix += 1
+    return candidate
+
+
+async def create_row(db: AsyncSession, payload: ShowcaseRowCreate) -> ShowcaseAdmin:
+    parent = await ensure_showcase(db)
+    try:
+        href = clean_href(payload.href, "/products")
+    except ValueError as exc:
+        raise UnprocessableError("View all link must start with / or http") from exc
+    rows = await _rows(db, parent.id)
+    existing_keys = {row.key for row in rows}
+    key = _slugify_row_key(payload.heading, existing_keys)
+    max_order = max((row.sort_order for row in rows), default=-1)
+    db.add(
+        HomeShowcaseRow(
+            showcase_id=parent.id,
+            key=key,
+            heading=payload.heading,
+            href=href,
+            sort_order=max_order + 1,
+        )
+    )
+    await db.commit()
+    return await admin_view(db)
+
+
+async def delete_row(db: AsyncSession, row: HomeShowcaseRow) -> ShowcaseAdmin:
+    if row.key == TRENDING_ROW_KEY:
+        raise UnprocessableError("The Trending section cannot be deleted")
+    await db.delete(row)
+    await db.commit()
+    return await admin_view(db)
+
+
+async def reorder_rows(db: AsyncSession, payload: ShowcaseRowReorder) -> ShowcaseAdmin:
+    parent = await ensure_showcase(db)
+    rows = await _rows(db, parent.id)
+    current = {row.key for row in rows}
+    incoming = payload.keys
+    if len(incoming) != len(set(incoming)) or set(incoming) != current:
+        raise UnprocessableError("Send every section in the new order")
+    order = {key: index for index, key in enumerate(incoming)}
+    for row in rows:
+        row.sort_order = order[row.key]
+    await db.commit()
+    return await admin_view(db)
 
 
 async def update_row(
