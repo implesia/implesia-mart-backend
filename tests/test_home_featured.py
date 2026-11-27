@@ -96,10 +96,8 @@ async def test_featured_admin_requires_an_editor(
 
 
 async def test_editor_can_feature_reorder_hide_and_remove_a_product(
-    client: AsyncClient, auth_headers: dict[str, str], monkeypatch
+    client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
-    from app.services.home import featured_service
-
     flagged = await _create(
         client, auth_headers, title="Flagged lamp", slug="flagged-lamp", featured=True
     )
@@ -138,15 +136,6 @@ async def test_editor_can_feature_reorder_hide_and_remove_a_product(
         json={"product_id": extra["id"]},
     )
     assert duplicate.status_code == 422
-
-    monkeypatch.setattr(featured_service, "MAX_ITEMS", 2)
-    capped = await client.post(
-        "/api/v1/admin/home/featured/items",
-        headers=auth_headers,
-        json={"product_id": hidden["id"]},
-    )
-    assert capped.status_code == 422
-    monkeypatch.setattr(featured_service, "MAX_ITEMS", 12)
 
     concealed = await client.post(
         "/api/v1/admin/home/featured/items",
@@ -215,3 +204,42 @@ async def test_editor_can_feature_reorder_hide_and_remove_a_product(
     final = await client.get("/api/v1/home/featured")
     assert final.json()["product_ids"] == [flagged["id"]]
     assert final.json()["heading"] == "ফিচার্ড প্রোডাক্ট"
+
+
+async def test_featured_allows_more_than_twelve_products_and_reordering(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    # Initialize the featured section while catalog is empty so seeding does not pre-add item 1.
+    init = await client.get("/api/v1/admin/home/featured", headers=auth_headers)
+    assert init.status_code == 200
+
+    created_item_ids: list[str] = []
+    created_product_ids: list[str] = []
+    for idx in range(15):
+        prod = await _create(
+            client,
+            auth_headers,
+            title=f"Featured item {idx + 1}",
+            slug=f"featured-item-{idx + 1}",
+        )
+        created_product_ids.append(prod["id"])
+        res = await client.post(
+            "/api/v1/admin/home/featured/items",
+            headers=auth_headers,
+            json={"product_id": prod["id"]},
+        )
+        assert res.status_code == 201, res.text
+        created_item_ids.append(res.json()["id"])
+
+    # Reorder all 15 featured items in reverse order
+    reordered = await client.put(
+        "/api/v1/admin/home/featured/items/order",
+        headers=auth_headers,
+        json={"ids": list(reversed(created_item_ids))},
+    )
+    assert reordered.status_code == 200, reordered.text
+    assert len(reordered.json()["items"]) == 15
+
+    public = await client.get("/api/v1/home/featured")
+    assert public.status_code == 200
+    assert public.json()["product_ids"] == list(reversed(created_product_ids))

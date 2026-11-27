@@ -48,6 +48,19 @@ class ShowcasePublic(BaseModel):
     rows: list[ShowcaseRowPublic]
 
 
+class ShowcaseRowCreate(WriteModel):
+    heading: str = Field(min_length=1, max_length=120)
+    href: str = Field("", max_length=255)
+
+    @field_validator("heading")
+    @classmethod
+    def _heading(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Section heading is required")
+        return cleaned
+
+
 class ShowcaseRowUpdate(WriteModel):
     heading: str = Field(max_length=120)
     href: str = Field("", max_length=255)
@@ -56,6 +69,10 @@ class ShowcaseRowUpdate(WriteModel):
     @classmethod
     def _heading(cls, value: str) -> str:
         return value.strip()
+
+
+class ShowcaseRowReorder(WriteModel):
+    keys: list[str]
 
 
 class ShowcaseItemWrite(WriteModel):

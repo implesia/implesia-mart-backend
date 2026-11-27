@@ -19,7 +19,6 @@ from app.schemas.home.featured import (
 )
 
 FEATURED_SLUG = "home"
-MAX_ITEMS = 12
 SEED_LIMIT = 4
 DEFAULT_HEADING = "ফিচার্ড প্রোডাক্ট"
 DEFAULT_VIEW_ALL = "সব দেখুন"
@@ -202,13 +201,6 @@ async def create_item(db: AsyncSession, payload: FeaturedItemWrite) -> FeaturedI
     await _require_product(db, payload.product_id)
     row = await ensure_featured(db)
     await _reject_duplicate(db, row.id, payload.product_id)
-    count = await db.scalar(
-        select(func.count())
-        .select_from(HomeFeaturedItem)
-        .where(HomeFeaturedItem.featured_id == row.id)
-    )
-    if int(count or 0) >= MAX_ITEMS:
-        raise UnprocessableError("You can feature up to 12 products")
     current = await db.scalar(
         select(func.max(HomeFeaturedItem.sort_order)).where(HomeFeaturedItem.featured_id == row.id)
     )

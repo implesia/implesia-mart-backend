@@ -10,6 +10,8 @@ from app.schemas.home.showcase import (
     ShowcaseItemWrite,
     ShowcasePublic,
     ShowcaseReorder,
+    ShowcaseRowCreate,
+    ShowcaseRowReorder,
     ShowcaseRowUpdate,
 )
 from app.services.home import showcase_service
@@ -30,10 +32,26 @@ async def list_showcase(db: DbSession) -> ShowcaseAdmin:
     return await showcase_service.admin_view(db)
 
 
+@admin_router.post("/rows", response_model=ShowcaseAdmin, status_code=status.HTTP_201_CREATED)
+async def create_showcase_row(db: DbSession, payload: ShowcaseRowCreate) -> ShowcaseAdmin:
+    return await showcase_service.create_row(db, payload)
+
+
+@admin_router.put("/rows/order", response_model=ShowcaseAdmin)
+async def reorder_showcase_rows(db: DbSession, payload: ShowcaseRowReorder) -> ShowcaseAdmin:
+    return await showcase_service.reorder_rows(db, payload)
+
+
 @admin_router.patch("/rows/{key}", response_model=ShowcaseAdmin)
 async def update_showcase_row(db: DbSession, key: str, payload: ShowcaseRowUpdate) -> ShowcaseAdmin:
     row = await showcase_service.get_row(db, key)
     return await showcase_service.update_row(db, row, payload)
+
+
+@admin_router.delete("/rows/{key}", response_model=ShowcaseAdmin)
+async def delete_showcase_row(db: DbSession, key: str) -> ShowcaseAdmin:
+    row = await showcase_service.get_row(db, key)
+    return await showcase_service.delete_row(db, row)
 
 
 @admin_router.post(

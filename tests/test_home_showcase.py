@@ -324,3 +324,72 @@ async def test_showcase_row_allows_more_than_twelve_products_and_reordering(
     )
     assert reordered.status_code == 200, reordered.text
     assert [item["id"] for item in _row(reordered.json(), "gadgets")["items"]] == reversed_ids
+
+
+async def test_editor_can_create_reorder_and_delete_dynamic_showcase_sections(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    prod = await _create(
+        client, auth_headers, title="Combo Box", slug="combo-box", category="gadgets"
+    )
+
+    # Create a new dynamic section (ASCII heading -> clean slug key)
+    created = await client.post(
+        "/api/v1/admin/home/showcase/rows",
+        headers=auth_headers,
+        json={"heading": "Winter Combos", "href": "/products?view=new"},
+    )
+    assert created.status_code == 201, created.text
+    rows = created.json()["rows"]
+    winter = next(r for r in rows if r["heading"] == "Winter Combos")
+    assert winter["key"] == "winter-combos"
+    assert winter["href"] == "/products?view=new"
+
+    # Create a second dynamic section with Bangla heading -> auto-generated safe key
+    bn_created = await client.post(
+        "/api/v1/admin/home/showcase/rows",
+        headers=auth_headers,
+        json={"heading": "ঈদ স্পেশাল", "href": ""},
+    )
+    assert bn_created.status_code == 201, bn_created.text
+    eid = next(r for r in bn_created.json()["rows"] if r["heading"] == "ঈদ স্পেশাল")
+    assert eid["key"].startswith("section-")
+    assert eid["href"] == "/products"
+
+    # Pin a product into the dynamic section and confirm public API returns it
+    pin = await client.post(
+        f"/api/v1/admin/home/showcase/rows/{winter['key']}/items",
+        headers=auth_headers,
+        json={"product_id": prod["id"]},
+    )
+    assert pin.status_code == 201, pin.text
+
+    # Reorder sections so Winter Combos comes before fashion
+    new_keys = ["gadgets", winter["key"], "fashion", eid["key"]]
+    reordered = await client.put(
+        "/api/v1/admin/home/showcase/rows/order",
+        headers=auth_headers,
+        json={"keys": new_keys},
+    )
+    assert reordered.status_code == 200, reordered.text
+    assert [r["key"] for r in reordered.json()["rows"]] == new_keys
+
+    public = await client.get("/api/v1/home/showcase")
+    assert public.status_code == 200
+    assert [r["key"] for r in public.json()["rows"]] == new_keys
+    assert _row(public.json(), winter["key"])["product_ids"] == [prod["id"]]
+
+    # Deleting the built-in Trending (gadgets) row is rejected
+    blocked = await client.delete(
+        "/api/v1/admin/home/showcase/rows/gadgets",
+        headers=auth_headers,
+    )
+    assert blocked.status_code == 422
+
+    # Deleting a dynamic section removes it cleanly
+    deleted = await client.delete(
+        f"/api/v1/admin/home/showcase/rows/{winter['key']}",
+        headers=auth_headers,
+    )
+    assert deleted.status_code == 200, deleted.text
+    assert winter["key"] not in [r["key"] for r in deleted.json()["rows"]]
