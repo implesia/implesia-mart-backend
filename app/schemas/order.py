@@ -398,6 +398,13 @@ class OrderRead(BaseModel):
     # Same string as ``number``. Present so the storefront contract can read ``order_number``.
     order_number: str
     analytics_event_id: str
+    dropshipper_id: uuid.UUID | None = None
+    dropship_wholesale_total: int | None = None
+    dropship_profit_amount: int | None = None
+    dropship_platform_fee: int | None = None
+    white_label_shop_name: str | None = None
+    white_label_shop_phone: str | None = None
+    white_label_logo_url: str | None = None
 
 
 class OrderUpdate(BaseModel):
@@ -765,6 +772,10 @@ class PrintOrder(BaseModel):
     paid_amount: int
     due_amount: int
     items: list[PrintLine]
+    dropshipper_id: uuid.UUID | None = None
+    white_label_shop_name: str | None = None
+    white_label_shop_phone: str | None = None
+    white_label_logo_url: str | None = None
 
 
 class PrintData(BaseModel):

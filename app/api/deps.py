@@ -62,6 +62,7 @@ OptionalUser = Annotated[User | None, Depends(get_optional_user)]
 # Higher roles inherit everything the roles below them can do.
 ROLE_RANK: dict[str, int] = {
     UserRole.CUSTOMER.value: -1,
+    UserRole.DROPSHIPPER.value: -1,
     UserRole.VIEWER.value: 0,
     UserRole.EDITOR.value: 1,
     UserRole.SUPERADMIN.value: 2,
@@ -94,6 +95,27 @@ require_superadmin = require_role(UserRole.SUPERADMIN)
 RequireViewer = Annotated[User, Depends(require_viewer)]
 RequireEditor = Annotated[User, Depends(require_editor)]
 RequireSuperadmin = Annotated[User, Depends(require_superadmin)]
+
+
+async def require_approved_dropshipper(db: DbSession, user: CurrentUser) -> User:
+    """Allow only active users with an approved (non-suspended) DropshipperProfile."""
+    from sqlalchemy import select
+
+    from app.models.dropshipping import DropshipperProfile, DropshipperStatus
+
+    profile = await db.scalar(
+        select(DropshipperProfile).where(DropshipperProfile.user_id == user.id)
+    )
+    if profile is None:
+        raise PermissionDeniedError("Dropshipper partner account is required")
+    if profile.status == DropshipperStatus.SUSPENDED.value:
+        raise PermissionDeniedError("Your dropshipper account is suspended")
+    if profile.status != DropshipperStatus.APPROVED.value:
+        raise PermissionDeniedError("Your dropshipper application is not approved yet")
+    return user
+
+
+RequireApprovedDropshipper = Annotated[User, Depends(require_approved_dropshipper)]
 
 # These modules were ``require_editor`` on every method, including GET.
 # A built-in viewer with only ``read_only`` still gets 403. ``editor`` and

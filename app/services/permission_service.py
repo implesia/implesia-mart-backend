@@ -106,6 +106,11 @@ MODULE_DEFINITIONS: tuple[ModuleSpec, ...] = (
         label="Audit Logs & Safe Deletes",
         description="Security audit trail and impact-checked delete/merge actions",
     ),
+    ModuleSpec(
+        key="dropshipping",
+        label="Dropshipping & Partners",
+        description="Dropshipper KYC approvals, wholesale catalog pricing, settings, and payouts",
+    ),
 )
 
 VALID_MODULE_KEYS: frozenset[str] = frozenset(m.key for m in MODULE_DEFINITIONS)
@@ -124,8 +129,10 @@ REQUIRED_RANK: dict[RequiredAccess, int] = {
     "full": 3,
 }
 
-# Hardcoded immutable invariants: superadmin always full, customer always none.
-LOCKED_ROLES: frozenset[str] = frozenset({UserRole.SUPERADMIN.value, UserRole.CUSTOMER.value})
+# Hardcoded immutable invariants: superadmin always full, customer & dropshipper always none.
+LOCKED_ROLES: frozenset[str] = frozenset(
+    {UserRole.SUPERADMIN.value, UserRole.CUSTOMER.value, UserRole.DROPSHIPPER.value}
+)
 SYSTEM_EDITABLE_ROLES: frozenset[str] = frozenset({UserRole.EDITOR.value, UserRole.VIEWER.value})
 RESERVED_SLUGS: frozenset[str] = frozenset({"all", "staff", "admin", "system", "guest"})
 _SLUG_RE = re.compile(r"^[a-z][a-z0-9_]{1,49}$")
@@ -183,6 +190,17 @@ SYSTEM_ROLE_SEEDS: tuple[dict[str, object], ...] = (
         "admin_access": False,
         "is_system": True,
     },
+    {
+        "slug": UserRole.DROPSHIPPER.value,
+        "label": "Dropshipper",
+        "description": (
+            "Approved dropshipping partner account. Permanently blocked from /admin and "
+            "all staff APIs; accesses partner catalog and orders via /api/v1/dropshipper/*."
+        ),
+        "category": "storefront",
+        "admin_access": False,
+        "is_system": True,
+    },
 )
 
 DEFAULT_ROLE_PERMISSIONS: dict[str, dict[str, AccessLevel]] = {
@@ -198,6 +216,7 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, dict[str, AccessLevel]] = {
         "cart": "read_only",
         "coupons_pricing": "read_write",
         "cms": "read_write",
+        "dropshipping": "read_write",
         "rbac": "none",
         "audit_deletes": "none",
     },
@@ -213,6 +232,7 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, dict[str, AccessLevel]] = {
         "cart": "read_only",
         "coupons_pricing": "read_only",
         "cms": "read_only",
+        "dropshipping": "read_only",
         "rbac": "none",
         "audit_deletes": "none",
     },
@@ -332,7 +352,7 @@ async def role_has_admin_access(db: AsyncSession, role: UserRole | str) -> bool:
     role_key = _normalize_role(role)
     if role_key == UserRole.SUPERADMIN.value:
         return True
-    if role_key == UserRole.CUSTOMER.value:
+    if role_key in {UserRole.CUSTOMER.value, UserRole.DROPSHIPPER.value}:
         return False
 
     now = time.monotonic()

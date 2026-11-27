@@ -189,6 +189,8 @@ async def save_variants(
             row.cost_price = item.cost_price
         if item.id is None or "weight_grams" in item.model_fields_set:
             row.weight_grams = item.weight_grams
+        if item.id is None or "dropship_price" in item.model_fields_set:
+            row.dropship_price = item.dropship_price
         row.quantity = item.quantity
         row.is_active = item.is_active
         row.sort_order = index
@@ -292,6 +294,7 @@ def admin_read(content: ProductContent, rows: Sequence[ProductVariant]) -> list[
             cost_price=row.cost_price,
             quantity=row.quantity,
             weight_grams=row.weight_grams,
+            dropship_price=row.dropship_price,
             is_active=row.is_active,
             sort_order=row.sort_order,
         )

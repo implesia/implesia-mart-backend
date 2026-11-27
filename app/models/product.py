@@ -94,6 +94,18 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "weight_grams IS NULL OR weight_grams >= 0",
             name="weight_grams_non_negative",
         ),
+        CheckConstraint(
+            "dropship_price IS NULL OR dropship_price >= 0",
+            name="dropship_price_non_negative",
+        ),
+        CheckConstraint(
+            "min_sell_price IS NULL OR min_sell_price >= 0",
+            name="min_sell_price_non_negative",
+        ),
+        CheckConstraint(
+            "max_sell_price IS NULL OR max_sell_price >= 0",
+            name="max_sell_price_non_negative",
+        ),
         Index(conv("ix_products_storefront"), "published", "category", "status", "price"),
         Index(
             conv("ix_products_category_storefront"), "category_id", "published", "status", "price"
@@ -102,6 +114,7 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index(conv("ix_products_sort_order"), "sort_order"),
         Index(conv("ix_products_created_at"), "created_at"),
         Index(conv("ix_products_supplier_id"), "supplier_id"),
+        Index(conv("ix_products_allow_dropshipping"), "allow_dropshipping"),
     )
 
     slug: Mapped[str] = mapped_column(String(160), unique=True, nullable=False)
@@ -145,6 +158,13 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     quantity: Mapped[int | None] = mapped_column(Integer)
     # Exact unit weight in integer grams for courier slab delivery pricing.
     weight_grams: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Dropshipping controls (additive; untouched for retail when False / NULL).
+    allow_dropshipping: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
+    dropship_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    min_sell_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_sell_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     badge: Mapped[str | None] = mapped_column(String(32))
     image_src: Mapped[str] = mapped_column(
@@ -230,6 +250,10 @@ class ProductVariant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "weight_grams IS NULL OR weight_grams >= 0",
             name="weight_grams_non_negative",
         ),
+        CheckConstraint(
+            "dropship_price IS NULL OR dropship_price >= 0",
+            name="dropship_price_non_negative",
+        ),
         Index(
             conv("uq_product_variants_sku"),
             text("lower(sku)"),
@@ -255,6 +279,8 @@ class ProductVariant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     quantity: Mapped[int | None] = mapped_column(Integer)
     # Optional per-variant weight override in integer grams.
     weight_grams: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Optional per-variant wholesale dropshipping price.
+    dropship_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
     )

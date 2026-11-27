@@ -423,36 +423,65 @@ async def _returned_value(db: AsyncSession, scope: ReportScope) -> int:
     return int(value or 0)
 
 
+def _effective_line_total_expr(dialect: str) -> Any:
+    """Line merchandise revenue for Implesia Mart.
+
+    Retail orders (``dropshipper_id IS NULL``) use ``OrderItem.line_total`` unchanged.
+    Dropship orders use Implesia Mart's net wholesale + platform fee revenue share,
+    excluding the dropshipper's profit margin.
+    """
+    num = _sql_num(dialect)
+    dropship_net = func.coalesce(Order.dropship_wholesale_total, 0) + func.coalesce(
+        Order.dropship_platform_fee, 0
+    )
+    return case(
+        (Order.dropshipper_id.is_(None), cast(OrderItem.line_total, num)),
+        (
+            Order.subtotal > 0,
+            cast(OrderItem.line_total, num)
+            * cast(dropship_net, num)
+            / cast(Order.subtotal, num),
+        ),
+        else_=cast(0, num),
+    )
+
+
 async def _line_totals(db: AsyncSession, scope: ReportScope) -> _LineTotals:
+    dialect = dialect_name(db)
     known = OrderItem.unit_cost.is_not(None)
     unknown = OrderItem.unit_cost.is_(None)
     list_price = func.coalesce(OrderItem.regular_price, OrderItem.unit_price)
+    eff_line = _effective_line_total_expr(dialect)
+    eff_gross = case(
+        (Order.dropshipper_id.is_(None), cast(list_price * OrderItem.quantity, _sql_num(dialect))),
+        else_=eff_line,
+    )
     row = (
         await db.execute(
             _line_statement(
                 scope,
                 [
                     func.coalesce(func.sum(OrderItem.quantity), 0),
-                    func.coalesce(func.sum(list_price * OrderItem.quantity), 0),
-                    func.coalesce(func.sum(OrderItem.line_total), 0),
-                    func.coalesce(func.sum(case((known, OrderItem.line_total), else_=0)), 0),
+                    func.coalesce(func.sum(eff_gross), 0),
+                    func.coalesce(func.sum(eff_line), 0),
+                    func.coalesce(func.sum(case((known, eff_line), else_=0)), 0),
                     func.sum(case((known, OrderItem.quantity * OrderItem.unit_cost))),
                     func.coalesce(func.sum(case((unknown, OrderItem.quantity), else_=0)), 0),
-                    func.coalesce(func.sum(case((unknown, OrderItem.line_total), else_=0)), 0),
+                    func.coalesce(func.sum(case((unknown, eff_line), else_=0)), 0),
                     func.coalesce(func.sum(case((unknown, 1), else_=0)), 0),
                 ],
-                dialect_name(db),
+                dialect,
             )
         )
     ).one()
     return _LineTotals(
         units=int(row[0]),
-        gross=int(row[1]),
-        merchandise=int(row[2]),
-        known_revenue=int(row[3]),
+        gross=_whole(row[1]),
+        merchandise=_whole(row[2]),
+        known_revenue=_whole(row[3]),
         cost=_money(row[4]),
         unknown_units=int(row[5]),
-        unknown_revenue=int(row[6]),
+        unknown_revenue=_whole(row[6]),
         unknown_lines=int(row[7]),
     )
 
@@ -477,7 +506,7 @@ async def _line_loss_amount(db: AsyncSession, scope: ReportScope) -> Decimal:
         ),
         else_=0,
     )
-    line_net = cast(OrderItem.line_total - share, num)
+    line_net = cast(_effective_line_total_expr(dialect) - share, num)
     line_cost = cast(OrderItem.quantity * OrderItem.unit_cost, num)
     line_diff = line_net - line_cost
     stmt = (

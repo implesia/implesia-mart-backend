@@ -367,6 +367,13 @@ async def process_steadfast_webhook(
                         await order_service.change_status(db, order, step_status, actor_id=None)
                         await db.refresh(order)
                     auto_delivered_order_id = order.id
+                elif (
+                    order.dropshipper_id is not None
+                    and order.status == OrderStatus.DELIVERED.value
+                ):
+                    from app.services import dropship_wallet_service
+
+                    await dropship_wallet_service.on_dropship_order_delivered(db, order)
 
         elif raw_status == "partial_delivered":
             # CRITICAL: Do NOT overwrite order total or auto-complete; require staff review
@@ -414,6 +421,10 @@ async def process_steadfast_webhook(
                         "tracking_message": tracking_message,
                     },
                 )
+                if order.dropshipper_id is not None and shipment.is_return_received:
+                    from app.services import dropship_wallet_service
+
+                    await dropship_wallet_service.on_dropship_order_returned(db, order)
 
         elif raw_status in _CANCELLED_RETURN_PROGRESS or raw_status in _PARTIAL_RETURN_PROGRESS:
             shipment.return_status = raw_status
@@ -448,6 +459,14 @@ async def process_steadfast_webhook(
                         "tracking_message": tracking_message,
                     },
                 )
+                if (
+                    order.dropshipper_id is not None
+                    and raw_status in _CANCELLED_RETURN_PROGRESS
+                    and shipment.is_return_received
+                ):
+                    from app.services import dropship_wallet_service
+
+                    await dropship_wallet_service.on_dropship_order_returned(db, order)
 
         elif raw_status in _ALERT_STATUSES:
             shipment.delivery_status = raw_status

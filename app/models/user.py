@@ -12,6 +12,7 @@ class UserRole(StrEnum):
     EDITOR = "editor"
     VIEWER = "viewer"
     CUSTOMER = "customer"
+    DROPSHIPPER = "dropshipper"
 
 
 # Staff roles allowed to sign into /admin. Future non-staff roles (e.g. dropshipper)

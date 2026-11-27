@@ -741,6 +741,10 @@ async def print_data(db: AsyncSession, ids: list[uuid.UUID]) -> PrintData:
                     order.due_amount if order.due_amount is not None else max(order.total - paid, 0)
                 ),
                 items=[_print_line(item) for item in order.items],
+                dropshipper_id=order.dropshipper_id,
+                white_label_shop_name=order.white_label_shop_name,
+                white_label_shop_phone=order.white_label_shop_phone,
+                white_label_logo_url=order.white_label_logo_url,
             )
         )
     return PrintData(orders=orders, missing=missing)

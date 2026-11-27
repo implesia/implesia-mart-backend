@@ -44,6 +44,21 @@ from app.models.coupon import Coupon, CouponCategory, CouponProduct, CouponRedem
 from app.models.courier import CourierLocation, CourierShipment, CourierWebhookEvent
 from app.models.courier_check import CourierCheckResult
 from app.models.delivery import DeliverySettings
+from app.models.dropshipping import (
+    DropshipperPayoutRequest,
+    DropshipperProfile,
+    DropshipperStatus,
+    DropshipperTier,
+    DropshipperTopupRequest,
+    DropshipperWalletTransaction,
+    DropshippingSettings,
+    PayoutMethod,
+    PayoutRequestStatus,
+    RtoChargeMode,
+    TopupRequestStatus,
+    WalletBucket,
+    WalletEntryType,
+)
 from app.models.faqs.callout import FaqCallout
 from app.models.faqs.categories import FaqCategories, FaqCategoryItem
 from app.models.faqs.help import FaqHelp
@@ -180,6 +195,19 @@ __all__ = [
     "ContactSupportHour",
     "ContactSupportLink",
     "DeliverySettings",
+    "DropshippingSettings",
+    "DropshipperProfile",
+    "DropshipperStatus",
+    "DropshipperTier",
+    "DropshipperWalletTransaction",
+    "DropshipperPayoutRequest",
+    "DropshipperTopupRequest",
+    "PayoutMethod",
+    "PayoutRequestStatus",
+    "RtoChargeMode",
+    "TopupRequestStatus",
+    "WalletBucket",
+    "WalletEntryType",
     "FaqCallout",
     "FaqCategories",
     "FaqCategoryItem",

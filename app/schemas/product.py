@@ -489,6 +489,7 @@ class VariantInput(BaseModel):
     cost_price: CostPrice | None = None
     quantity: int | None = Field(default=None, ge=0, le=MAX_QUANTITY)
     weight_grams: int | None = Field(default=None, ge=0, le=500_000)
+    dropship_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     is_active: bool = True
 
     @field_validator("options")
@@ -524,6 +525,7 @@ class VariantRead(BaseModel):
     cost_price: CostPrice | None = None
     quantity: int | None
     weight_grams: int | None = None
+    dropship_price: int | None = None
     is_active: bool
     sort_order: int
 
@@ -566,6 +568,10 @@ class ProductCreate(BaseModel):
     tiers: list[QuantityTier] = Field(default_factory=list, max_length=MAX_TIERS)
     quantity: int | None = Field(default=None, ge=0, le=MAX_QUANTITY)
     weight_grams: int | None = Field(default=None, le=500_000)
+    allow_dropshipping: bool = False
+    dropship_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
+    min_sell_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
+    max_sell_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     status: StockStatus = StockStatus.AVAILABLE
     # Legacy single badge. Prefer `badge_ids`; when only `badge_ids` is sent, `badge` is
     # derived from the built-in badges among them.
@@ -685,6 +691,10 @@ class ProductUpdate(BaseModel):
     tiers: list[QuantityTier] | None = Field(default=None, max_length=MAX_TIERS)
     quantity: int | None = Field(default=None, ge=0, le=MAX_QUANTITY)
     weight_grams: int | None = Field(default=None, ge=0, le=500_000)
+    allow_dropshipping: bool | None = None
+    dropship_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
+    min_sell_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
+    max_sell_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     status: StockStatus | None = None
     badge: ProductBadge | None = None
     # Omitted = keep the product's badges. [] = remove them all.
@@ -780,6 +790,10 @@ class AdminProductCard(BaseModel):
     cost_price: CostPrice | None = None
     quantity: int | None
     weight_grams: int | None = None
+    allow_dropshipping: bool = False
+    dropship_price: int | None = None
+    min_sell_price: int | None = None
+    max_sell_price: int | None = None
     status: StockStatus
     badge: ProductBadge | None
     # Every badge on the product, in display order, including switched-off ones.

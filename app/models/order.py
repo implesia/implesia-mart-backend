@@ -150,6 +150,14 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "total_weight_grams IS NULL OR total_weight_grams >= 0",
             name="total_weight_non_negative",
         ),
+        CheckConstraint(
+            "dropship_wholesale_total IS NULL OR dropship_wholesale_total >= 0",
+            name="dropship_wholesale_non_negative",
+        ),
+        CheckConstraint(
+            "dropship_platform_fee IS NULL OR dropship_platform_fee >= 0",
+            name="dropship_platform_fee_non_negative",
+        ),
         Index("ix_orders_phone", "phone"),
         Index("ix_orders_created_at", "created_at"),
         Index("ix_orders_status", "status"),
@@ -158,6 +166,7 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_orders_origin", "origin"),
         Index("ix_orders_call_status", "call_status"),
         Index("ix_orders_ordered_at", "ordered_at"),
+        Index("ix_orders_dropshipper_id", "dropshipper_id"),
         # Public lookup compares lower(tracking_number). A plain index would not serve that.
         Index("ix_orders_tracking_number_lower", text("lower(tracking_number)")),
     )
@@ -248,8 +257,18 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     inventory_held: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=true()
     )
+    # Additive dropshipping columns (NULL for all retail orders).
+    dropshipper_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    dropship_wholesale_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    dropship_profit_amount: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    dropship_platform_fee: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    white_label_shop_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    white_label_shop_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    white_label_logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
-    user: Mapped[User | None] = relationship()
+    user: Mapped[User | None] = relationship(foreign_keys=[user_id])
     items: Mapped[list["OrderItem"]] = relationship(
         back_populates="order",
         cascade="all, delete-orphan",

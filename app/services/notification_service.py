@@ -187,6 +187,83 @@ async def create_order_status_notification(
     return notification
 
 
+async def create_dropshipper_notification(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    *,
+    title: str,
+    message: str,
+    notif_type: str = "dropshipper_wallet",
+    order_id: uuid.UUID | None = None,
+    order_number: str | None = None,
+    url: str = "/dropshipper/wallet",
+    commit: bool = False,
+) -> CustomerNotification:
+    """Create a live notification + WS + Web Push for a dropshipper partner."""
+    notification = CustomerNotification(
+        user_id=user_id,
+        order_id=order_id,
+        type=notif_type[:40],
+        title=title[:160],
+        message=message[:1000],
+        language="en",
+        is_read=False,
+    )
+    db.add(notification)
+    if commit:
+        await db.commit()
+        await db.refresh(notification)
+    else:
+        await db.flush()
+    unread_count = await count_unread_notifications(db, user_id)
+    channel = user_channel(user_id)
+    created_iso = (
+        notification.created_at.isoformat()
+        if notification.created_at is not None
+        else datetime.now(UTC).isoformat()
+    )
+    with contextlib.suppress(Exception):
+        await realtime_hub.publish(
+            channel,
+            "notification.created",
+            {
+                "id": str(notification.id),
+                "order_id": str(notification.order_id) if notification.order_id else None,
+                "order_number": order_number,
+                "type": notification.type,
+                "title": notification.title,
+                "message": notification.message,
+                "is_read": notification.is_read,
+                "language": notification.language,
+                "created_at": created_iso,
+                "unread_count": unread_count,
+            },
+        )
+        await realtime_hub.publish(
+            channel,
+            "notification.unread",
+            {"unread_count": unread_count},
+        )
+    from app.services import push_service
+
+    if push_service.is_configured():
+        with contextlib.suppress(Exception):
+            push_service.schedule_push_to_users(
+                None,
+                [user_id],
+                "customer",
+                push_service.build_push_payload(
+                    title=notification.title,
+                    body=notification.message,
+                    url=url,
+                    tag=f"implesia-dropship-{notification.id}",
+                    scope="customer",
+                    can_quick_reply=False,
+                ),
+            )
+    return notification
+
+
 def _retention_cutoff() -> datetime:
     return datetime.now(UTC) - timedelta(days=RETENTION_DAYS)
 

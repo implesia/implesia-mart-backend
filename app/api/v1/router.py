@@ -10,6 +10,7 @@ from app.api.v1.endpoints import (
     admin_courier,
     admin_customers,
     admin_delivery,
+    admin_dropshipping,
     admin_inventory,
     admin_notifications,
     admin_orders,
@@ -25,6 +26,8 @@ from app.api.v1.endpoints import (
     customer_orders,
     dashboard,
     delivery,
+    dropshipper,
+    dropshipper_orders,
     inquiries,
     orders,
     products,
@@ -121,6 +124,22 @@ api_router.include_router(
     admin_communication.router,
     prefix="/admin/communication",
     tags=["admin:communication"],
+    dependencies=_AUDITED,
+)
+api_router.include_router(
+    dropshipper.router,
+    prefix="/dropshipper",
+    tags=["dropshipper"],
+)
+api_router.include_router(
+    dropshipper_orders.router,
+    prefix="/dropshipper",
+    tags=["dropshipper:orders"],
+)
+api_router.include_router(
+    admin_dropshipping.router,
+    prefix="/admin/dropshipping",
+    tags=["admin:dropshipping"],
     dependencies=_AUDITED,
 )
 api_router.include_router(reviews.router, tags=["reviews"])

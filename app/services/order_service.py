@@ -245,6 +245,13 @@ def _read(
         next_statuses=next_statuses(order.status),
         order_number=order.number,
         analytics_event_id=purchase_event_id(order.number),
+        dropshipper_id=order.dropshipper_id,
+        dropship_wholesale_total=order.dropship_wholesale_total,
+        dropship_profit_amount=order.dropship_profit_amount,
+        dropship_platform_fee=order.dropship_platform_fee,
+        white_label_shop_name=order.white_label_shop_name,
+        white_label_shop_phone=order.white_label_shop_phone,
+        white_label_logo_url=order.white_label_logo_url,
     )
 
 
@@ -1459,6 +1466,14 @@ async def change_status(
         f"Status {current} to {target}",
         {"from": current, "to": target},
     )
+    if order.dropshipper_id is not None:
+        from app.services import dropship_wallet_service
+
+        if target == OrderStatus.DELIVERED.value:
+            await db.refresh(order, ["delivered_at"])
+            await dropship_wallet_service.on_dropship_order_delivered(db, order)
+        elif target == OrderStatus.RETURNED.value:
+            await dropship_wallet_service.on_dropship_order_returned(db, order)
     return target == OrderStatus.CANCELLED.value
 
 

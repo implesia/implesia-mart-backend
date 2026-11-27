@@ -59,6 +59,7 @@ _FOLDERS = frozenset(
         "payment",
         "avatars",
         "chat",
+        "dropshippers",
     }
 )
 
