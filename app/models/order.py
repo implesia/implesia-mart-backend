@@ -146,6 +146,10 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         CheckConstraint("manual_discount >= 0", name="manual_discount_non_negative"),
         CheckConstraint("paid_amount >= 0", name="paid_non_negative"),
+        CheckConstraint(
+            "total_weight_grams IS NULL OR total_weight_grams >= 0",
+            name="total_weight_non_negative",
+        ),
         Index("ix_orders_phone", "phone"),
         Index("ix_orders_created_at", "created_at"),
         Index("ix_orders_status", "status"),
@@ -201,6 +205,7 @@ class Order(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     subtotal: Mapped[int] = mapped_column(Integer, nullable=False)
     shipping: Mapped[int] = mapped_column(Integer, nullable=False)
     total: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_weight_grams: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Snapshot of the coupon accepted at checkout. NULL when the order used none,
     # including every order placed before coupons existed. The total already
     # has this discount taken off. A later edit of the coupon does not change it.
@@ -261,6 +266,10 @@ class OrderItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "unit_cost IS NULL OR unit_cost >= 0",
             name="unit_cost_non_negative",
         ),
+        CheckConstraint(
+            "unit_weight_grams IS NULL OR unit_weight_grams >= 0",
+            name="unit_weight_non_negative",
+        ),
     )
 
     order_id: Mapped[uuid.UUID] = mapped_column(
@@ -290,6 +299,7 @@ class OrderItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Product cost_price at order time. NULL when the product had no cost, and on
     # lines placed before this column existed. Later cost edits do not change it.
     unit_cost: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    unit_weight_grams: Mapped[int | None] = mapped_column(Integer, nullable=True)
     selection: Mapped[list[Any]] = mapped_column(
         JSON().with_variant(JSONB(), "postgresql"),
         nullable=False,

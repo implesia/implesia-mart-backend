@@ -46,6 +46,15 @@ async def test_public_rates_default_and_admin_updates_them(
         "inside_enabled": True,
         "suburban_enabled": True,
         "outside_enabled": True,
+        "weight_pricing_enabled": True,
+        "base_weight_grams": 1000,
+        "extra_weight_step_grams": 1000,
+        "extra_fee_inside": 20,
+        "extra_fee_suburban": 20,
+        "extra_fee_outside": 20,
+        "packaging_weight_grams": 0,
+        "default_product_weight_grams": 500,
+        "suburban_places": ["Savar", "Ashulia", "Gazipur", "Keraniganj", "Narayanganj"],
     }
     assert public.headers["cache-control"] == "public, max-age=60"
 
@@ -113,18 +122,20 @@ async def test_public_rates_default_and_admin_updates_them(
         "inside_enabled": True,
         "suburban_enabled": True,
         "outside_enabled": True,
+        "weight_pricing_enabled": True,
+        "base_weight_grams": 1000,
+        "extra_weight_step_grams": 1000,
+        "extra_fee_inside": 20,
+        "extra_fee_suburban": 20,
+        "extra_fee_outside": 20,
+        "packaging_weight_grams": 0,
+        "default_product_weight_grams": 500,
+        "suburban_places": ["Savar", "Ashulia", "Gazipur", "Keraniganj", "Narayanganj"],
     }
     assert saved.headers["cache-control"] == "no-store"
 
     again = await client.get("/api/v1/delivery")
-    assert again.json() == {
-        "inside_dhaka": 80,
-        "dhaka_suburban": 100,
-        "outside_dhaka": 120,
-        "inside_enabled": True,
-        "suburban_enabled": True,
-        "outside_enabled": True,
-    }
+    assert again.json() == saved.json()
 
 
 async def test_checkout_and_cart_use_the_saved_rates(
@@ -343,3 +354,93 @@ async def test_a_zone_or_every_zone_can_be_turned_off(
         },
     )
     assert placed.status_code == 422, placed.text
+
+
+async def test_dynamic_suburban_places_can_be_configured_from_admin(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    product = await _create(client, auth_headers, price=1000, quantity=5, weight_grams=400)
+
+    # Default Steadfast 5 places (including Gazipur & Narayanganj in English and Bangla) -> suburban
+    for district, area in (
+        ("Savar", ""),
+        ("Dhaka", "Ashulia"),
+        ("Gazipur", ""),
+        ("গাজীপুর", ""),
+        ("Keraniganj", ""),
+        ("Narayanganj", ""),
+        ("নারায়ণগঞ্জ", ""),
+    ):
+        res = await client.post(
+            "/api/v1/orders/quote",
+            json={
+                "source": "direct",
+                "district": district,
+                "area": area,
+                "items": [{"product_id": product["id"], "quantity": 1}],
+            },
+        )
+        assert res.status_code == 200, res.text
+        assert res.json()["delivery_zone"] == "suburban", (district, area, res.json())
+        assert res.json()["shipping"] == 100
+
+    # Munshiganj is outside by default
+    before = await client.post(
+        "/api/v1/orders/quote",
+        json={
+            "source": "direct",
+            "district": "Munshiganj",
+            "items": [{"product_id": product["id"], "quantity": 1}],
+        },
+    )
+    assert before.status_code == 200
+    assert before.json()["delivery_zone"] == "outside"
+
+    # Admin dynamically adds Munshiganj and removes Gazipur
+    updated = await client.patch(
+        "/api/v1/admin/delivery",
+        headers=auth_headers,
+        json={
+            "inside_dhaka": 70,
+            "dhaka_suburban": 100,
+            "outside_dhaka": 130,
+            "inside_enabled": True,
+            "suburban_enabled": True,
+            "outside_enabled": True,
+            "suburban_places": ["Savar", "Ashulia", "Keraniganj", "Narayanganj", "Munshiganj"],
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["suburban_places"] == [
+        "Savar",
+        "Ashulia",
+        "Keraniganj",
+        "Narayanganj",
+        "Munshiganj",
+    ]
+
+    # Munshiganj (and its Bangla alias) now resolves to suburban
+    after_add = await client.post(
+        "/api/v1/orders/quote",
+        json={
+            "source": "direct",
+            "district": "মুন্সীগঞ্জ",
+            "items": [{"product_id": product["id"], "quantity": 1}],
+        },
+    )
+    assert after_add.status_code == 200
+    assert after_add.json()["delivery_zone"] == "suburban"
+    assert after_add.json()["shipping"] == 100
+
+    # Gazipur was removed -> now resolves to outside
+    after_remove = await client.post(
+        "/api/v1/orders/quote",
+        json={
+            "source": "direct",
+            "district": "Gazipur",
+            "items": [{"product_id": product["id"], "quantity": 1}],
+        },
+    )
+    assert after_remove.status_code == 200
+    assert after_remove.json()["delivery_zone"] == "outside"
+    assert after_remove.json()["shipping"] == 130

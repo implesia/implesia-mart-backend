@@ -35,7 +35,7 @@ async def test_publishing_still_requires_price_category_and_image(
     )
     assert response.status_code == 400
     fields = {item["field"] for item in response.json()["errors"]}
-    assert fields == {"price", "category"}
+    assert fields == {"price", "category", "weight_grams"}
 
     no_image = await client.post(ADMIN, headers=auth_headers, files=_parts(_product(image_src="")))
     assert no_image.status_code == 400

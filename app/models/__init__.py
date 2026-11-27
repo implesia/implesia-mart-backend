@@ -56,6 +56,7 @@ from app.models.home.faq import HomeFaq, HomeFaqItem
 from app.models.home.featured import HomeFeatured, HomeFeaturedItem
 from app.models.home.media import HomeMedia
 from app.models.home.newsletter import HomeNewsletter, HomeNewsletterPerk
+from app.models.home.popup import HomePopup
 from app.models.home.promo import HomePromo
 from app.models.home.review import HomeReview, HomeReviewItem
 from app.models.home.showcase import HomeShowcase, HomeShowcaseItem, HomeShowcaseRow
@@ -198,6 +199,7 @@ __all__ = [
     "HomeMedia",
     "HomeNewsletter",
     "HomeNewsletterPerk",
+    "HomePopup",
     "HomePromo",
     "HomeReview",
     "HomeReviewItem",

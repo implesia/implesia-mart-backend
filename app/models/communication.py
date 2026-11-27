@@ -25,7 +25,9 @@ from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 class ConversationType(StrEnum):
     CUSTOMER_SUPPORT = "customer_support"
     SELLER_SUPPORT = "seller_support"
+    DROPSHIPPER_SUPPORT = "dropshipper_support"
     CUSTOMER_SELLER = "customer_seller"
+    CUSTOMER_DROPSHIPPER = "customer_dropshipper"
 
 
 class ConversationStatus(StrEnum):
@@ -39,7 +41,8 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "conversations"
     __table_args__ = (
         CheckConstraint(
-            "type IN ('customer_support', 'seller_support', 'customer_seller')",
+            "type IN ('customer_support', 'seller_support', 'dropshipper_support', "
+            "'customer_seller', 'customer_dropshipper')",
             name="type_known",
         ),
         CheckConstraint(
@@ -48,6 +51,11 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         Index("ix_conversations_customer_last_msg", "customer_id", desc("last_message_at")),
         Index("ix_conversations_seller_last_msg", "seller_id", desc("last_message_at")),
+        Index(
+            "ix_conversations_dropshipper_last_msg",
+            "dropshipper_id",
+            desc("last_message_at"),
+        ),
         Index(
             "ix_conversations_type_status_last_msg",
             "type",
@@ -68,6 +76,12 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         index=True,
     )
     seller_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    dropshipper_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,

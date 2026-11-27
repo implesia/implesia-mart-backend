@@ -8,7 +8,14 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-ConversationTypeLiteral = Literal["customer_support", "seller_support", "customer_seller"]
+ConversationTypeLiteral = Literal[
+    "customer_support",
+    "seller_support",
+    "dropshipper_support",
+    "customer_seller",
+    "customer_dropshipper",
+]
+ChannelGroupLiteral = Literal["all", "customer", "seller", "dropshipper"]
 ConversationStatusLiteral = Literal["open", "pending", "resolved", "closed"]
 
 
@@ -87,12 +94,16 @@ class ConversationRead(BaseModel):
     subject: str
     customer_id: uuid.UUID | None = None
     seller_id: uuid.UUID | None = None
+    dropshipper_id: uuid.UUID | None = None
     order_id: uuid.UUID | None = None
     product_id: uuid.UUID | None = None
     assigned_staff_id: uuid.UUID | None = None
     customer: ParticipantBrief | None = None
     seller: ParticipantBrief | None = None
+    dropshipper: ParticipantBrief | None = None
     assigned_staff: ParticipantBrief | None = None
+    is_online: bool = False
+    last_seen_at: datetime | None = None
     last_message_at: datetime | None = None
     last_message_preview: str = ""
     unread_count: int = 0
@@ -122,6 +133,7 @@ class MessageRead(BaseModel):
     sender_id: uuid.UUID | None = None
     sender_role: str
     sender_name: str | None = None
+    sender_avatar_url: str | None = None
     body: str
     attachment_url: str | None = None
     is_internal_note: bool = False
@@ -156,6 +168,18 @@ class ChannelSummaryCount(BaseModel):
     total: int = 0
 
 
+class ChannelGroupSummary(BaseModel):
+    open_count: int = 0
+    unread_conversations: int = 0
+    total_unread_messages: int = 0
+
+
+class ByChannelSummary(BaseModel):
+    customer: ChannelGroupSummary = Field(default_factory=ChannelGroupSummary)
+    seller: ChannelGroupSummary = Field(default_factory=ChannelGroupSummary)
+    dropshipper: ChannelGroupSummary = Field(default_factory=ChannelGroupSummary)
+
+
 class AdminCommunicationSummaryResponse(BaseModel):
     open_count: int = 0
     pending_count: int = 0
@@ -165,3 +189,4 @@ class AdminCommunicationSummaryResponse(BaseModel):
     unread_conversations_count: int = 0
     total_unread_messages: int = 0
     by_type: list[ChannelSummaryCount] = Field(default_factory=list)
+    by_channel: ByChannelSummary = Field(default_factory=ByChannelSummary)

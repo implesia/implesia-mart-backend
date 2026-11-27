@@ -109,10 +109,13 @@ def _empty(anonymous: bool, rates: delivery_service.StoreFees) -> CartRead:
     )
 
 
-def _lines(cart: Cart, rules: pricing_service.Rules) -> tuple[list[CartItemRead], int, int]:
+def _lines(
+    cart: Cart, rules: pricing_service.Rules, rates: delivery_service.StoreFees
+) -> tuple[list[CartItemRead], int, int, int]:
     items: list[CartItemRead] = []
     subtotal = 0
     count = 0
+    items_weight = 0
     for item in cart.items:
         product = item.product
         variant = item.variant
@@ -120,6 +123,11 @@ def _lines(cart: Cart, rules: pricing_service.Rules) -> tuple[list[CartItemRead]
         # The one pricing rule (base % + quantity tiers, capped), worked out on the server.
         line = pricing_service.price_product(product, variant, item.quantity, rules)
         unit_price = line.unit_price
+        unit_weight = delivery_service.resolve_item_weight_grams(
+            product.weight_grams,
+            variant.weight_grams if variant is not None else None,
+            rates,
+        )
         minimum, maximum = variant_service.order_limits(product, rules.max_quantity)
         if available:
             maximum = _cap(product, variant, rules.max_quantity)
@@ -127,6 +135,7 @@ def _lines(cart: Cart, rules: pricing_service.Rules) -> tuple[list[CartItemRead]
         if available:
             subtotal += line_total
             count += item.quantity
+            items_weight += unit_weight * item.quantity
         items.append(
             CartItemRead(
                 id=item.id,
@@ -141,6 +150,7 @@ def _lines(cart: Cart, rules: pricing_service.Rules) -> tuple[list[CartItemRead]
                 unit_price=unit_price,
                 quantity=item.quantity,
                 line_total=line_total,
+                unit_weight_grams=unit_weight,
                 available=available,
                 regular_price=line.regular_price,
                 base_discount_percent=line.base_percent,
@@ -150,7 +160,25 @@ def _lines(cart: Cart, rules: pricing_service.Rules) -> tuple[list[CartItemRead]
                 selection=selection_of(item.selection),
             )
         )
-    return items, subtotal, count
+    total_weight = (rates.packaging_weight_grams + items_weight) if count > 0 else 0
+    return items, subtotal, count, total_weight
+
+
+def _preview_breakdown(
+    count: int, total_weight_grams: int, rates: delivery_service.StoreFees
+) -> tuple[int, int, int, int]:
+    if count <= 0:
+        return 0, 0, 0, 0
+    shipping = delivery_service.preview_shipping(count, rates, total_weight_grams)
+    if shipping == 0:
+        return 0, 0, 0, 0
+    offered_zones = [zone for zone in ("inside", "suburban", "outside") if rates.enabled(zone)]
+    if not offered_zones:
+        return 0, 0, 0, 0
+    bd = delivery_service.calculate_weight_shipping(offered_zones[0], total_weight_grams, rates)
+    if bd.total_fee == shipping:
+        return shipping, bd.base_fee, bd.extra_weight_fee, bd.extra_steps
+    return shipping, shipping, 0, 0
 
 
 def _read(
@@ -159,8 +187,10 @@ def _read(
     rates: delivery_service.StoreFees,
     rules: pricing_service.Rules,
 ) -> CartRead:
-    items, subtotal, count = _lines(cart, rules)
-    shipping = delivery_service.preview_shipping(count, rates)
+    items, subtotal, count, total_weight = _lines(cart, rules, rates)
+    shipping, base_shipping, extra_shipping, extra_steps = _preview_breakdown(
+        count, total_weight, rates
+    )
     anonymous = cart.user_id is None
     return CartRead(
         id=cart.id,
@@ -170,6 +200,10 @@ def _read(
         item_count=count,
         subtotal=subtotal,
         shipping=shipping,
+        base_shipping=base_shipping,
+        extra_weight_shipping=extra_shipping,
+        extra_weight_steps=extra_steps,
+        total_weight_grams=total_weight,
         total=subtotal + shipping,
         inside_dhaka=rates.inside,
         dhaka_suburban=rates.suburban,
@@ -195,8 +229,10 @@ def _owner(cart: Cart) -> CartOwnerRead:
 def _admin(
     cart: Cart, rates: delivery_service.StoreFees, rules: pricing_service.Rules
 ) -> AdminCartRead:
-    items, subtotal, count = _lines(cart, rules)
-    shipping = delivery_service.preview_shipping(count, rates)
+    items, subtotal, count, total_weight = _lines(cart, rules, rates)
+    shipping, base_shipping, extra_shipping, extra_steps = _preview_breakdown(
+        count, total_weight, rates
+    )
     detailed = [
         AdminCartItemRead(
             **item.model_dump(),
@@ -211,6 +247,10 @@ def _admin(
         item_count=count,
         subtotal=subtotal,
         shipping=shipping,
+        base_shipping=base_shipping,
+        extra_weight_shipping=extra_shipping,
+        extra_weight_steps=extra_steps,
+        total_weight_grams=total_weight,
         total=subtotal + shipping,
         inside_dhaka=rates.inside,
         dhaka_suburban=rates.suburban,

@@ -187,6 +187,8 @@ async def save_variants(
         row.compare_at_price = item.compare_at_price
         if item.id is None or "cost_price" in item.model_fields_set:
             row.cost_price = item.cost_price
+        if item.id is None or "weight_grams" in item.model_fields_set:
+            row.weight_grams = item.weight_grams
         row.quantity = item.quantity
         row.is_active = item.is_active
         row.sort_order = index
@@ -289,6 +291,7 @@ def admin_read(content: ProductContent, rows: Sequence[ProductVariant]) -> list[
             compare_at_price=row.compare_at_price,
             cost_price=row.cost_price,
             quantity=row.quantity,
+            weight_grams=row.weight_grams,
             is_active=row.is_active,
             sort_order=row.sort_order,
         )
@@ -306,6 +309,7 @@ def public_read(
             label=label_of(content, row.options),
             price=row.price,
             compare_at_price=row.compare_at_price,
+            weight_grams=row.weight_grams,
             available=variant_available(row, product, limit),
             max_quantity=stock_cap(product, row, limit),
         )

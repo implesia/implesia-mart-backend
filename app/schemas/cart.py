@@ -40,6 +40,7 @@ class CartItemRead(BaseModel):
     unit_price: int
     quantity: int
     line_total: int
+    unit_weight_grams: int = 0
     available: bool
     selection: list[SelectedOption] = Field(default_factory=list)
     # unit_price is the quantity-1 selling price; line_total = ceil(unit_price x quantity less
@@ -60,6 +61,10 @@ class CartRead(BaseModel):
     item_count: int
     subtotal: int
     shipping: int
+    base_shipping: int = 0
+    extra_weight_shipping: int = 0
+    extra_weight_steps: int = 0
+    total_weight_grams: int = 0
     total: int
     inside_dhaka: int
     dhaka_suburban: int
@@ -88,6 +93,10 @@ class AdminCartRead(BaseModel):
     item_count: int
     subtotal: int
     shipping: int
+    base_shipping: int = 0
+    extra_weight_shipping: int = 0
+    extra_weight_steps: int = 0
+    total_weight_grams: int = 0
     total: int
     inside_dhaka: int
     dhaka_suburban: int

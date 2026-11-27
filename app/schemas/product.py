@@ -488,6 +488,7 @@ class VariantInput(BaseModel):
     compare_at_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     cost_price: CostPrice | None = None
     quantity: int | None = Field(default=None, ge=0, le=MAX_QUANTITY)
+    weight_grams: int | None = Field(default=None, ge=0, le=500_000)
     is_active: bool = True
 
     @field_validator("options")
@@ -522,6 +523,7 @@ class VariantRead(BaseModel):
     compare_at_price: int | None
     cost_price: CostPrice | None = None
     quantity: int | None
+    weight_grams: int | None = None
     is_active: bool
     sort_order: int
 
@@ -535,6 +537,7 @@ class PublicVariant(BaseModel):
     label: str
     price: int
     compare_at_price: int | None
+    weight_grams: int | None = None
     available: bool
     max_quantity: int
 
@@ -562,6 +565,7 @@ class ProductCreate(BaseModel):
     tier_mode: Literal["global", "custom"] = "global"
     tiers: list[QuantityTier] = Field(default_factory=list, max_length=MAX_TIERS)
     quantity: int | None = Field(default=None, ge=0, le=MAX_QUANTITY)
+    weight_grams: int | None = Field(default=None, le=500_000)
     status: StockStatus = StockStatus.AVAILABLE
     # Legacy single badge. Prefer `badge_ids`; when only `badge_ids` is sent, `badge` is
     # derived from the built-in badges among them.
@@ -588,6 +592,13 @@ class ProductCreate(BaseModel):
         if not text:
             raise ValueError("Product name is required")
         return text
+
+    @field_validator("weight_grams")
+    @classmethod
+    def _weight_grams(cls, value: int | None) -> int | None:
+        if value is not None and value <= 0:
+            raise ValueError("Product weight in grams must be greater than 0")
+        return value
 
     @field_validator("subtitle")
     @classmethod
@@ -645,6 +656,8 @@ class ProductCreate(BaseModel):
             raise ValueError("Price is required")
         if self.published and self.category_id is None and self.category is None:
             raise ValueError("Choose a category")
+        if self.published and (self.weight_grams is None or self.weight_grams <= 0):
+            raise ValueError("Product weight in grams must be greater than 0")
         if (
             self.max_order_quantity is not None
             and self.max_order_quantity < self.min_order_quantity
@@ -671,6 +684,7 @@ class ProductUpdate(BaseModel):
     tier_mode: Literal["global", "custom"] | None = None
     tiers: list[QuantityTier] | None = Field(default=None, max_length=MAX_TIERS)
     quantity: int | None = Field(default=None, ge=0, le=MAX_QUANTITY)
+    weight_grams: int | None = Field(default=None, ge=0, le=500_000)
     status: StockStatus | None = None
     badge: ProductBadge | None = None
     # Omitted = keep the product's badges. [] = remove them all.
@@ -765,6 +779,7 @@ class AdminProductCard(BaseModel):
     compare_at_price: int | None
     cost_price: CostPrice | None = None
     quantity: int | None
+    weight_grams: int | None = None
     status: StockStatus
     badge: ProductBadge | None
     # Every badge on the product, in display order, including switched-off ones.
@@ -900,6 +915,7 @@ class PublicProductCard(BaseModel):
     featured: bool
     # True when the price shown is the lowest of several variants ("From ...").
     has_variants: bool = False
+    weight_grams: int | None = None
     # Last change to the product row (sitemap lastmod).
     updated_at: datetime | None = None
 
@@ -970,6 +986,7 @@ class AdminProductQuery(BaseModel):
     visibility: Visibility | None = None
     min_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
     max_price: int | None = Field(default=None, ge=0, le=MAX_PRICE)
+    missing_weight: bool | None = None
     sort: AdminSort = "catalog"
     page: int = Field(1, ge=1, le=10_000)
     page_size: int = Field(10, ge=1, le=100)

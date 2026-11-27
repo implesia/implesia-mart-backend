@@ -30,7 +30,9 @@ def test_alembic_has_single_head_0113() -> None:
     script = ScriptDirectory.from_config(cfg)
 
     heads = script.get_heads()
-    assert heads == ["0113"], f"Expected single Alembic head 0113, got {heads}"
+    assert len(heads) == 1, f"Expected a single linear Alembic head, got {heads}"
+    ancestors = {r.revision for r in script.walk_revisions(head=heads[0], base="base")}
+    assert "0113" in ancestors, f"Expected 0113 in Alembic history under head {heads[0]}"
 
     rev = script.get_revision("0113")
     assert rev is not None

@@ -71,6 +71,7 @@ from app.api.v1.endpoints.home import faq as home_faq
 from app.api.v1.endpoints.home import featured as home_featured
 from app.api.v1.endpoints.home import media as home_media
 from app.api.v1.endpoints.home import newsletter as home_newsletter
+from app.api.v1.endpoints.home import popup as home_popup
 from app.api.v1.endpoints.home import promo as home_promo
 from app.api.v1.endpoints.home import review as home_review
 from app.api.v1.endpoints.home import showcase as home_showcase
@@ -254,6 +255,13 @@ api_router.include_router(
     home_promo.admin_router,
     prefix="/admin/home/promo",
     tags=["admin:home:promo"],
+    dependencies=_AUDITED,
+)
+api_router.include_router(home_popup.public_router, prefix="/home/popup", tags=["home:popup"])
+api_router.include_router(
+    home_popup.admin_router,
+    prefix="/admin/home/popup",
+    tags=["admin:home:popup"],
     dependencies=_AUDITED,
 )
 api_router.include_router(home_media.public_router, prefix="/home/media", tags=["home:media"])

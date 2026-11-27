@@ -201,6 +201,7 @@ class QuoteLineRead(BaseModel):
     base_discount_percent: Percent = Decimal("0.00")
     quantity_discount_percent: Percent = Decimal("0.00")
     total_discount_percent: Percent = Decimal("0.00")
+    unit_weight_grams: int = 0
 
 
 class QuoteRead(BaseModel):
@@ -208,6 +209,10 @@ class QuoteRead(BaseModel):
     item_count: int
     subtotal: int
     shipping: int
+    base_shipping: int = 0
+    extra_weight_shipping: int = 0
+    extra_weight_steps: int = 0
+    total_weight_grams: int = 0
     total: int
     delivery_zone: DeliveryZone
     delivery_available: bool
@@ -229,6 +234,7 @@ class OrderItemRead(BaseModel):
     unit_price: int
     quantity: int
     line_total: int
+    unit_weight_grams: int | None = None
     selection: list[SelectedOption] = Field(default_factory=list)
     # Price snapshot from when the order was placed. None on orders placed before it existed.
     regular_price: int | None = None
@@ -324,6 +330,7 @@ class PublicOrderRead(BaseModel):
     subtotal: int
     shipping: int
     total: int
+    total_weight_grams: int | None = None
     # Null on orders placed with no coupon, including every order from before coupons.
     coupon_code: str | None = None
     coupon_discount: int | None = None
@@ -368,6 +375,7 @@ class OrderRead(BaseModel):
     subtotal: int
     shipping: int
     total: int
+    total_weight_grams: int | None = None
     coupon_code: str | None = None
     coupon_discount: int | None = None
     # Staff discount, whole taka. 0 on checkout orders. Already taken off `total`.

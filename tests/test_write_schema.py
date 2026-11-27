@@ -44,7 +44,8 @@ def test_cms_write_schemas_reject_unknown_fields() -> None:
     # OptionalImageWrite + LegacyImageWrite (2).
     # 130: + PromoWrite (home promo banner).
     # 131: + MediaWrite (home video/media section).
-    assert len(models) == 131
+    # 133: + ShowcaseSectionWrite (dynamic showcase) + HomePopupWrite (promo popup).
+    assert len(models) == 133
     for model in models:
         assert issubclass(model, WriteModel)
         assert model.model_config.get("extra") == "forbid"

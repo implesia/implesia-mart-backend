@@ -196,6 +196,7 @@ def _append_item(
     wanted: _Wanted,
     line: pricing_service.Line,
     unit_cost: Decimal | None,
+    unit_weight_grams: int | None = None,
 ) -> None:
     variant = wanted.variant
     order.items.append(
@@ -215,6 +216,7 @@ def _append_item(
             quantity_discount=pricing_service.to_hundredths(line.quantity_percent),
             total_discount=pricing_service.to_hundredths(line.total_percent),
             unit_cost=unit_cost,
+            unit_weight_grams=unit_weight_grams,
         )
     )
 
@@ -260,7 +262,19 @@ async def create_offline(
 
     wanted = [await _resolve_line(db, item, existing=False) for item in _merge_lines(payload.items)]
     rates = await delivery_service.fees(db)
-    zone, fee, available = delivery_service.price_for(payload.district, payload.area, None, rates)
+    items_weight = sum(
+        delivery_service.resolve_item_weight_grams(
+            w.product.weight_grams,
+            w.variant.weight_grams if w.variant is not None else None,
+            rates,
+        )
+        * w.quantity
+        for w in wanted
+    )
+    total_weight_grams = (rates.packaging_weight_grams + items_weight) if wanted else 0
+    zone, fee, available = delivery_service.price_for(
+        payload.district, payload.area, None, rates, total_weight_grams
+    )
     if payload.delivery_charge is None:
         if not available:
             raise UnprocessableError("Delivery is not available for this area")
@@ -314,6 +328,7 @@ async def create_offline(
         shipping=shipping,
         manual_discount=payload.manual_discount,
         total=total,
+        total_weight_grams=total_weight_grams,
         ordered_at=ordered_at,
         delivered_at=delivered_at,
         inventory_held=True,
@@ -324,6 +339,11 @@ async def create_offline(
             wanted_line,
             line,
             variant_service.effective_unit_cost(wanted_line.product, wanted_line.variant),
+            delivery_service.resolve_item_weight_grams(
+                wanted_line.product.weight_grams,
+                wanted_line.variant.weight_grams if wanted_line.variant is not None else None,
+                rates,
+            ),
         )
     db.add(order)
     await db.flush()

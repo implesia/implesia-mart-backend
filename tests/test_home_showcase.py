@@ -11,6 +11,7 @@ def _product(**overrides: object) -> dict:
         "price": 15000,
         "compare_at_price": None,
         "quantity": None,
+        "weight_grams": 500,
         "status": "available",
         "badge": "New",
         "image_src": "/images/products/gown.jpg",

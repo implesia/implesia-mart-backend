@@ -462,6 +462,7 @@ async def _insert_product(db: AsyncSession, payload: ProductCreate) -> Product:
         tier_mode=payload.tier_mode,
         tiers=pricing_service.tiers_to_json(payload.tiers),
         quantity=payload.quantity,
+        weight_grams=payload.weight_grams,
         status=payload.status.value,
         badge=legacy,
         image_src=payload.image_src,
@@ -1052,6 +1053,10 @@ def _admin_filters(
         conditions.append(Product.price >= query.min_price)
     if query.max_price is not None:
         conditions.append(Product.price <= query.max_price)
+    if query.missing_weight is True:
+        conditions.append(Product.weight_grams.is_(None))
+    elif query.missing_weight is False:
+        conditions.append(Product.weight_grams.is_not(None))
     if search and query.q:
         conditions.append(_search(query.q))
     return conditions
@@ -1179,6 +1184,7 @@ def admin_card(
         compare_at_price=product.compare_at_price,
         cost_price=product.cost_price,
         quantity=product.quantity,
+        weight_grams=product.weight_grams,
         status=StockStatus(product.status),
         badge=ProductBadge(product.badge) if product.badge else None,
         badges=[badge_service.ref(badge) for badge in badges],
@@ -1260,6 +1266,7 @@ def public_card(
         status=StockStatus(product.status),
         featured=product.featured,
         has_variants=product.has_variants,
+        weight_grams=product.weight_grams,
         updated_at=product.updated_at,
     )
 

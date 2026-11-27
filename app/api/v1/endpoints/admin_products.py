@@ -223,6 +223,11 @@ _KNOWN: Mapping[str, FieldError] = {
         "প্রতিটা ধাপে আলাদা পরিমাণ দিন",
     ),
     "Choose a category": _err("category", "ক্যাটাগরি বাছাই করতে হবে", "তালিকা থেকে একটা ক্যাটাগরি বাছাই করুন"),
+    "Product weight in grams must be greater than 0": _err(
+        "weight_grams",
+        "প্রোডাক্টের ওজন দিতে হবে",
+        "০-এর বেশি ওজন (গ্রামে) লিখুন, যেমন ৫০০",
+    ),
     "Category not found": _err(
         "category",
         "বাছাই করা ক্যাটাগরিটা আর নেই",
@@ -458,6 +463,8 @@ def _cross_field(payload: str) -> list[FieldError]:
         errors.append(_KNOWN["Price is required"])
     if not raw.get("category_id") and not raw.get("category"):
         errors.append(_KNOWN["Choose a category"])
+    if not raw.get("weight_grams"):
+        errors.append(_KNOWN["Product weight in grams must be greater than 0"])
     return errors
 
 

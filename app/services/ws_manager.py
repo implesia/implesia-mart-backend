@@ -239,11 +239,14 @@ class WSConnectionManager:
             channels=set(),
             allowed_staff_channels=frozenset(staff_channels),
         )
+        was_offline = len(existing) == 0
         self._user_connections.setdefault(user_id, []).append(conn)
         for ch in initial_channels:
             self.subscribe(conn, ch)
 
-        await redis_client.set_presence(user_id, ttl_seconds=self.presence_ttl_seconds)
+        last_seen_iso = await redis_client.set_presence(
+            user_id, ttl_seconds=self.presence_ttl_seconds
+        )
         await websocket.send_json(
             {
                 "type": "connected",
@@ -255,6 +258,17 @@ class WSConnectionManager:
                 },
             }
         )
+        if was_offline and scope != "admin":
+            await realtime_hub.publish(
+                STAFF_COMMUNICATION_CHANNEL,
+                "presence.updated",
+                {
+                    "user_id": user_id,
+                    "scope": scope,
+                    "is_online": True,
+                    "last_seen_at": last_seen_iso,
+                },
+            )
         return conn
 
     def subscribe(self, conn: WSConnection, channel: str) -> None:
@@ -270,16 +284,31 @@ class WSConnectionManager:
                 self._channel_connections.pop(channel, None)
 
     async def disconnect(self, conn: WSConnection) -> None:
+        went_offline = False
         user_list = self._user_connections.get(conn.user_id)
         if user_list is not None:
             with contextlib.suppress(ValueError):
                 user_list.remove(conn)
             if not user_list:
                 self._user_connections.pop(conn.user_id, None)
-                await redis_client.clear_presence(conn.user_id)
+                went_offline = True
 
         for ch in list(conn.channels):
             self.unsubscribe(conn, ch)
+
+        if went_offline:
+            last_seen_iso = await redis_client.clear_presence(conn.user_id)
+            if conn.scope != "admin":
+                await realtime_hub.publish(
+                    STAFF_COMMUNICATION_CHANNEL,
+                    "presence.updated",
+                    {
+                        "user_id": conn.user_id,
+                        "scope": conn.scope,
+                        "is_online": False,
+                        "last_seen_at": last_seen_iso,
+                    },
+                )
 
     async def dispatch_channel(self, channel: str, envelope: dict[str, Any]) -> None:
         """Send an envelope to every local socket subscribed to ``channel``."""

@@ -68,6 +68,7 @@ async def _create_product(
         "category": "gadgets",
         "price": price,
         "quantity": quantity,
+        "weight_grams": 500,
         "published": True,
         "image_src": "/uploads/saas-report.png",
     }

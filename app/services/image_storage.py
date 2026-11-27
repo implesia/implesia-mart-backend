@@ -52,6 +52,7 @@ _FOLDERS = frozenset(
         "sustainability",
         "blogs",
         "promo",
+        "popup",
         "home-media",
         "footer",
         "header",

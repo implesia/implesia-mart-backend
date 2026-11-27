@@ -90,6 +90,10 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="base_discount_range",
         ),
         CheckConstraint("tier_mode IN ('global', 'custom')", name="tier_mode_known"),
+        CheckConstraint(
+            "weight_grams IS NULL OR weight_grams >= 0",
+            name="weight_grams_non_negative",
+        ),
         Index(conv("ix_products_storefront"), "published", "category", "status", "price"),
         Index(
             conv("ix_products_category_storefront"), "category_id", "published", "status", "price"
@@ -139,6 +143,8 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     # Null means made to order. Never returned on the public API.
     quantity: Mapped[int | None] = mapped_column(Integer)
+    # Exact unit weight in integer grams for courier slab delivery pricing.
+    weight_grams: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     badge: Mapped[str | None] = mapped_column(String(32))
     image_src: Mapped[str] = mapped_column(
@@ -220,6 +226,10 @@ class ProductVariant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "compare_at_price IS NULL OR compare_at_price >= price", name="compare_at_gte_price"
         ),
         CheckConstraint("quantity IS NULL OR quantity >= 0", name="quantity_non_negative"),
+        CheckConstraint(
+            "weight_grams IS NULL OR weight_grams >= 0",
+            name="weight_grams_non_negative",
+        ),
         Index(
             conv("uq_product_variants_sku"),
             text("lower(sku)"),
@@ -243,6 +253,8 @@ class ProductVariant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Optional per-variant wholesale cost. Admin responses only; never public.
     cost_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     quantity: Mapped[int | None] = mapped_column(Integer)
+    # Optional per-variant weight override in integer grams.
+    weight_grams: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
     )

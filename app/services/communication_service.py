@@ -49,6 +49,9 @@ from app.schemas.communication import (
     AdminConversationDetailRead,
     AdminConversationUpdateRequest,
     AdminMessageCreateRequest,
+    ByChannelSummary,
+    ChannelGroupLiteral,
+    ChannelGroupSummary,
     ChannelSummaryCount,
     ConversationCreateRequest,
     ConversationRead,
@@ -84,8 +87,35 @@ _CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _ALL_CONVERSATION_TYPES: tuple[ConversationTypeLiteral, ...] = (
     "customer_support",
     "seller_support",
+    "dropshipper_support",
     "customer_seller",
+    "customer_dropshipper",
 )
+
+_CHANNEL_GROUP_TYPES: dict[str, tuple[ConversationTypeLiteral, ...]] = {
+    "customer": ("customer_support",),
+    "seller": ("seller_support", "customer_seller"),
+    "dropshipper": ("dropshipper_support", "customer_dropshipper"),
+}
+
+
+def _normalize_avatar_url(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    cleaned = raw.strip()
+    if not cleaned:
+        return None
+    if cleaned.startswith(("http://", "https://", "/")):
+        return cleaned
+    return f"/{cleaned}"
+
+
+def _primary_external_participant_id(conv: Conversation) -> uuid.UUID | None:
+    if conv.type == ConversationType.DROPSHIPPER_SUPPORT.value:
+        return conv.dropshipper_id or conv.customer_id
+    if conv.type == ConversationType.SELLER_SUPPORT.value:
+        return conv.seller_id or conv.customer_id
+    return conv.customer_id or conv.seller_id or conv.dropshipper_id
 
 
 def _now_utc() -> datetime:
@@ -160,27 +190,33 @@ async def can_access_conversation(
     conv = await db.get(Conversation, conversation_id)
     if conv is None:
         return False
-    return conv.customer_id == user_id or conv.seller_id == user_id
+    return (
+        conv.customer_id == user_id
+        or conv.seller_id == user_id
+        or conv.dropshipper_id == user_id
+    )
 
 
 async def _batch_load_users(
     db: AsyncSession,
     user_ids: set[uuid.UUID],
-) -> dict[uuid.UUID, ParticipantBrief]:
+) -> tuple[dict[uuid.UUID, ParticipantBrief], dict[uuid.UUID, datetime | None]]:
     if not user_ids:
-        return {}
+        return {}, {}
     rows = (await db.scalars(select(User).where(User.id.in_(user_ids)))).all()
-    return {
-        u.id: ParticipantBrief(
+    briefs: dict[uuid.UUID, ParticipantBrief] = {}
+    last_logins: dict[uuid.UUID, datetime | None] = {}
+    for u in rows:
+        briefs[u.id] = ParticipantBrief(
             id=u.id,
             full_name=u.full_name,
             email=u.email,
             phone=u.phone,
             role=str(u.role),
-            avatar_url=u.avatar_url,
+            avatar_url=_normalize_avatar_url(u.avatar_url),
         )
-        for u in rows
-    }
+        last_logins[u.id] = u.last_login_at
+    return briefs, last_logins
 
 
 async def _unread_counts_for_conversations(
@@ -259,6 +295,9 @@ def _serialize_conversation(
     conv: Conversation,
     users_by_id: dict[uuid.UUID, ParticipantBrief],
     unread_count: int,
+    *,
+    is_online: bool = False,
+    last_seen_at: datetime | None = None,
 ) -> ConversationRead:
     return ConversationRead(
         id=conv.id,
@@ -267,12 +306,16 @@ def _serialize_conversation(
         subject=conv.subject,
         customer_id=conv.customer_id,
         seller_id=conv.seller_id,
+        dropshipper_id=conv.dropshipper_id,
         order_id=conv.order_id,
         product_id=conv.product_id,
         assigned_staff_id=conv.assigned_staff_id,
         customer=users_by_id.get(conv.customer_id) if conv.customer_id else None,
         seller=users_by_id.get(conv.seller_id) if conv.seller_id else None,
+        dropshipper=users_by_id.get(conv.dropshipper_id) if conv.dropshipper_id else None,
         assigned_staff=users_by_id.get(conv.assigned_staff_id) if conv.assigned_staff_id else None,
+        is_online=is_online,
+        last_seen_at=last_seen_at,
         last_message_at=conv.last_message_at,
         last_message_preview=conv.last_message_preview,
         unread_count=unread_count,
@@ -292,26 +335,50 @@ async def _serialize_conversations(
         return []
     user_ids: set[uuid.UUID] = set()
     conv_ids: list[uuid.UUID] = []
+    primary_ids: set[str] = set()
     for conv in conversations:
         conv_ids.append(conv.id)
         if conv.customer_id:
             user_ids.add(conv.customer_id)
         if conv.seller_id:
             user_ids.add(conv.seller_id)
+        if conv.dropshipper_id:
+            user_ids.add(conv.dropshipper_id)
         if conv.assigned_staff_id:
             user_ids.add(conv.assigned_staff_id)
+        primary = _primary_external_participant_id(conv)
+        if primary is not None:
+            primary_ids.add(str(primary))
 
-    users_by_id = await _batch_load_users(db, user_ids)
+    users_by_id, last_logins = await _batch_load_users(db, user_ids)
     unread_map = await _unread_counts_for_conversations(
         db,
         conv_ids,
         viewer_id,
         include_internal_notes=include_internal_notes,
     )
-    return [
-        _serialize_conversation(conv, users_by_id, unread_map.get(conv.id, 0))
-        for conv in conversations
-    ]
+    online_ids = await redis_client.get_online_user_ids(primary_ids)
+    last_seen_map = await redis_client.get_last_seen_map(primary_ids)
+    result: list[ConversationRead] = []
+    for conv in conversations:
+        primary = _primary_external_participant_id(conv)
+        primary_str = str(primary) if primary is not None else None
+        is_online = bool(primary_str is not None and primary_str in online_ids)
+        last_seen_at = (
+            last_seen_map.get(primary_str) if primary_str is not None else None
+        )
+        if last_seen_at is None and primary is not None:
+            last_seen_at = last_logins.get(primary)
+        result.append(
+            _serialize_conversation(
+                conv,
+                users_by_id,
+                unread_map.get(conv.id, 0),
+                is_online=is_online,
+                last_seen_at=last_seen_at,
+            )
+        )
+    return result
 
 
 async def _upsert_read_state(
@@ -370,6 +437,7 @@ async def _publish_message_events(
         "sender_id": str(sender.id),
         "sender_role": msg.sender_role,
         "sender_name": sender.full_name,
+        "sender_avatar_url": _normalize_avatar_url(sender.avatar_url),
         "body": msg.body,
         "attachment_url": msg.attachment_url,
         "is_internal_note": msg.is_internal_note,
@@ -387,6 +455,10 @@ async def _publish_message_events(
             await realtime_hub.publish(user_channel(conv.customer_id), "message.created", payload)
         if conv.seller_id is not None:
             await realtime_hub.publish(user_channel(conv.seller_id), "message.created", payload)
+        if conv.dropshipper_id is not None:
+            await realtime_hub.publish(
+                user_channel(conv.dropshipper_id), "message.created", payload
+            )
 
 
 async def _maybe_notify_offline_customer(
@@ -579,6 +651,7 @@ async def _create_message_and_commit(
         sender_id=msg.sender_id,
         sender_role=msg.sender_role,
         sender_name=sender.full_name,
+        sender_avatar_url=_normalize_avatar_url(sender.avatar_url),
         body=msg.body,
         attachment_url=msg.attachment_url,
         is_internal_note=msg.is_internal_note,
@@ -627,12 +700,17 @@ async def _list_messages_cursor(
     page_rows = rows[:clamped_limit]
 
     sender_ids = {m.sender_id for m in page_rows if m.sender_id is not None}
-    sender_names: dict[uuid.UUID, str] = {}
+    sender_info: dict[uuid.UUID, tuple[str, str | None]] = {}
     if sender_ids:
-        name_rows = (
-            await db.execute(select(User.id, User.full_name).where(User.id.in_(sender_ids)))
+        user_rows = (
+            await db.execute(
+                select(User.id, User.full_name, User.avatar_url).where(User.id.in_(sender_ids))
+            )
         ).all()
-        sender_names = {uid: str(name) for uid, name in name_rows}
+        sender_info = {
+            uid: (str(name), _normalize_avatar_url(avatar))
+            for uid, name, avatar in user_rows
+        }
 
     items = [
         MessageRead(
@@ -640,7 +718,12 @@ async def _list_messages_cursor(
             conversation_id=m.conversation_id,
             sender_id=m.sender_id,
             sender_role=m.sender_role,
-            sender_name=sender_names.get(m.sender_id) if m.sender_id else None,
+            sender_name=sender_info[m.sender_id][0]
+            if m.sender_id and m.sender_id in sender_info
+            else None,
+            sender_avatar_url=sender_info[m.sender_id][1]
+            if m.sender_id and m.sender_id in sender_info
+            else None,
             body=m.body,
             attachment_url=m.attachment_url,
             is_internal_note=m.is_internal_note,
@@ -921,16 +1004,33 @@ async def get_admin_summary(
     unread_rows = (await db.execute(unread_stmt)).all()
 
     total_unread_messages = 0
+    unread_messages_by_type: dict[str, int] = dict.fromkeys(_ALL_CONVERSATION_TYPES, 0)
     for conv_type, _conv_id, unread_cnt_raw in unread_rows:
         unread_cnt = int(unread_cnt_raw or 0)
         if unread_cnt <= 0:
             continue
         total_unread_messages += unread_cnt
-        bucket = buckets.get(str(conv_type))
+        key = str(conv_type)
+        bucket = buckets.get(key)
         if bucket is not None:
             bucket.unread_conversations += 1
+            unread_messages_by_type[key] = unread_messages_by_type.get(key, 0) + unread_cnt
 
     by_type = [buckets[t] for t in _ALL_CONVERSATION_TYPES]
+
+    def _channel_summary(types: tuple[ConversationTypeLiteral, ...]) -> ChannelGroupSummary:
+        return ChannelGroupSummary(
+            open_count=sum(buckets[t].open for t in types),
+            unread_conversations=sum(buckets[t].unread_conversations for t in types),
+            total_unread_messages=sum(unread_messages_by_type[t] for t in types),
+        )
+
+    by_channel = ByChannelSummary(
+        customer=_channel_summary(_CHANNEL_GROUP_TYPES["customer"]),
+        seller=_channel_summary(_CHANNEL_GROUP_TYPES["seller"]),
+        dropshipper=_channel_summary(_CHANNEL_GROUP_TYPES["dropshipper"]),
+    )
+
     return AdminCommunicationSummaryResponse(
         open_count=sum(b.open for b in by_type),
         pending_count=sum(b.pending for b in by_type),
@@ -940,6 +1040,7 @@ async def get_admin_summary(
         unread_conversations_count=sum(b.unread_conversations for b in by_type),
         total_unread_messages=total_unread_messages,
         by_type=by_type,
+        by_channel=by_channel,
     )
 
 
@@ -948,6 +1049,7 @@ async def list_admin_conversations(
     staff: User,
     *,
     conv_type: ConversationTypeLiteral | None = None,
+    channel_group: ChannelGroupLiteral | None = None,
     status: ConversationStatusLiteral | None = None,
     assigned: str | None = None,
     assigned_staff_id: uuid.UUID | None = None,
@@ -957,10 +1059,15 @@ async def list_admin_conversations(
 ) -> Page[ConversationRead]:
     customer_alias = aliased(User)
     seller_alias = aliased(User)
+    dropshipper_alias = aliased(User)
 
     filters: list[Any] = []
     if conv_type is not None:
         filters.append(Conversation.type == conv_type)
+    if channel_group is not None and channel_group != "all":
+        group_types = _CHANNEL_GROUP_TYPES.get(channel_group)
+        if group_types:
+            filters.append(Conversation.type.in_(group_types))
     if status is not None:
         filters.append(Conversation.status == status)
     if assigned_staff_id is not None:
@@ -991,6 +1098,8 @@ async def list_admin_conversations(
                 customer_alias.email.ilike(pattern),
                 seller_alias.full_name.ilike(pattern),
                 seller_alias.phone.ilike(pattern),
+                dropshipper_alias.full_name.ilike(pattern),
+                dropshipper_alias.phone.ilike(pattern),
             )
         )
 
@@ -998,12 +1107,14 @@ async def list_admin_conversations(
         select(Conversation)
         .outerjoin(customer_alias, Conversation.customer_id == customer_alias.id)
         .outerjoin(seller_alias, Conversation.seller_id == seller_alias.id)
+        .outerjoin(dropshipper_alias, Conversation.dropshipper_id == dropshipper_alias.id)
         .where(*filters)
     )
     count_stmt = (
         select(func.count(Conversation.id))
         .outerjoin(customer_alias, Conversation.customer_id == customer_alias.id)
         .outerjoin(seller_alias, Conversation.seller_id == seller_alias.id)
+        .outerjoin(dropshipper_alias, Conversation.dropshipper_id == dropshipper_alias.id)
         .where(*filters)
     )
 

@@ -18,6 +18,7 @@ import json
 import secrets
 import time
 from collections import deque
+from datetime import UTC, datetime
 from typing import Any
 
 import redis.asyncio as aioredis
@@ -34,6 +35,8 @@ _SOCKET_CONNECT_TIMEOUT = 3.0
 
 _TICKET_PREFIX = "ws:ticket:"
 _PRESENCE_PREFIX = "presence:user:"
+_LAST_SEEN_PREFIX = "last_seen:user:"
+_LAST_SEEN_TTL_SECONDS = 30 * 86400
 _RATE_LIMIT_PREFIX = "rl:ws:"
 _CHAT_RATE_LIMIT_PREFIX = "rl:chat:"
 _CHAT_NOTIFY_PREFIX = "chat:notify:"
@@ -56,6 +59,7 @@ class AsyncRedisClient:
         # In-process fallback state (used in SQLite/memory:// tests or Redis outage)
         self._mem_tickets: dict[str, tuple[float, dict[str, Any]]] = {}
         self._mem_presence: dict[str, float] = {}
+        self._mem_last_seen: dict[str, str] = {}
         self._mem_rate: dict[str, deque[float]] = {}
         self._mem_chat_rate: dict[str, deque[float]] = {}
         self._mem_notify_throttle: dict[str, float] = {}
@@ -128,6 +132,7 @@ class AsyncRedisClient:
         """Clear in-process fallback stores (used by test fixtures)."""
         self._mem_tickets.clear()
         self._mem_presence.clear()
+        self._mem_last_seen.clear()
         self._mem_rate.clear()
         self._mem_chat_rate.clear()
         self._mem_notify_throttle.clear()
@@ -187,26 +192,85 @@ class AsyncRedisClient:
             return None
         return data
 
-    async def set_presence(self, user_id: str, *, ttl_seconds: int = 60) -> None:
-        """Refresh lightweight online presence key with TTL (never writes to Postgres)."""
+    async def set_presence(self, user_id: str, *, ttl_seconds: int = 60) -> str:
+        """Refresh online presence TTL and last_seen timestamp (zero Postgres writes)."""
+        now_iso = datetime.now(UTC).isoformat()
         key = f"{_PRESENCE_PREFIX}{user_id}"
+        last_seen_key = f"{_LAST_SEEN_PREFIX}{user_id}"
         if self._connected and self._client is not None:
             try:
-                await self._client.set(key, "1", ex=ttl_seconds)
-                return
+                async with self._client.pipeline(transaction=False) as pipe:
+                    pipe.set(key, "1", ex=ttl_seconds)
+                    pipe.set(last_seen_key, now_iso, ex=_LAST_SEEN_TTL_SECONDS)
+                    await pipe.execute()
+                return now_iso
             except (RedisError, OSError) as exc:
                 self._warn_once(f"presence_set_failed: {exc}")
 
         self._mem_presence[user_id] = time.monotonic() + ttl_seconds
+        self._mem_last_seen[user_id] = now_iso
+        return now_iso
 
-    async def clear_presence(self, user_id: str) -> None:
+    async def clear_presence(self, user_id: str) -> str:
+        """Remove online flag and record exact offline timestamp in last_seen."""
+        now_iso = datetime.now(UTC).isoformat()
         key = f"{_PRESENCE_PREFIX}{user_id}"
+        last_seen_key = f"{_LAST_SEEN_PREFIX}{user_id}"
         if self._connected and self._client is not None:
             try:
-                await self._client.delete(key)
+                async with self._client.pipeline(transaction=False) as pipe:
+                    pipe.delete(key)
+                    pipe.set(last_seen_key, now_iso, ex=_LAST_SEEN_TTL_SECONDS)
+                    await pipe.execute()
             except (RedisError, OSError) as exc:
                 self._warn_once(f"presence_delete_failed: {exc}")
         self._mem_presence.pop(user_id, None)
+        self._mem_last_seen[user_id] = now_iso
+        return now_iso
+
+    @staticmethod
+    def _parse_iso_datetime(raw: str | None) -> datetime | None:
+        if not raw:
+            return None
+        try:
+            dt = datetime.fromisoformat(raw)
+            return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
+        except ValueError:
+            return None
+
+    async def get_last_seen(self, user_id: str) -> datetime | None:
+        key = f"{_LAST_SEEN_PREFIX}{user_id}"
+        if self._connected and self._client is not None:
+            try:
+                raw = await self._client.get(key)
+                if isinstance(raw, str):
+                    return self._parse_iso_datetime(raw)
+                return None
+            except (RedisError, OSError) as exc:
+                self._warn_once(f"last_seen_get_failed: {exc}")
+        return self._parse_iso_datetime(self._mem_last_seen.get(user_id))
+
+    async def get_last_seen_map(self, user_ids: set[str] | list[str]) -> dict[str, datetime | None]:
+        """Batch-fetch last_seen timestamps for multiple user IDs via a single Redis MGET."""
+        unique_ids = [uid for uid in dict.fromkeys(user_ids) if uid]
+        if not unique_ids:
+            return {}
+
+        if self._connected and self._client is not None:
+            try:
+                keys = [f"{_LAST_SEEN_PREFIX}{uid}" for uid in unique_ids]
+                values = await self._client.mget(keys)
+                return {
+                    uid: self._parse_iso_datetime(val if isinstance(val, str) else None)
+                    for uid, val in zip(unique_ids, values, strict=False)
+                }
+            except (RedisError, OSError) as exc:
+                self._warn_once(f"last_seen_mget_failed: {exc}")
+
+        return {
+            uid: self._parse_iso_datetime(self._mem_last_seen.get(uid))
+            for uid in unique_ids
+        }
 
     async def is_user_online(self, user_id: str) -> bool:
         key = f"{_PRESENCE_PREFIX}{user_id}"
@@ -225,6 +289,34 @@ class AsyncRedisClient:
             self._mem_presence.pop(user_id, None)
             return False
         return True
+
+    async def get_online_user_ids(self, user_ids: set[str] | list[str]) -> set[str]:
+        """Batch-check online presence for multiple user IDs via a single Redis MGET."""
+        unique_ids = [uid for uid in dict.fromkeys(user_ids) if uid]
+        if not unique_ids:
+            return set()
+
+        if self._connected and self._client is not None:
+            try:
+                keys = [f"{_PRESENCE_PREFIX}{uid}" for uid in unique_ids]
+                values = await self._client.mget(keys)
+                return {
+                    uid for uid, val in zip(unique_ids, values, strict=False) if val is not None
+                }
+            except (RedisError, OSError) as exc:
+                self._warn_once(f"presence_mget_failed: {exc}")
+
+        now = time.monotonic()
+        online: set[str] = set()
+        for uid in unique_ids:
+            exp = self._mem_presence.get(uid)
+            if exp is None:
+                continue
+            if exp <= now:
+                self._mem_presence.pop(uid, None)
+                continue
+            online.add(uid)
+        return online
 
     async def check_ws_rate_limit(
         self,

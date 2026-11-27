@@ -209,6 +209,7 @@ def _read(
         subtotal=order.subtotal,
         shipping=order.shipping,
         total=order.total,
+        total_weight_grams=order.total_weight_grams,
         coupon_code=order.coupon_code,
         coupon_discount=order.coupon_discount,
         manual_discount=order.manual_discount,
@@ -234,6 +235,7 @@ def _read(
                 unit_price=item.unit_price,
                 quantity=item.quantity,
                 line_total=item.line_total,
+                unit_weight_grams=item.unit_weight_grams,
                 selection=selection_of(item.selection),
                 **_snapshot(item),
             )
@@ -312,6 +314,7 @@ def _line(
     cart_item_id: uuid.UUID | None,
     selection: list[dict],
     rules: pricing_service.Rules,
+    rates: delivery_service.StoreFees,
 ) -> QuoteLineRead:
     limit = rules.max_quantity
     available = _purchasable(product, variant, limit)
@@ -319,6 +322,11 @@ def _line(
     minimum = variant_service.order_limits(product, limit)[0]
     line = pricing_service.price_product(product, variant, quantity, rules)
     unit_price = line.unit_price
+    unit_weight = delivery_service.resolve_item_weight_grams(
+        product.weight_grams,
+        variant.weight_grams if variant is not None else None,
+        rates,
+    )
     counted = available and max(1, minimum) <= quantity <= max(cap, 0)
     return QuoteLineRead(
         product_id=product.id,
@@ -338,6 +346,7 @@ def _line(
         base_discount_percent=line.base_percent,
         quantity_discount_percent=line.quantity_percent,
         total_discount_percent=line.total_percent,
+        unit_weight_grams=unit_weight,
     )
 
 
@@ -350,13 +359,22 @@ def _totals(
 ) -> QuoteRead:
     subtotal = sum(line.line_total for line in lines if line.available)
     count = sum(line.quantity for line in lines if line.available)
-    zone, fee, available = delivery_service.price_for(district, area, declared, rates)
-    shipping = fee if count and available else 0
+    items_weight = sum(line.unit_weight_grams * line.quantity for line in lines if line.available)
+    total_weight = (rates.packaging_weight_grams + items_weight) if count > 0 else 0
+    zone, bd, available = delivery_service.breakdown_for(
+        district, area, declared, rates, total_weight
+    )
+    active_shipping = bool(count and available)
+    shipping = bd.total_fee if active_shipping else 0
     return QuoteRead(
         items=lines,
         item_count=count,
         subtotal=subtotal,
         shipping=shipping,
+        base_shipping=bd.base_fee if active_shipping else 0,
+        extra_weight_shipping=bd.extra_weight_fee if active_shipping else 0,
+        extra_weight_steps=bd.extra_steps if active_shipping else 0,
+        total_weight_grams=total_weight,
         total=subtotal + shipping,
         delivery_zone=zone,
         delivery_available=available,
@@ -366,6 +384,7 @@ def _totals(
 async def quote(db: AsyncSession, shopper: Shopper, payload: OrderQuoteRequest) -> QuoteRead:
     requested = await _requested(db, shopper, payload)
     rules = await pricing_service.store_rules(db)
+    rates = await delivery_service.fees(db)
     lines = [
         _line(
             await _product(db, row.product_id),
@@ -374,10 +393,10 @@ async def quote(db: AsyncSession, shopper: Shopper, payload: OrderQuoteRequest) 
             row.cart_item_id,
             row.selection,
             rules,
+            rates,
         )
         for row in requested
     ]
-    rates = await delivery_service.fees(db)
     totals = _totals(lines, payload.district, payload.area, payload.delivery_zone, rates)
     totals.coupon = await coupon_service.preview(
         db, payload.coupon_code, lines, phone=payload.phone
@@ -385,6 +404,9 @@ async def quote(db: AsyncSession, shopper: Shopper, payload: OrderQuoteRequest) 
     if totals.coupon is not None and totals.coupon.valid:
         if totals.coupon.free_delivery:
             totals.shipping = 0
+            totals.base_shipping = 0
+            totals.extra_weight_shipping = 0
+            totals.extra_weight_steps = 0
         totals.total = totals.subtotal - totals.coupon.discount + totals.shipping
     if totals.total > 0 and await payment_service.bangla_qr_src(db) is not None:
         totals.bangla_qr_options = payment_service.advance_options(totals.total)
@@ -593,7 +615,7 @@ async def create_order(
         raise UnprocessableError("Your cart is empty")
 
     rates = await delivery_service.fees(db)
-    zone, fee, available = delivery_service.price_for(
+    zone, _base_check, available = delivery_service.price_for(
         payload.district, payload.area, payload.delivery_zone, rates
     )
     if not available:
@@ -602,14 +624,29 @@ async def create_order(
     # Prices come only from the database rows and the pricing rules, never from the request.
     rules = await pricing_service.store_rules(db)
     priced: list[
-        tuple[Requested, pricing_service.Line, str, str, str, str, Decimal | None, uuid.UUID | None]
+        tuple[
+            Requested,
+            pricing_service.Line,
+            str,
+            str,
+            str,
+            str,
+            Decimal | None,
+            uuid.UUID | None,
+            int,
+        ]
     ] = []
     ordered = sorted(requested, key=lambda row: (row.product_id.hex, str(row.variant_id or "")))
     for row in ordered:
         product = await _product(db, row.product_id)
         variant = await variant_service.resolve_for_purchase(db, product, row.variant_id)
         line, title, slug, image_src, sku = await _claim(db, product, variant, row.quantity, rules)
-        # Snapshot cost now (variant cost if set, else product cost); later buys never rewrite it.
+        unit_weight = delivery_service.resolve_item_weight_grams(
+            product.weight_grams,
+            variant.weight_grams if variant is not None else None,
+            rates,
+        )
+        # Snapshot cost and weight now; later edits never rewrite historical orders.
         priced.append(
             (
                 row,
@@ -620,18 +657,24 @@ async def create_order(
                 sku,
                 variant_service.effective_unit_cost(product, variant),
                 product.category_id,
+                unit_weight,
             )
         )
 
     subtotal = sum(line.line_total for _row, line, *_rest in priced)
-    shipping = fee if priced else 0
+    items_weight = sum(unit_weight * row.quantity for row, *_mid, unit_weight in priced)
+    total_weight_grams = (rates.packaging_weight_grams + items_weight) if priced else 0
+    zone, shipping_bd, _ok = delivery_service.breakdown_for(
+        payload.district, payload.area, payload.delivery_zone, rates, total_weight_grams
+    )
+    shipping = shipping_bd.total_fee if priced else 0
     coupon_code: str | None = None
     coupon_discount: int | None = None
     priced_coupon: coupon_service.PricedCoupon | None = None
     if payload.coupon_code:
         money = [
             coupon_service.MoneyLine(row.product_id, category_id, line.line_total)
-            for row, line, _title, _slug, _image, _sku, _cost, category_id in priced
+            for row, line, _title, _slug, _image, _sku, _cost, category_id, _weight in priced
         ]
         # Re-checked under a row lock. A code that failed since the quote rejects the order.
         priced_coupon = await coupon_service.lock_and_price(
@@ -686,11 +729,12 @@ async def create_order(
         subtotal=subtotal,
         shipping=shipping,
         total=total,
+        total_weight_grams=total_weight_grams,
         coupon_code=coupon_code,
         coupon_discount=coupon_discount,
         inventory_held=True,
     )
-    for row, line, title, slug, image_src, sku, unit_cost, _category_id in priced:
+    for row, line, title, slug, image_src, sku, unit_cost, _category_id, unit_weight in priced:
         order.items.append(
             OrderItem(
                 product_id=row.product_id,
@@ -708,6 +752,7 @@ async def create_order(
                 quantity_discount=pricing_service.to_hundredths(line.quantity_percent),
                 total_discount=pricing_service.to_hundredths(line.total_percent),
                 unit_cost=unit_cost,
+                unit_weight_grams=unit_weight,
             )
         )
     db.add(order)
@@ -1016,6 +1061,7 @@ def _public(
         subtotal=order.subtotal,
         shipping=order.shipping,
         total=order.total,
+        total_weight_grams=order.total_weight_grams,
         coupon_code=order.coupon_code,
         coupon_discount=order.coupon_discount,
         courier_name=order.courier_name,

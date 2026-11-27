@@ -9,6 +9,7 @@
 import json
 import secrets
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -53,6 +54,7 @@ async def _create_product(
         "category": "gadgets",
         "price": price,
         "quantity": quantity,
+        "weight_grams": 500,
         "published": True,
         "image_src": "/uploads/phase-a.png",
         "content": {"options": options or []},
@@ -95,6 +97,7 @@ async def test_product_supplier_and_variant_cost_privacy_and_orders(
                     "title": "Bad Supplier Item",
                     "category": "gadgets",
                     "price": 500,
+                    "weight_grams": 500,
                     "supplier_id": deleted_sup["id"],
                     "published": True,
                     "image_src": "/uploads/bad.png",
@@ -461,10 +464,11 @@ async def test_offline_order_delivered_sync_customer_link_payments_and_reports(
     assert row["profit"] == 950.0
 
     # Delivery report (covering today when returned_at happened) still tracks return count & value.
+    today_iso = datetime.now(UTC).date().isoformat()
     today_delivery = await client.get(
         "/api/v1/admin/reports/delivery",
         headers=auth_headers,
-        params={"from": "2026-11-05", "to": "2026-11-25"},
+        params={"from": "2026-11-05", "to": max("2026-11-25", today_iso)},
     )
     assert today_delivery.status_code == 200, today_delivery.text
     flow = today_delivery.json()
