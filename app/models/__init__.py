@@ -44,6 +44,11 @@ from app.models.coupon import Coupon, CouponCategory, CouponProduct, CouponRedem
 from app.models.courier import CourierLocation, CourierShipment, CourierWebhookEvent
 from app.models.courier_check import CourierCheckResult
 from app.models.delivery import DeliverySettings
+from app.models.dropshipper_store import (
+    DropshipperStore,
+    DropshipperStoreProduct,
+    StoreTemplateId,
+)
 from app.models.dropshipping import (
     DropshipperPayoutRequest,
     DropshipperProfile,
@@ -222,6 +227,8 @@ __all__ = [
     "HomeCategoryTile",
     "HomeFaq",
     "HomeFaqItem",
+    "DropshipperStore",
+    "DropshipperStoreProduct",
     "HomeFeatured",
     "HomeFeaturedItem",
     "HomeMedia",
@@ -258,6 +265,7 @@ __all__ = [
     "ProductBadgeLink",
     "ProductSlugRedirect",
     "ProductVariant",
+    "StoreTemplateId",
     "PushSubscription",
     "RefreshToken",
     "ShippingBlock",

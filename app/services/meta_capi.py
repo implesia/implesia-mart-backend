@@ -305,9 +305,19 @@ async def send_purchase(order_number: str, body: dict[str, Any]) -> None:
         )
 
 
-async def _post_with_retries(order_number: str, body: dict[str, Any]) -> None:
-    token = settings.meta_capi_token.get_secret_value().strip()
-    pixel = settings.meta_pixel_id.strip()
+async def _post_with_retries(
+    order_number: str,
+    body: dict[str, Any],
+    *,
+    pixel_override: str | None = None,
+    token_override: str | None = None,
+) -> None:
+    token = (
+        token_override.strip()
+        if token_override is not None
+        else settings.meta_capi_token.get_secret_value().strip()
+    )
+    pixel = pixel_override.strip() if pixel_override is not None else settings.meta_pixel_id.strip()
     if not token or not pixel:
         return
     url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{quote(pixel, safe='')}/events"
@@ -336,3 +346,64 @@ async def _post_with_retries(order_number: str, body: dict[str, Any]) -> None:
                     )
                     return
             await asyncio.sleep(BACKOFF_SECONDS[attempt])
+
+
+async def send_custom_purchase(
+    order_number: str,
+    body: dict[str, Any],
+    *,
+    pixel_id: str,
+    access_token: str,
+) -> None:
+    """POST one Purchase to a dropshipper's own Meta Pixel. Never raises."""
+    try:
+        await _post_with_retries(
+            order_number,
+            body,
+            pixel_override=pixel_id,
+            token_override=access_token,
+        )
+    except Exception:
+        logger.error(
+            "meta_capi_custom_purchase_failed",
+            order_number=order_number,
+            error_type="unexpected",
+        )
+
+
+def schedule_custom_purchase(
+    background: BackgroundTasks,
+    order: Order,
+    tracking: OrderTracking | None,
+    *,
+    pixel_id: str,
+    access_token: str,
+    test_event_code: str | None = None,
+    client_ip: str | None = None,
+    user_agent: str | None = None,
+) -> None:
+    """Queue a Purchase event directly to a dropshipper store's own Meta Pixel."""
+    number = ""
+    try:
+        number = order.number
+        if not pixel_id.strip() or not access_token.strip():
+            return
+        body = build_purchase_body(
+            order,
+            tracking,
+            client_ip=client_ip,
+            user_agent=user_agent,
+        )
+        if test_event_code and test_event_code.strip():
+            body["test_event_code"] = test_event_code.strip()
+        else:
+            body.pop("test_event_code", None)
+        background.add_task(
+            send_custom_purchase,
+            number,
+            body,
+            pixel_id=pixel_id.strip(),
+            access_token=access_token.strip(),
+        )
+    except Exception:
+        logger.error("meta_capi_custom_schedule_failed", order_number=number)

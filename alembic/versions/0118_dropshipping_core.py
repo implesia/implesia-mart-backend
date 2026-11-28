@@ -5,6 +5,7 @@ Revises: 0117
 Create Date: 2026-11-28
 """
 
+import uuid
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -21,15 +22,17 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     bind = op.get_bind()
     is_sqlite = bind.dialect.name == "sqlite"
+    id_sql = ":id" if is_sqlite else "CAST(:id AS UUID)"
 
     # 1. Seed system role `dropshipper` (admin_access=False, strictly non-staff)
     if is_sqlite:
         bind.execute(
             sa.text(
-                """
+                f"""
                 INSERT OR IGNORE INTO roles
-                    (slug, label, description, category, admin_access, is_system)
+                    (id, slug, label, description, category, admin_access, is_system)
                 VALUES (
+                    {id_sql},
                     'dropshipper',
                     'Dropshipper',
                     'Approved dropshipping partner account. Blocked from /admin and staff APIs.',
@@ -38,15 +41,17 @@ def upgrade() -> None:
                     1
                 )
                 """
-            )
+            ),
+            {"id": str(uuid.uuid4())},
         )
     else:
         bind.execute(
             sa.text(
-                """
+                f"""
                 INSERT INTO roles
-                    (slug, label, description, category, admin_access, is_system)
+                    (id, slug, label, description, category, admin_access, is_system)
                 VALUES (
+                    {id_sql},
                     'dropshipper',
                     'Dropshipper',
                     'Approved dropshipping partner account. Blocked from /admin and staff APIs.',
@@ -56,7 +61,8 @@ def upgrade() -> None:
                 )
                 ON CONFLICT (slug) DO NOTHING
                 """
-            )
+            ),
+            {"id": str(uuid.uuid4())},
         )
 
     # Seed `dropshipping` module permissions for system staff roles
@@ -68,23 +74,23 @@ def upgrade() -> None:
         if is_sqlite:
             bind.execute(
                 sa.text(
-                    """
-                    INSERT OR IGNORE INTO role_permissions (role, module_key, access_level)
-                    VALUES (:role, 'dropshipping', :access_level)
+                    f"""
+                    INSERT OR IGNORE INTO role_permissions (id, role, module_key, access_level)
+                    VALUES ({id_sql}, :role, 'dropshipping', :access_level)
                     """
                 ),
-                {"role": role_slug, "access_level": access_level},
+                {"id": str(uuid.uuid4()), "role": role_slug, "access_level": access_level},
             )
         else:
             bind.execute(
                 sa.text(
-                    """
-                    INSERT INTO role_permissions (role, module_key, access_level)
-                    VALUES (:role, 'dropshipping', :access_level)
+                    f"""
+                    INSERT INTO role_permissions (id, role, module_key, access_level)
+                    VALUES ({id_sql}, :role, 'dropshipping', :access_level)
                     ON CONFLICT (role, module_key) DO NOTHING
                     """
                 ),
-                {"role": role_slug, "access_level": access_level},
+                {"id": str(uuid.uuid4()), "role": role_slug, "access_level": access_level},
             )
 
     # 2. Additive columns on `products`

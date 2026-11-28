@@ -28,9 +28,11 @@ from app.api.v1.endpoints import (
     delivery,
     dropshipper,
     dropshipper_orders,
+    dropshipper_store,
     inquiries,
     orders,
     products,
+    public_stores,
     push,
     reviews,
     search,
@@ -135,6 +137,16 @@ api_router.include_router(
     dropshipper_orders.router,
     prefix="/dropshipper",
     tags=["dropshipper:orders"],
+)
+api_router.include_router(
+    dropshipper_store.router,
+    prefix="/dropshipper",
+    tags=["dropshipper:store"],
+)
+api_router.include_router(
+    public_stores.router,
+    prefix="/public/stores",
+    tags=["public:stores"],
 )
 api_router.include_router(
     admin_dropshipping.router,
